@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@theme {
+  --color-lego-yellow: #FFD500;
+  --color-lego-red: #E3000B;
+  --color-lego-blue: #006CB7;
+  --color-lego-black: #212121;
+}
+
+body {
+  @apply bg-gray-100 text-gray-900;
+  background-image: radial-gradient(#d1d5db 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.lego-button {
+  @apply px-4 py-2 font-black uppercase tracking-widest text-white transition-all transform active:scale-95 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)];
+}
+
+.lego-card {
+  @apply bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)];
+}
+

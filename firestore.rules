@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && 
+        incoming().keys().hasAll(['uid', 'email']) &&
+        incoming().uid == userId &&
+        incoming().email is string &&
+        incoming().email.size() < 256;
+      allow update: if isOwner(userId) && 
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt']);
+    }
+
+    // Sets collection
+    match /sets/{setId} {
+      function isValidSet(data) {
+        return data.userId == request.auth.uid &&
+               data.setNumber is string && data.setNumber.size() <= 20 &&
+               data.status in ['planned', 'ordered'] &&
+               data.priority in ['low', 'medium', 'high'] &&
+               (data.name == null || (data.name is string && data.name.size() <= 200));
+      }
+
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn() && isValidSet(incoming()) && 
+        incoming().createdAt == request.time;
+        
+      allow update: if isSignedIn() && isOwner(existing().userId) && isValidSet(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          // Action: General Update
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'priority', 'orderedDate', 'orderedPriceHuf', 'name', 'productImage', 'legoPriceHuf', 'legoUrl', 'isTemporary', 'releaseDate', 'hasFetchedLegoInfo', 'lastLegoPriceRefreshTime', 'marketPrices', 'lastPricesRefreshTime', 'legoPriceError', 'updatedAt'])
+        );
+        
+      allow delete: if isSignedIn() && isOwner(existing().userId);
+
+      // Price History subcollection
+      match /priceHistory/{priceId} {
+        allow read: if isSignedIn() && get(/databases/$(database)/documents/sets/$(setId)).data.userId == request.auth.uid;
+        allow create: if isSignedIn() && get(/databases/$(database)/documents/sets/$(setId)).data.userId == request.auth.uid &&
+          incoming().date is string &&
+          incoming().keys().hasAll(['date']);
+        allow delete: if isSignedIn() && get(/databases/$(database)/documents/sets/$(setId)).data.userId == request.auth.uid;
+      }
+    }
+  }
+}
