@@ -146,7 +146,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
       }
     } catch (e) {
       onUpdate(set.id, {
-         marketPrices: { error: true },
+         marketPrices: { ...(set.marketPrices || {}), error: true },
          lastPricesRefreshTime: Date.now()
       });
     } finally {

@@ -93,12 +93,14 @@ export default function App() {
                 });
                 
                 const today = new Date().toISOString().split('T')[0];
-                const newHistory: any = { date: today };
-                if (marketPrices.amazon?.priceHuf) newHistory.amazonHuf = marketPrices.amazon.priceHuf;
-                if (marketPrices.arukereso?.priceHuf) newHistory.arukeresoHuf = marketPrices.arukereso.priceHuf;
-                
-                if (newHistory.amazonHuf || newHistory.arukeresoHuf) {
-                    await addPriceHistory(set.id, newHistory);
+                if (marketPrices.amazon?.priceEur && marketPrices.arukereso?.priceHuf) {
+                    await addPriceHistory(set.id, {
+                       date: today,
+                       amazonPriceEur: marketPrices.amazon.priceEur,
+                       arukeresoPriceHuf: marketPrices.arukereso.priceHuf,
+                       arukeresoStore: marketPrices.arukereso.store,
+                       exchangeRate: marketPrices.exchangeRate
+                    });
                 }
             }
         } catch (e) {
