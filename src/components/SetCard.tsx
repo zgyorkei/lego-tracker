@@ -73,7 +73,9 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
     
     try {
       const shouldSkipImage = !!set.productImage;
-      const res = await fetch(`/api/lego/${set.setNumber}${shouldSkipImage ? '?skipImage=true' : ''}`);
+      const apiKey = localStorage.getItem('legoTrackerApiKey') || '';
+      const headers: Record<string, string> = apiKey ? { 'x-gemini-api-key': apiKey } : {};
+      const res = await fetch(`/api/lego/${set.setNumber}${shouldSkipImage ? '?skipImage=true' : ''}`, { headers });
       if (res.status === 429) {
         return;
       }
@@ -117,7 +119,9 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
   const refreshMarketPrices = async () => {
     setLoadingMarketPrices(true);
     try {
-      const res = await fetch(`/api/prices/${set.setNumber}`);
+      const apiKey = localStorage.getItem('legoTrackerApiKey') || '';
+      const headers: Record<string, string> = apiKey ? { 'x-gemini-api-key': apiKey } : {};
+      const res = await fetch(`/api/prices/${set.setNumber}`, { headers });
       if (res.status === 429) {
          return;
       }

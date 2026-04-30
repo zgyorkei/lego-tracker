@@ -13,7 +13,8 @@ import {
   PiggyBank,
   TrendingDown,
   RefreshCcw,
-  Loader2
+  Loader2,
+  Key
 } from 'lucide-react';
 import { useSets } from './hooks/useSets';
 import { signInWithGoogle, signOut } from './lib/firebase';
@@ -29,6 +30,13 @@ export default function App() {
   const [searchingLego, setSearchingLego] = useState(false);
   const [isBatchRefreshing, setIsBatchRefreshing] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{current: number, total: number} | null>(null);
+  const [showApiKeySetting, setShowApiKeySetting] = useState(false);
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('legoTrackerApiKey') || '');
+
+  const handleSaveApiKey = () => {
+    localStorage.setItem('legoTrackerApiKey', apiKey);
+    setShowApiKeySetting(false);
+  };
 
   const filteredSets = useMemo(() => {
     if (filter === 'all') return sets;
@@ -51,8 +59,11 @@ export default function App() {
         }
 
         try {
+            const reqApiKey = localStorage.getItem('legoTrackerApiKey') || '';
+            const headers = reqApiKey ? { 'x-gemini-api-key': reqApiKey } : {};
+
             // refresh lego info
-            const legoRes = await fetch(`/api/lego/${set.setNumber}`);
+            const legoRes = await fetch(`/api/lego/${set.setNumber}`, { headers });
             if (legoRes.ok) {
                 const legoData = await legoRes.json();
                 if (legoData && legoData.priceHuf) {
@@ -73,7 +84,7 @@ export default function App() {
             await new Promise(resolve => setTimeout(resolve, 1000));
 
             // refresh market info
-            const marketRes = await fetch(`/api/prices/${set.setNumber}`);
+            const marketRes = await fetch(`/api/prices/${set.setNumber}`, { headers });
             if (marketRes.ok) {
                 const marketPrices = await marketRes.json();
                 await updateSet(set.id, {
@@ -168,6 +179,12 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setShowApiKeySetting(true)}
+              className="px-3 py-1.5 bg-black text-white rounded font-black text-[10px] uppercase flex items-center gap-2 hover:bg-gray-800 transition-colors"
+            >
+              <Key size={14} /> <span className="hidden sm:inline">API Key</span>
+            </button>
             <div className="hidden lg:flex gap-6 items-center border-x-2 border-black/10 px-6 mx-2">
                <div className="text-right">
                   <p className="text-[10px] font-black opacity-60 uppercase">Planned</p>
@@ -304,6 +321,62 @@ export default function App() {
       >
         <Plus size={32} />
       </button>
+
+      <AnimatePresence>
+        {showApiKeySetting && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowApiKeySetting(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-white w-full max-w-md border-4 border-black p-6 rounded-2xl relative z-10 shadow-2xl"
+            >
+              <h2 className="text-2xl font-black uppercase mb-4 flex items-center gap-2">
+                <Key className="text-lego-blue" />
+                Gemini API Key
+              </h2>
+              <p className="text-sm font-bold text-gray-600 mb-6 px-1">
+                Prices and search overrides are heavily limited on the default key. Enter your own Gemini API Key to prevent 429 quota errors.
+              </p>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-gray-500 mb-1 ml-1 tracking-widest">Key Value</label>
+                  <input 
+                    type="password" 
+                    placeholder="AIzaSy..."
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    className="w-full bg-gray-100 border-2 border-black p-3 rounded-lg font-bold placeholder:text-gray-400 focus:outline-none focus:ring-4 focus:ring-lego-yellow transition-all"
+                  />
+                  <p className="text-[10px] uppercase tracking-widest text-gray-400 mt-2 px-1">Stored locally in your browser.</p>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    onClick={() => setShowApiKeySetting(false)}
+                    className="flex-1 py-3 font-black uppercase text-sm border-2 border-black rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleSaveApiKey}
+                    className="flex-1 py-3 font-black uppercase text-sm bg-lego-blue text-white border-2 border-black rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] transition-all"
+                  >
+                    Save Key
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isAdding && (
