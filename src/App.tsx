@@ -80,8 +80,8 @@ export default function App() {
                        ...(legoData.image ? { productImage: legoData.image } : {}),
                        legoUrl: legoData.url || set.legoUrl,
                        legoPriceError: false,
-                       isTemporary: legoData.isTemporary,
-                       releaseDate: legoData.releaseDate,
+                       isTemporary: legoData.isTemporary || false,
+                       releaseDate: legoData.releaseDate || null,
                        hasFetchedLegoInfo: true,
                        lastLegoPriceRefreshTime: Date.now()
                     });
