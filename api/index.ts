@@ -153,12 +153,61 @@ app.get('/api/lego/:setNumber', async (req, res) => {
 // API Route: Fetch prices from Amazon and Arukereso
 app.get('/api/prices/:setNumber', async (req, res) => {
   const { setNumber } = req.params;
-  try {
-    const exRateRes = await axios.get('https://api.exchangerate-api.com/v4/latest/EUR');
-    const hufRate = exRateRes.data.rates.HUF;
+  const customKey = req.headers['x-gemini-api-key'] as string | undefined;
 
-    const amazonUrl = `https://www.amazon.de/s?k=lego+${setNumber}`;
-    const arukeresoUrl = `https://www.arukereso.hu/CategorySearch.php?st=${setNumber}`;
+  try {
+    let amazonPriceEur = null;
+    let arukeresoPriceHuf = null;
+    let arukeresoStore = null;
+    let currentHufRate = 400;
+
+    try {
+       const exRateRes = await axios.get('https://api.exchangerate-api.com/v4/latest/EUR');
+       currentHufRate = exRateRes.data.rates.HUF;
+    } catch(e) {}
+
+    try {
+       const amazonRes = await axios.get(`https://www.amazon.de/s?k=lego+${setNumber}`, { headers: getCommonHeaders(), timeout: 8000 });
+       const $amz = cheerio.load(amazonRes.data);
+       const priceWhole = $amz('.a-price-whole').first().text().replace(/[^0-9]/g, '');
+       const priceFraction = $amz('.a-price-fraction').first().text().replace(/[^0-9]/g, '');
+       if (priceWhole) {
+           amazonPriceEur = parseFloat(`${priceWhole}.${priceFraction || '00'}`);
+       }
+    } catch(e: any) {
+       console.warn('Amazon scraping failed:', e?.message);
+    }
+
+    try {
+       const arukeresoRes = await axios.get(`https://www.arukereso.hu/CategorySearch.php?st=${setNumber}`, { headers: getCommonHeaders(), timeout: 8000 });
+       const $aru = cheerio.load(arukeresoRes.data);
+       let priceText = $aru('.price').first().text() || $aru('a.price').first().text() || $aru('.price-box .price').first().text() || $aru('div.price').first().text();
+       priceText = priceText.trim();
+       if (priceText) {
+           arukeresoPriceHuf = parseInt(priceText.replace(/[^0-9]/g, '')) || null;
+           arukeresoStore = "Árukereső (Scraped)";
+       }
+    } catch(e: any) {
+       console.warn('Arukereso scraping failed:', e?.message);
+    }
+
+    if (amazonPriceEur !== null && arukeresoPriceHuf !== null) {
+        const result: any = { exchangeRate: currentHufRate };
+        result.amazon = {
+            priceEur: amazonPriceEur,
+            priceHuf: Math.round(amazonPriceEur * currentHufRate),
+            url: `https://www.amazon.de/s?k=lego+${setNumber}`
+        };
+        result.arukereso = {
+            priceHuf: arukeresoPriceHuf,
+            priceEur: parseFloat((arukeresoPriceHuf / currentHufRate).toFixed(2)),
+            store: arukeresoStore,
+            url: `https://www.arukereso.hu/CategorySearch.php?st=${setNumber}`
+        };
+        return res.json(result);
+    }
+
+    console.warn('Scraping market prices incomplete, attempting Gemini Search fallback...');
 
     const prompt = `Find the current lowest price for Lego set ${setNumber} on Amazon.de (in EUR) and on Arukereso.hu (in HUF, including the store name for the lowest price). 
     Return ONLY a JSON object: 
@@ -176,121 +225,60 @@ app.get('/api/prices/:setNumber', async (req, res) => {
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
           console.log(`Trying model ${model} (attempt ${attempt}) for prices...`);
-          const result = await getGenAI().models.generateContent({
+          const result = await getGenAI(customKey).models.generateContent({
             model,
             contents: prompt,
             config: { tools: [{ googleSearch: {} }] }
           });
           text = result.text || '';
           break;
-        } catch (e) {
+        } catch (e: any) {
            console.warn(`Model ${model} (attempt ${attempt}) failed:`, e.message);
            lastError = e;
            if (e.message && e.message.includes('503')) {
               await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
-           } else if (e.message && e.message.includes('429')) {
+           } else if (e.message && (e.message.includes('429') || e.message.includes('Quota exceeded'))) {
               const retryMatch = e.message.match(/retry in ([\d\.]+)s/);
               const waitSecs = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : 90;
               throw { isRateLimit: true, retryAfter: waitSecs };
            } else {
-              break; // Don't retry for other errors like 404
+              break; 
            }
         }
       }
       if (text) break;
     }
     
-    if (!text) {
-      throw lastError;
-    }
+    if (!text) throw lastError;
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    
-    if (jsonMatch) {
-      const data = JSON.parse(jsonMatch[0]);
-      res.json({
-        amazon: {
-          priceEur: data.amazonPriceEur,
-          priceHuf: Math.round(data.amazonPriceEur * hufRate),
-          url: amazonUrl
-        },
-        arukereso: {
-          priceHuf: data.arukeresoPriceHuf,
-          priceEur: parseFloat((data.arukeresoPriceHuf / hufRate).toFixed(2)),
-          store: data.arukeresoStore,
-          url: arukeresoUrl
-        },
-        exchangeRate: hufRate
-      });
-    } else {
-      throw new Error('Failed to parse price data from Gemini');
-    }
+    if (!jsonMatch) throw new Error('Failed to parse price data from Gemini');
+
+    const data = JSON.parse(jsonMatch[0]);
+    const amazonEur = amazonPriceEur || data.amazonPriceEur;
+    const arukeresoHuf = arukeresoPriceHuf || data.arukeresoPriceHuf;
+    const aStore = arukeresoStore || data.arukeresoStore || "Árukereső (AI)";
+
+    res.json({
+      amazon: {
+        priceEur: amazonEur,
+        priceHuf: Math.round(amazonEur * currentHufRate),
+        url: `https://www.amazon.de/s?k=lego+${setNumber}`
+      },
+      arukereso: {
+        priceHuf: arukeresoHuf,
+        priceEur: parseFloat((arukeresoHuf / currentHufRate).toFixed(2)),
+        store: aStore,
+        url: `https://www.arukereso.hu/CategorySearch.php?st=${setNumber}`
+      },
+      exchangeRate: currentHufRate
+    });
   } catch (error: any) {
-    console.error('Error fetching market prices with Gemini, falling back to scraping:', error?.message);
-    try {
-      let amazonPriceEur = null;
-      let arukeresoPriceHuf = null;
-      let arukeresoStore = null;
-
-      let currentHufRate = 400;
-      try {
-         const exRateRes = await axios.get('https://api.exchangerate-api.com/v4/latest/EUR');
-         currentHufRate = exRateRes.data.rates.HUF;
-      } catch(e) {}
-
-      try {
-         const amazonRes = await axios.get(`https://www.amazon.de/s?k=lego+${setNumber}`, { headers: getCommonHeaders(), timeout: 8000 });
-         const $amz = cheerio.load(amazonRes.data);
-         const priceWhole = $amz('.a-price-whole').first().text().replace(/[^0-9]/g, '');
-         const priceFraction = $amz('.a-price-fraction').first().text().replace(/[^0-9]/g, '');
-         if (priceWhole) {
-             amazonPriceEur = parseFloat(`${priceWhole}.${priceFraction || '00'}`);
-         }
-      } catch(e: any) {
-         console.warn('Amazon scraping failed:', e?.message);
-      }
-
-      try {
-         const arukeresoRes = await axios.get(`https://www.arukereso.hu/CategorySearch.php?st=${setNumber}`, { headers: getCommonHeaders(), timeout: 8000 });
-         const $aru = cheerio.load(arukeresoRes.data);
-         let priceText = $aru('.price').first().text() || $aru('a.price').first().text() || $aru('.price-box .price').first().text() || $aru('div.price').first().text();
-         priceText = priceText.trim();
-         if (priceText) {
-             arukeresoPriceHuf = parseInt(priceText.replace(/[^0-9]/g, '')) || null;
-             arukeresoStore = "Árukereső (Scraped)";
-         }
-      } catch(e: any) {
-         console.warn('Arukereso scraping failed:', e?.message);
-      }
-
-      if (amazonPriceEur === null && arukeresoPriceHuf === null) {
-         throw new Error('Both scraping fallbacks failed');
-      }
-
-      const result: any = { exchangeRate: currentHufRate };
-      if (amazonPriceEur !== null) {
-          result.amazon = {
-              priceEur: amazonPriceEur,
-              priceHuf: Math.round(amazonPriceEur * currentHufRate),
-              url: `https://www.amazon.de/s?k=lego+${setNumber}`
-          };
-      }
-      if (arukeresoPriceHuf !== null) {
-          result.arukereso = {
-              priceHuf: arukeresoPriceHuf,
-              priceEur: parseFloat((arukeresoPriceHuf / currentHufRate).toFixed(2)),
-              store: arukeresoStore,
-              url: `https://www.arukereso.hu/CategorySearch.php?st=${setNumber}`
-          };
-      }
-      return res.json(result);
-    } catch (scrapingFallbackError: any) {
-      console.error('Scraping fallback also failed:', scrapingFallbackError?.message);
-      if (error?.isRateLimit) {
-          return res.status(429).json({ error: 'Rate limit exceeded.', retryAfter: error.retryAfter });
-      }
-      res.status(500).json({ error: 'Failed to fetch market prices. Make sure your GEMINI_API_KEY is valid.', details: error instanceof Error ? error.message : String(error) });
+    console.error('API Error:', error?.message);
+    if (error?.isRateLimit) {
+        return res.status(429).json({ error: 'Rate limit exceeded.', retryAfter: error.retryAfter });
     }
+    res.status(500).json({ error: 'Failed to fetch market prices. Make sure your GEMINI_API_KEY is valid.', details: error instanceof Error ? error.message : String(error) });
   }
 });
 
