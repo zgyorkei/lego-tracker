@@ -1,0 +1,69 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    },
+    "LegoSet": {
+      "title": "LegoSet",
+      "description": "A lego set tracked by a user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "setNumber": { "type": "string" },
+        "name": { "type": "string" },
+        "status": { "type": "string", "enum": ["planned", "ordered"] },
+        "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+        "legoPriceHuf": { "type": "number" },
+        "productImage": { "type": "string" },
+        "legoUrl": { "type": "string" },
+        "isTemporary": { "type": "boolean" },
+        "releaseDate": { "type": "string", "format": "date" },
+        "hasFetchedLegoInfo": { "type": "boolean" },
+        "lastLegoPriceRefreshTime": { "type": "number" },
+        "legoPriceError": { "type": "boolean" },
+        "marketPrices": { "type": "object" },
+        "lastPricesRefreshTime": { "type": "number" },
+        "orderedDate": { "type": "string", "format": "date-time" },
+        "orderedPriceHuf": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "setNumber", "status", "priority"]
+    },
+    "PriceHistory": {
+      "title": "PriceHistory",
+      "description": "Daily price tracking log for a set",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "amazonPriceEur": { "type": "number" },
+        "arukeresoPriceHuf": { "type": "number" },
+        "arukeresoStore": { "type": "string" },
+        "exchangeRate": { "type": "number" }
+      },
+      "required": ["date"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Individual user documents"
+    },
+    "sets/{setId}": {
+      "schema": "LegoSet",
+      "description": "Lego sets tracked by users"
+    },
+    "sets/{setId}/priceHistory/{priceId}": {
+      "schema": "PriceHistory",
+      "description": "Price history for a specific set"
+    }
+  }
+}
