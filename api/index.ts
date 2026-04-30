@@ -225,12 +225,72 @@ app.get('/api/prices/:setNumber', async (req, res) => {
     } else {
       throw new Error('Failed to parse price data from Gemini');
     }
-  } catch (error) {
-    console.error('Error fetching market prices:', error);
-    if (error?.isRateLimit) {
-        return res.status(429).json({ error: 'Rate limit exceeded.', retryAfter: error.retryAfter });
+  } catch (error: any) {
+    console.error('Error fetching market prices with Gemini, falling back to scraping:', error?.message);
+    try {
+      let amazonPriceEur = null;
+      let arukeresoPriceHuf = null;
+      let arukeresoStore = null;
+
+      let currentHufRate = 400;
+      try {
+         const exRateRes = await axios.get('https://api.exchangerate-api.com/v4/latest/EUR');
+         currentHufRate = exRateRes.data.rates.HUF;
+      } catch(e) {}
+
+      try {
+         const amazonRes = await axios.get(`https://www.amazon.de/s?k=lego+${setNumber}`, { headers: getCommonHeaders(), timeout: 8000 });
+         const $amz = cheerio.load(amazonRes.data);
+         const priceWhole = $amz('.a-price-whole').first().text().replace(/[^0-9]/g, '');
+         const priceFraction = $amz('.a-price-fraction').first().text().replace(/[^0-9]/g, '');
+         if (priceWhole) {
+             amazonPriceEur = parseFloat(`${priceWhole}.${priceFraction || '00'}`);
+         }
+      } catch(e: any) {
+         console.warn('Amazon scraping failed:', e?.message);
+      }
+
+      try {
+         const arukeresoRes = await axios.get(`https://www.arukereso.hu/CategorySearch.php?st=${setNumber}`, { headers: getCommonHeaders(), timeout: 8000 });
+         const $aru = cheerio.load(arukeresoRes.data);
+         let priceText = $aru('.price').first().text() || $aru('a.price').first().text() || $aru('.price-box .price').first().text() || $aru('div.price').first().text();
+         priceText = priceText.trim();
+         if (priceText) {
+             arukeresoPriceHuf = parseInt(priceText.replace(/[^0-9]/g, '')) || null;
+             arukeresoStore = "Árukereső (Scraped)";
+         }
+      } catch(e: any) {
+         console.warn('Arukereso scraping failed:', e?.message);
+      }
+
+      if (amazonPriceEur === null && arukeresoPriceHuf === null) {
+         throw new Error('Both scraping fallbacks failed');
+      }
+
+      const result: any = { exchangeRate: currentHufRate };
+      if (amazonPriceEur !== null) {
+          result.amazon = {
+              priceEur: amazonPriceEur,
+              priceHuf: Math.round(amazonPriceEur * currentHufRate),
+              url: `https://www.amazon.de/s?k=lego+${setNumber}`
+          };
+      }
+      if (arukeresoPriceHuf !== null) {
+          result.arukereso = {
+              priceHuf: arukeresoPriceHuf,
+              priceEur: parseFloat((arukeresoPriceHuf / currentHufRate).toFixed(2)),
+              store: arukeresoStore,
+              url: `https://www.arukereso.hu/CategorySearch.php?st=${setNumber}`
+          };
+      }
+      return res.json(result);
+    } catch (scrapingFallbackError: any) {
+      console.error('Scraping fallback also failed:', scrapingFallbackError?.message);
+      if (error?.isRateLimit) {
+          return res.status(429).json({ error: 'Rate limit exceeded.', retryAfter: error.retryAfter });
+      }
+      res.status(500).json({ error: 'Failed to fetch market prices. Make sure your GEMINI_API_KEY is valid.', details: error instanceof Error ? error.message : String(error) });
     }
-    res.status(500).json({ error: 'Failed to fetch market prices. Make sure your GEMINI_API_KEY is valid.', details: error instanceof Error ? error.message : String(error) });
   }
 });
 
