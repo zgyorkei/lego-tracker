@@ -22,6 +22,7 @@ export interface LegoSet {
   legoUrl: string | null;
   orderedDate?: string;
   orderedPriceHuf?: number;
+  quantity?: number;
   createdAt: string;
   updatedAt: string;
   priceHistory?: PriceHistory[];

@@ -37,6 +37,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
   
   const [showOrderDialog, setShowOrderDialog] = useState(false);
   const [orderPrice, setOrderPrice] = useState('');
+  const [orderQuantity, setOrderQuantity] = useState(1);
   const [orderCurrency, setOrderCurrency] = useState<'HUF' | 'EUR'>('HUF');
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
@@ -189,7 +190,8 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
       onUpdate(set.id, {
         status: 'ordered',
         orderedPriceHuf: Math.round(finalPriceHuf),
-        orderedDate: new Date(orderDate).toISOString()
+        orderedDate: new Date(orderDate).toISOString(),
+        quantity: orderQuantity
       });
       setShowOrderDialog(false);
     } catch (e) {
@@ -310,24 +312,24 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
               <div className="mb-auto">
                 {set.legoUrl && !set.isTemporary ? (
                   <a href={set.legoUrl} target="_blank" rel="noreferrer" className="group/link text-[10px] font-black text-blue-500 hover:underline leading-none flex items-center gap-1 uppercase tracking-wider">
-                    OFFICIAL PRICE <ExternalLink size={8} />
+                    OFFICIAL PRICE {set.quantity && set.quantity > 1 ? `(x${set.quantity})` : ''} <ExternalLink size={8} />
                   </a>
                 ) : (
                   <p className="text-[10px] uppercase font-black text-gray-400 tracking-wider leading-none">
-                    {set.isTemporary ? 'UNRELEASED / LEAKED' : 'OFFICIAL PRICE'}
+                    {set.isTemporary ? 'UNRELEASED / LEAKED' : 'OFFICIAL PRICE'} {set.quantity && set.quantity > 1 ? `(x${set.quantity})` : ''}
                   </p>
                 )}
               </div>
               <div className="mt-2">
                 {set.isTemporary ? (
                   <>
-                    <p className="text-sm font-black text-gray-500 line-through decoration-orange-400 tracking-tight">{set.legoPriceHuf?.toLocaleString() || '-'} HUF</p>
+                    <p className="text-sm font-black text-gray-500 line-through decoration-orange-400 tracking-tight">{((set.legoPriceHuf || 0) * (set.quantity || 1)).toLocaleString() || '-'} HUF</p>
                     {set.releaseDate && (
                        <p className="text-[9px] font-bold text-gray-600">Expected: {set.releaseDate}</p>
                     )}
                   </>
                 ) : (
-                  <p className="text-sm font-black text-lego-blue tracking-tight">{set.legoPriceHuf?.toLocaleString() || '-'} HUF</p>
+                  <p className="text-sm font-black text-lego-blue tracking-tight">{((set.legoPriceHuf || 0) * (set.quantity || 1)).toLocaleString() || '-'} HUF</p>
                 )}
               </div>
             </div>
@@ -337,10 +339,12 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
         {set.status === 'ordered' ? (
           <div className="space-y-1 bg-green-50 p-4 sm:col-span-2 flex flex-col justify-between">
             <div className="mb-auto">
-               <p className="text-[10px] uppercase font-black text-green-600 tracking-wider">ORDERED FOR</p>
+               <p className="text-[10px] uppercase font-black text-green-600 tracking-wider">
+                 ORDERED FOR {set.quantity && set.quantity > 1 ? `(x${set.quantity})` : ''}
+               </p>
             </div>
             <div className="mt-2 text-sm font-black text-green-700 tracking-tight flex items-end justify-between">
-              {set.orderedPriceHuf?.toLocaleString()} HUF
+              {((set.orderedPriceHuf || 0) * (set.quantity || 1)).toLocaleString()} HUF
               <span className="text-[10px] font-bold text-green-600 flex items-center gap-1">
                 <CheckCircle size={10} /> {set.orderedDate ? format(new Date(set.orderedDate), 'yyyy.MM.dd') : ''}
               </span>
@@ -491,14 +495,14 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
               
               <div className="mt-4 space-y-4">
                  <div>
-                   <label className="block text-xs font-bold text-gray-500 uppercase">Price</label>
+                   <label className="block text-xs font-bold text-gray-500 uppercase">Unit Price</label>
                    <div className="flex gap-2 mt-1">
                       <input 
                         type="number"
                         value={orderPrice}
                         onChange={(e) => setOrderPrice(e.target.value)}
                         className="flex-1 bg-gray-50 border border-gray-200 rounded px-3 py-2 outline-none focus:border-lego-blue font-bold text-gray-900"
-                        placeholder="Price..."
+                        placeholder="Price per unit..."
                       />
                       <select 
                         value={orderCurrency}
@@ -509,6 +513,17 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                         <option value="EUR">EUR</option>
                       </select>
                    </div>
+                 </div>
+
+                 <div>
+                   <label className="block text-xs font-bold text-gray-500 uppercase">Quantity</label>
+                   <input 
+                     type="number"
+                     min="1"
+                     value={orderQuantity}
+                     onChange={(e) => setOrderQuantity(parseInt(e.target.value) || 1)}
+                     className="mt-1 w-full bg-gray-50 border border-gray-200 rounded px-3 py-2 outline-none focus:border-lego-blue font-bold text-gray-900"
+                   />
                  </div>
 
                  <div>
