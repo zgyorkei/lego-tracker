@@ -115,9 +115,9 @@ export default function App() {
   const stats = useMemo(() => {
     const ordered = sets.filter(s => s.status === 'ordered');
     
-    const plannedTotal = sets.reduce((acc, s) => acc + (s.legoPriceHuf || 0), 0);
-    const orderedTotal = ordered.reduce((acc, s) => acc + (s.orderedPriceHuf || 0), 0);
-    const savings = ordered.reduce((acc, s) => acc + (s.legoPriceHuf - (s.orderedPriceHuf || 0)), 0);
+    const plannedTotal = sets.reduce((acc, s) => acc + ((s.legoPriceHuf || 0) * (s.quantity || 1)), 0);
+    const orderedTotal = ordered.reduce((acc, s) => acc + ((s.orderedPriceHuf || 0) * (s.quantity || 1)), 0);
+    const savings = ordered.reduce((acc, s) => acc + (((s.legoPriceHuf || 0) - (s.orderedPriceHuf || 0)) * (s.quantity || 1)), 0);
 
     return { plannedTotal, orderedTotal, savings };
   }, [sets]);
