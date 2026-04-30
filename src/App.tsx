@@ -32,6 +32,13 @@ export default function App() {
   const [batchProgress, setBatchProgress] = useState<{current: number, total: number} | null>(null);
   const [showApiKeySetting, setShowApiKeySetting] = useState(false);
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('legoTrackerApiKey') || '');
+  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(() => localStorage.getItem('legoAutoUpdate') !== 'false');
+
+  const handleToggleAutoUpdate = () => {
+    const newValue = !autoUpdateEnabled;
+    setAutoUpdateEnabled(newValue);
+    localStorage.setItem('legoAutoUpdate', String(newValue));
+  };
 
   const handleSaveApiKey = () => {
     localStorage.setItem('legoTrackerApiKey', apiKey);
@@ -180,7 +187,15 @@ export default function App() {
              <h1 className="text-2xl font-black uppercase tracking-tighter hidden sm:block">Lego Tracker</h1>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <button 
+              onClick={handleToggleAutoUpdate}
+              className={`px-3 py-1.5 ${autoUpdateEnabled ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-400 hover:bg-gray-500'} text-white rounded font-black text-[10px] uppercase flex items-center gap-2 transition-all`}
+              title="Toggle automatic daily 10:00 AM refresh"
+            >
+              <RefreshCcw size={14} style={autoUpdateEnabled ? { animation: 'spin 3s linear infinite' } : {}}/>
+              <span className="hidden sm:inline">Auto Update</span>
+            </button>
             <button 
               onClick={() => setShowApiKeySetting(true)}
               className="px-3 py-1.5 bg-black text-white rounded font-black text-[10px] uppercase flex items-center gap-2 hover:bg-gray-800 transition-colors"
@@ -302,6 +317,7 @@ export default function App() {
                   onDelete={deleteSet}
                   getPriceHistory={getPriceHistory}
                   onAddPriceHistory={addPriceHistory}
+                  autoUpdateEnabled={autoUpdateEnabled}
                 />
               ))}
             </AnimatePresence>

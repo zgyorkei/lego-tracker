@@ -11,9 +11,11 @@ interface SetCardProps {
   onDelete: (id: string) => void;
   getPriceHistory: (id: string) => Promise<PriceHistory[]>;
   onAddPriceHistory: (id: string, history: PriceHistory) => void;
+  autoUpdateEnabled?: boolean;
 }
 
-const shouldRefresh = (lastRefreshTime?: number) => {
+const shouldRefresh = (lastRefreshTime?: number, autoUpdateEnabled: boolean = true) => {
+  if (!autoUpdateEnabled) return false;
   if (!lastRefreshTime) return true;
   
   const now = new Date();
@@ -27,7 +29,7 @@ const shouldRefresh = (lastRefreshTime?: number) => {
   }
 };
 
-export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPriceHistory, onAddPriceHistory }) => {
+export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPriceHistory, onAddPriceHistory, autoUpdateEnabled = true }) => {
   const [history, setHistory] = useState<PriceHistory[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   
@@ -52,13 +54,13 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
   useEffect(() => {
     if (set.status === 'planned') {
       const needsInfo = !set.hasFetchedLegoInfo;
-      const needsLegoPrice = shouldRefresh(set.lastLegoPriceRefreshTime);
+      const needsLegoPrice = shouldRefresh(set.lastLegoPriceRefreshTime, autoUpdateEnabled);
       
       if (needsInfo || needsLegoPrice) {
         refreshLegoData(needsInfo, needsLegoPrice);
       }
       
-      if (shouldRefresh(set.lastPricesRefreshTime)) {
+      if (shouldRefresh(set.lastPricesRefreshTime, autoUpdateEnabled)) {
         refreshMarketPrices();
       }
     } else if (set.status === 'ordered') {
