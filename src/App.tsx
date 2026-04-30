@@ -11,7 +11,9 @@ import {
   Search,
   Wallet,
   PiggyBank,
-  TrendingDown
+  TrendingDown,
+  RefreshCcw,
+  Loader2
 } from 'lucide-react';
 import { useSets } from './hooks/useSets';
 import { signInWithGoogle, signOut } from './lib/firebase';
@@ -25,11 +27,77 @@ export default function App() {
   const [newSetNumber, setNewSetNumber] = useState('');
   const [newPriority, setNewPriority] = useState<Priority>('medium');
   const [searchingLego, setSearchingLego] = useState(false);
+  const [isBatchRefreshing, setIsBatchRefreshing] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{current: number, total: number} | null>(null);
 
   const filteredSets = useMemo(() => {
     if (filter === 'all') return sets;
     return sets.filter(s => s.status === filter);
   }, [sets, filter]);
+
+  const handleBatchRefresh = async () => {
+    if (isBatchRefreshing || filteredSets.length === 0) return;
+    setIsBatchRefreshing(true);
+    
+    setBatchProgress({ current: 0, total: filteredSets.length });
+    
+    for (let i = 0; i < filteredSets.length; i++) {
+        setBatchProgress({ current: i + 1, total: filteredSets.length });
+        const set = filteredSets[i];
+        
+        // Add a delay between requests to avoid hitting rate limits
+        if (i > 0) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+
+        try {
+            // refresh lego info
+            const legoRes = await fetch(`/api/lego/${set.setNumber}`);
+            if (legoRes.ok) {
+                const legoData = await legoRes.json();
+                if (legoData && legoData.priceHuf) {
+                    await updateSet(set.id, {
+                       name: legoData.name || set.name,
+                       legoPriceHuf: legoData.priceHuf,
+                       ...(legoData.imageUrl ? { productImage: legoData.imageUrl } : {}),
+                       legoUrl: legoData.legoUrl || set.legoUrl,
+                       legoPriceError: false,
+                       isTemporary: legoData.isTemporary,
+                       releaseDate: legoData.releaseDate,
+                       hasFetchedLegoInfo: true,
+                       lastLegoPriceRefreshTime: Date.now()
+                    });
+                }
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // refresh market info
+            const marketRes = await fetch(`/api/prices/${set.setNumber}`);
+            if (marketRes.ok) {
+                const marketPrices = await marketRes.json();
+                await updateSet(set.id, {
+                    marketPrices,
+                    lastPricesRefreshTime: Date.now()
+                });
+                
+                const today = new Date().toISOString().split('T')[0];
+                const newHistory: any = { date: today };
+                if (marketPrices.amazon?.priceHuf) newHistory.amazonHuf = marketPrices.amazon.priceHuf;
+                if (marketPrices.arukereso?.priceHuf) newHistory.arukeresoHuf = marketPrices.arukereso.priceHuf;
+                
+                if (newHistory.amazonHuf || newHistory.arukeresoHuf) {
+                    await addPriceHistory(set.id, newHistory);
+                }
+            }
+        } catch (e) {
+            console.error('Batch update failed for set', set.setNumber, e);
+        }
+    }
+    
+    setIsBatchRefreshing(false);
+    setBatchProgress(null);
+  };
 
   const stats = useMemo(() => {
     const ordered = sets.filter(s => s.status === 'ordered');
@@ -129,7 +197,7 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
           <div className="flex items-center gap-2 p-1 bg-white border-2 border-black rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
             <button 
               onClick={() => setFilter('all')}
@@ -150,6 +218,33 @@ export default function App() {
               Ordered
             </button>
           </div>
+          
+          {filter !== 'ordered' && filteredSets.length > 0 && (
+            <div className="flex items-center gap-4 w-full sm:w-auto">
+              {isBatchRefreshing && batchProgress ? (
+                <div className="flex-1 sm:w-48 flex items-center gap-2 bg-gray-100 border-2 border-black p-1.5 rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  <Loader2 size={16} className="animate-spin text-lego-blue" />
+                  <div className="flex-1 bg-gray-300 h-2 rounded-full overflow-hidden">
+                    <div 
+                      className="bg-lego-blue h-full transition-all duration-300"
+                      style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] font-black uppercase whitespace-nowrap">
+                    {batchProgress.current} / {batchProgress.total}
+                  </span>
+                </div>
+              ) : (
+                <button
+                  onClick={handleBatchRefresh}
+                  disabled={isBatchRefreshing}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white border-2 border-black px-4 py-1.5 rounded-lg font-black uppercase text-xs shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
+                >
+                  <RefreshCcw size={14} /> Update All
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Mobile Stats */}
