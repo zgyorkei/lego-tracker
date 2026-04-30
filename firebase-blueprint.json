@@ -33,6 +33,7 @@
         "lastPricesRefreshTime": { "type": "number" },
         "orderedDate": { "type": "string", "format": "date-time" },
         "orderedPriceHuf": { "type": "number" },
+        "quantity": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
