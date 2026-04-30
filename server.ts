@@ -1,5 +1,4 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
@@ -9,19 +8,15 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Lazily load genAI to avoid startup crashes if API key is missing
-let ai: GoogleGenAI | null = null;
-function getGenAI() {
-  if (!ai) {
-    let apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
-      apiKey = 'AIzaSyCVrcS1sFK8zg9oulDGUYTXad6HpYJ6iZc';
-    }
-    if (!apiKey) {
-      throw new Error("GEMINI_API_KEY is missing. Please set it in AI Studio.");
-    }
-    ai = new GoogleGenAI({ apiKey });
+function getGenAI(customKey?: string) {
+  let apiKey = customKey || process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+    apiKey = 'AIzaSyCVrcS1sFK8zg9oulDGUYTXad6HpYJ6iZc';
   }
-  return ai;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is missing. Please set it in AI Studio or provide a custom key.");
+  }
+  return new GoogleGenAI({ apiKey });
 }
 
 async function startServer() {
@@ -91,6 +86,7 @@ async function startServer() {
     } catch (scrapingError: any) {
       console.warn('Scraping Lego.com failed, attempting Gemini Search fallback...', scrapingError.message);
 
+      const customKey = req.headers['x-gemini-api-key'] as string | undefined;
       try {
         const imagePrompt = skipImage ? "" : "and the main product image URL. ";
         const imageJsonFormat = skipImage ? "" : ', "imageUrl": "string"';
@@ -104,7 +100,7 @@ async function startServer() {
           for (let attempt = 1; attempt <= 3; attempt++) {
             try {
               console.log(`Trying model ${model} (attempt ${attempt}) for lego info...`);
-              const result = await getGenAI().models.generateContent({
+              const result = await getGenAI(customKey).models.generateContent({
                 model,
                 contents: prompt,
                 config: { tools: [{ googleSearch: {} }] }
@@ -158,6 +154,7 @@ async function startServer() {
   // API Route: Fetch prices from Amazon and Arukereso
   app.get('/api/prices/:setNumber', async (req, res) => {
     const { setNumber } = req.params;
+    const customKey = req.headers['x-gemini-api-key'] as string | undefined;
     try {
       const exRateRes = await axios.get('https://api.exchangerate-api.com/v4/latest/EUR');
       const hufRate = exRateRes.data.rates.HUF;
@@ -182,7 +179,7 @@ async function startServer() {
         for (let attempt = 1; attempt <= 3; attempt++) {
           try {
             console.log(`Trying model ${model} (attempt ${attempt}) for prices...`);
-            const result = await getGenAI().models.generateContent({
+            const result = await getGenAI(customKey).models.generateContent({
               model,
               contents: prompt,
               config: { tools: [{ googleSearch: {} }] }
@@ -254,6 +251,7 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
