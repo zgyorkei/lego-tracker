@@ -70,8 +70,8 @@ export default function App() {
                     await updateSet(set.id, {
                        name: legoData.name || set.name,
                        legoPriceHuf: legoData.priceHuf,
-                       ...(legoData.imageUrl ? { productImage: legoData.imageUrl } : {}),
-                       legoUrl: legoData.legoUrl || set.legoUrl,
+                       ...(legoData.image ? { productImage: legoData.image } : {}),
+                       legoUrl: legoData.url || set.legoUrl,
                        legoPriceError: false,
                        isTemporary: legoData.isTemporary,
                        releaseDate: legoData.releaseDate,
