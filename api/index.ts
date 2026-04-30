@@ -83,8 +83,55 @@ app.get('/api/lego/:setNumber', async (req, res) => {
     }
 
     res.json({ name, priceHuf, image: productImage, url: legoUrlHuf });
-  } catch (scrapingError) {
-    console.warn('Scraping Lego.com failed, attempting Gemini Search fallback...', scrapingError.message);
+  } catch (scrapingError: any) {
+    console.warn('Scraping Lego.com failed, attempting Brickset fallback...', scrapingError.message);
+    
+    try {
+        console.log(`Fetching Brickset URL: https://brickset.com/sets/${setNumber}-1`);
+        const bsRes = await axios.get(`https://brickset.com/sets/${setNumber}-1`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml'
+            },
+            timeout: 10000
+        });
+        console.log(`Brickset response status: ${bsRes.status}, data length: ${bsRes.data?.length}`);
+        const $bs = cheerio.load(bsRes.data);
+        const name = $bs('h1').first().text().trim() || `Lego Set ${setNumber}`;
+        const productImage = $bs('meta[property="og:image"]').attr('content') || null;
+        console.log(`Parsed name from Brickset: ${name}, image: ${productImage}`);
+        
+        let priceEu = null;
+        $bs('dt').each((i, el) => {
+            if ($bs(el).text().includes('RRP')) {
+                const nextDd = $bs(el).next('dd').text();
+                console.log(`Found RRP field: ${nextDd}`);
+                const m = nextDd.match(/€(\d+[.,]?\d*)/);
+                if (m) {
+                    priceEu = parseFloat(m[1].replace(',', '.'));
+                    console.log(`Parsed EU price: ${priceEu}`);
+                }
+            }
+        });
+        
+        if (priceEu !== null) {
+            let currentHufRate = 400;
+            try {
+               const exRateRes = await axios.get('https://api.exchangerate-api.com/v4/latest/EUR');
+               currentHufRate = exRateRes.data.rates.HUF;
+            } catch(e) {}
+            
+            const priceHuf = Math.round(priceEu * currentHufRate);
+            console.log("Successfully scraped Brickset:", { name, priceEu, currentHufRate, priceHuf });
+            return res.json({ name, priceHuf, image: productImage, url: `https://brickset.com/sets/${setNumber}-1` });
+        } else {
+            console.warn('Brickset did not have EUR price');
+        }
+    } catch (bsError: any) {
+        console.warn('Brickset scraping failed:', bsError.message);
+    }
+
+    console.warn('Scraping fallbacks failed, attempting Gemini Search fallback...');
 
     try {
       const imagePrompt = skipImage ? "" : "and the main product image URL. ";
