@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trash2, TrendingUp, TrendingDown, Clock, CheckCircle, ExternalLink, AlertCircle, X, RefreshCw, Star, Check, ArrowRight } from 'lucide-react';
-import { LegoSet, PriceHistory } from '../types';
+import { LegoSet, PriceHistory, PriceSource } from '../types';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
 
@@ -12,6 +12,9 @@ interface SetCardProps {
   getPriceHistory: (id: string) => Promise<PriceHistory[]>;
   onAddPriceHistory: (id: string, history: PriceHistory) => void;
   autoUpdateEnabled?: boolean;
+  priceSources?: PriceSource[];
+  displayCurrency: string;
+  exchangeRates: Record<string, number> | null;
 }
 
 const shouldRefresh = (lastRefreshTime?: number, autoUpdateEnabled: boolean = true) => {
@@ -29,7 +32,7 @@ const shouldRefresh = (lastRefreshTime?: number, autoUpdateEnabled: boolean = tr
   }
 };
 
-export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPriceHistory, onAddPriceHistory, autoUpdateEnabled = true }) => {
+export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPriceHistory, onAddPriceHistory, autoUpdateEnabled = true, priceSources = [], displayCurrency, exchangeRates }) => {
   const [history, setHistory] = useState<PriceHistory[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   
@@ -40,13 +43,35 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
   const [showOrderDialog, setShowOrderDialog] = useState(false);
   const [orderPrice, setOrderPrice] = useState('');
   const [orderQuantity, setOrderQuantity] = useState(1);
-  const [orderCurrency, setOrderCurrency] = useState<'HUF' | 'EUR'>('HUF');
+  const [orderCurrency, setOrderCurrency] = useState<string>('HUF');
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
   const [isFlipped, setIsFlipped] = useState(false);
   const [currentWantedIndex, setCurrentWantedIndex] = useState(0);
+
+  const formatPrice = (priceHuf: number) => {
+    if (displayCurrency === 'HUF' || !exchangeRates) {
+      return `${priceHuf.toLocaleString()} HUF`;
+    }
+    const priceEur = priceHuf / exchangeRates.HUF;
+    const targetRate = exchangeRates[displayCurrency] || 1;
+    const finalPrice = priceEur * targetRate;
+    
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: displayCurrency,
+      maximumFractionDigits: displayCurrency === 'HUF' ? 0 : 2
+    }).format(finalPrice);
+  };
+
+  const getPriceValue = (priceHuf: number) => {
+    if (displayCurrency === 'HUF' || !exchangeRates) return priceHuf;
+    const priceEur = priceHuf / exchangeRates.HUF;
+    const targetRate = exchangeRates[displayCurrency] || 1;
+    return priceEur * targetRate;
+  };
 
   const wantedFigures = set.minifigures?.filter(f => set.minifiguresStatus?.[f.id] === 'wanted' && f.image) || [];
 
@@ -156,8 +181,13 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
     setLoadingMarketPrices(true);
     try {
       const apiKey = localStorage.getItem('legoTrackerApiKey') || '';
-      const headers: Record<string, string> = apiKey ? { 'x-gemini-api-key': apiKey } : {};
-      const res = await fetch(`/api/prices/${set.setNumber}`, { headers });
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (apiKey) headers['x-gemini-api-key'] = apiKey;
+      const res = await fetch(`/api/prices/${set.setNumber}`, { 
+         method: 'POST', 
+         headers, 
+         body: JSON.stringify({ sources: priceSources }) 
+      });
       if (res.status === 429) {
          return;
       }
@@ -170,19 +200,22 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
          lastPricesRefreshTime: Date.now()
       });
 
-      if (set.status === 'planned' && data.amazon && data.arukereso) {
+      if (set.status === 'planned') {
         const today = new Date().toISOString().split('T')[0];
-        onAddPriceHistory(set.id, {
-            date: today,
-            amazonPriceEur: data.amazon.priceEur,
-            arukeresoPriceHuf: data.arukereso.priceHuf,
-            arukeresoStore: data.arukereso.store,
-            exchangeRate: data.exchangeRate
+        const historyEntry: any = {
+           date: today,
+           exchangeRate: data.exchangeRate
+        };
+        priceSources.forEach(s => {
+           if (data[s.id]) {
+               historyEntry[`${s.id}Price`] = data[s.id].price;
+           }
         });
+        onAddPriceHistory(set.id, historyEntry);
       }
     } catch (e) {
       onUpdate(set.id, {
-         marketPrices: { ...(set.marketPrices || {}), error: true },
+         marketPrices: { ...(set.marketPrices || {}), error: true } as any,
          lastPricesRefreshTime: Date.now()
       });
     } finally {
@@ -198,12 +231,12 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
     return ((price - set.legoPriceHuf) / set.legoPriceHuf) * 100;
   };
 
-  const openOrderDialog = (initialPriceHuf?: number, initialCurrency: 'HUF' | 'EUR' = 'HUF', initialPriceEur?: number) => {
-    if (initialCurrency === 'EUR' && initialPriceEur) {
-      setOrderPrice(initialPriceEur.toString());
-      setOrderCurrency('EUR');
+  const openOrderDialog = (initialPriceHuf?: number, initialCurrency: string = 'HUF', initialPrice?: number) => {
+    if (initialCurrency !== 'HUF' && initialPrice) {
+      setOrderPrice(initialPrice.toString());
+      setOrderCurrency(initialCurrency);
     } else {
-      setOrderPrice(initialPriceHuf ? initialPriceHuf.toString() : set.legoPriceHuf.toString());
+      setOrderPrice(initialPriceHuf ? initialPriceHuf.toString() : (set.legoPriceHuf || 0).toString());
       setOrderCurrency('HUF');
     }
     setOrderDate(new Date().toISOString().split('T')[0]);
@@ -215,11 +248,12 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
     setIsSubmittingOrder(true);
     try {
       let finalPriceHuf = parseFloat(orderPrice);
-      if (orderCurrency === 'EUR') {
+      if (orderCurrency !== 'HUF') {
          const res = await fetch(`/api/exchange-rate/${orderDate}`);
          const data = await res.json();
-         if (data.hufRate) {
-           finalPriceHuf = finalPriceHuf * data.hufRate;
+         if (data.rates && data.rates.HUF) {
+             const eurValue = orderCurrency === 'EUR' ? finalPriceHuf : finalPriceHuf / (data.rates[orderCurrency] || 1);
+             finalPriceHuf = eurValue * data.rates.HUF;
          }
       }
       onUpdate(set.id, {
@@ -394,13 +428,13 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
               <div className="mt-2">
                 {set.isTemporary ? (
                   <>
-                    <p className="text-sm font-black text-gray-500 line-through decoration-orange-400 tracking-tight">{((set.legoPriceHuf || 0) * (set.quantity || 1)).toLocaleString() || '-'} HUF</p>
+                    <p className="text-sm font-black text-gray-500 line-through decoration-orange-400 tracking-tight">{formatPrice((set.legoPriceHuf || 0) * (set.quantity || 1))}</p>
                     {set.releaseDate && (
                        <p className="text-[9px] font-bold text-gray-600">Expected: {set.releaseDate}</p>
                     )}
                   </>
                 ) : (
-                  <p className="text-sm font-black text-lego-blue tracking-tight">{((set.legoPriceHuf || 0) * (set.quantity || 1)).toLocaleString() || '-'} HUF</p>
+                  <p className="text-sm font-black text-lego-blue tracking-tight">{formatPrice((set.legoPriceHuf || 0) * (set.quantity || 1))}</p>
                 )}
               </div>
             </div>
@@ -415,7 +449,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                </p>
             </div>
             <div className="mt-2 text-sm font-black text-green-700 tracking-tight flex items-end justify-between">
-              {((set.orderedPriceHuf || 0) * (set.quantity || 1)).toLocaleString()} HUF
+              {formatPrice((set.orderedPriceHuf || 0) * (set.quantity || 1))}
               <span className="text-[10px] font-bold text-green-600 flex items-center gap-1">
                 <CheckCircle size={10} /> {set.orderedDate ? format(new Date(set.orderedDate), 'yyyy.MM.dd') : ''}
               </span>
@@ -448,58 +482,41 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                   </div>
                </div>
              ) : (set.marketPrices && !set.marketPrices.error) ? (
-               <div className="grid grid-cols-1 sm:grid-cols-2 h-full divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
-                  {set.marketPrices.amazon ? (
-                    <div 
-                      onClick={() => openOrderDialog(set.marketPrices!.amazon!.priceHuf, 'EUR', set.marketPrices!.amazon!.priceEur)}
-                      className="text-left cursor-pointer hover:bg-gray-50 p-4 transition-colors relative flex flex-col justify-between"
-                    >
-                       <div className="mb-auto">
-                         {set.marketPrices.amazon.url ? (
-                            <a href={set.marketPrices.amazon.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="group/link text-[10px] font-black text-blue-500 hover:underline leading-none flex items-center gap-1 uppercase tracking-wider">
-                              AMAZON.DE <ExternalLink size={8} />
-                            </a>
-                         ) : (
-                            <p className="text-[10px] font-black text-gray-400 leading-none uppercase tracking-wider">AMAZON.DE</p>
-                         )}
-                       </div>
-                       <div className="flex justify-between items-end mt-2">
-                        <div>
-                           <p className="text-sm font-black text-gray-700 tracking-tight">{set.marketPrices.amazon.priceHuf?.toLocaleString() || '-'} HUF</p>
-                        </div>
-                        <div className={`text-[10px] font-bold flex items-center gap-0.5 ${(set.marketPrices.amazon.priceHuf && calculateDiff(set.marketPrices.amazon.priceHuf) <= 0) ? 'text-green-500' : 'text-red-500'}`}>
-                           {set.marketPrices.amazon.priceHuf ? calculateDiff(set.marketPrices.amazon.priceHuf).toFixed(1) : 0}% 
-                           {(set.marketPrices.amazon.priceHuf && calculateDiff(set.marketPrices.amazon.priceHuf) <= 0) ? <TrendingDown size={10} /> : <TrendingUp size={10} />}
-                        </div>
-                      </div>
-                    </div>
-                  ) : <div className="p-4 flex flex-col justify-between h-full"><p className="text-[10px] font-black text-gray-400 mt-auto mb-auto">N/A</p></div>}
-
-                  {set.marketPrices.arukereso ? (
-                    <div 
-                      onClick={() => openOrderDialog(set.marketPrices!.arukereso!.priceHuf)}
-                      className="text-left cursor-pointer hover:bg-gray-50 p-4 transition-colors relative flex flex-col justify-between"
-                    >
-                       <div className="mb-auto">
-                         {set.marketPrices.arukereso.url ? (
-                            <a href={set.marketPrices.arukereso.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="group/link text-[10px] font-black text-blue-500 hover:underline leading-none flex items-center gap-1 uppercase tracking-wider">
-                              ARUKERESO <ExternalLink size={8} />
-                            </a>
-                         ) : (
-                            <p className="text-[10px] font-black text-gray-400 leading-none uppercase tracking-wider">ARUKERESO</p>
-                         )}
-                       </div>
-                       <div className="flex justify-between items-end mt-2">
-                        <div>
-                           <p className="text-sm font-black text-gray-700 tracking-tight">{set.marketPrices.arukereso.priceHuf?.toLocaleString() || '-'} HUF</p>
-                        </div>
-                        <div className={`text-[10px] font-bold flex items-center gap-0.5 ${(set.marketPrices.arukereso.priceHuf && calculateDiff(set.marketPrices.arukereso.priceHuf) <= 0) ? 'text-green-500' : 'text-red-500'}`}>
-                           {set.marketPrices.arukereso.priceHuf ? calculateDiff(set.marketPrices.arukereso.priceHuf).toFixed(1) : 0}% 
-                           {(set.marketPrices.arukereso.priceHuf && calculateDiff(set.marketPrices.arukereso.priceHuf) <= 0) ? <TrendingDown size={10} /> : <TrendingUp size={10} />}
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 h-full divide-y sm:divide-y-0 sm:divide-x divide-gray-100 overflow-x-auto">
+                  {priceSources.map((source) => {
+                     const priceData = set.marketPrices![source.id] as any;
+                     if (!priceData) return <div key={source.id} className="p-4 flex flex-col justify-between h-full"><p className="text-[10px] font-black text-gray-400 mt-auto mb-auto">{source.name.toUpperCase()} (N/A)</p></div>;
+                     
+                     return (
+                      <div 
+                        key={source.id}
+                        onClick={() => openOrderDialog(priceData.priceHuf, source.currency as any, priceData.price)}
+                        className="text-left cursor-pointer hover:bg-gray-50 p-4 transition-colors relative flex flex-col justify-between min-w-[120px]"
+                      >
+                         <div className="mb-auto">
+                           {priceData.url ? (
+                              <a href={priceData.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="group/link text-[10px] font-black text-blue-500 hover:underline leading-none flex items-center gap-1 uppercase tracking-wider">
+                                {source.name} <ExternalLink size={8} />
+                              </a>
+                           ) : (
+                              <p className="text-[10px] font-black text-gray-400 leading-none uppercase tracking-wider">{source.name}</p>
+                           )}
+                           {priceData.store && priceData.store.toLowerCase() !== source.name.toLowerCase() && (
+                               <p className="text-[9px] font-bold text-gray-500 truncate mt-1">{priceData.store}</p>
+                           )}
+                         </div>
+                         <div className="flex justify-between items-end mt-2">
+                          <div>
+                             <p className="text-sm font-black text-gray-700 tracking-tight">{priceData.priceHuf ? formatPrice(priceData.priceHuf) : '-'}</p>
+                          </div>
+                          <div className={`text-[10px] font-bold flex items-center gap-0.5 ${(priceData.priceHuf && calculateDiff(priceData.priceHuf) <= 0) ? 'text-green-500' : 'text-red-500'}`}>
+                             {priceData.priceHuf ? calculateDiff(priceData.priceHuf).toFixed(1) : 0}% 
+                             {(priceData.priceHuf && calculateDiff(priceData.priceHuf) <= 0) ? <TrendingDown size={10} /> : <TrendingUp size={10} />}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ) : <div className="p-4 flex flex-col justify-between h-full"><p className="text-[10px] font-black text-gray-400 mt-auto mb-auto">N/A</p></div>}
+                     );
+                  })}
                </div>
              ) : (
                <div className="h-full flex items-center justify-center">
@@ -582,15 +599,60 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
             <div className="p-4 h-48 w-full">
               {history.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={history}>
+                   <LineChart data={history.map(h => {
+                       const chartData: any = { date: h.date };
+                       // We only store the historical HUF rate in exchangeRate.
+                       // For everything else, we just use current exchangeRates for chart projection
+                       const historicalHufRate = h.exchangeRate || (exchangeRates ? exchangeRates.HUF : 400);
+                       const dateRates: Record<string, number> = { 
+                          HUF: historicalHufRate, 
+                          EUR: 1, 
+                          ...(exchangeRates || {})
+                       };
+                       // Override HUF with historical rate
+                       dateRates.HUF = historicalHufRate;
+                       
+                       const convertToDisplay = (price: number, sourceCurrency: string) => {
+                           let priceInEur = price;
+                           const sourceRate = dateRates[sourceCurrency] || 1;
+                           priceInEur = price / sourceRate;
+                           
+                           const targetRate = dateRates[displayCurrency] || 1;
+                           return priceInEur * targetRate;
+                       };
+
+                       priceSources.forEach(s => {
+                          if (h[`${s.id}Price`]) {
+                             chartData[`${s.id}Price`] = Math.round(convertToDisplay(h[`${s.id}Price`], s.currency));
+                          }
+                       });
+
+                       if (h.amazonPriceEur) chartData.amazonPriceEur = Math.round(convertToDisplay(h.amazonPriceEur, 'EUR'));
+                       if (h.arukeresoPriceHuf) chartData.arukeresoPriceHuf = Math.round(convertToDisplay(h.arukeresoPriceHuf, 'HUF'));
+
+                       return chartData;
+                   })}>
                     <XAxis dataKey="date" hide />
-                    <YAxis hide />
+                    <YAxis hide domain={['auto', 'auto']} />
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                       labelStyle={{ fontWeight: 'bold', fontSize: '10px' }}
+                      formatter={(value: number) => {
+                         let symbol = displayCurrency;
+                         let prefix = true; // wait, Intl.NumberFormat does symbol placement automatically, but recharts formatter is custom.
+                         return [new Intl.NumberFormat('en-US', {
+                            style: 'currency',
+                            currency: displayCurrency,
+                            maximumFractionDigits: displayCurrency === 'HUF' ? 0 : 2
+                         }).format(value), ''];
+                      }}
                     />
-                    <Line type="monotone" dataKey="amazonPriceEur" stroke="#2563eb" strokeWidth={3} dot={false} name="Amazon (€)" />
-                    <Line type="monotone" dataKey="arukeresoPriceHuf" stroke="#10b981" strokeWidth={3} dot={false} name="Arukereso (HUF)" />
+                    {priceSources.map(s => (
+                       <Line key={s.id} type="monotone" dataKey={`${s.id}Price`} stroke={s.color} strokeWidth={3} dot={false} name={`${s.name}`} />
+                    ))}
+                    {/* Fallbacks for existing historical data before migration */}
+                    {!priceSources.find(s => s.id === 'amazon') && <Line type="monotone" dataKey="amazonPriceEur" stroke="#2563eb" strokeWidth={3} dot={false} name="Amazon (Legacy)" />}
+                    {!priceSources.find(s => s.id === 'arukereso') && <Line type="monotone" dataKey="arukeresoPriceHuf" stroke="#10b981" strokeWidth={3} dot={false} name="Arukereso (Legacy)" /> }
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
@@ -638,11 +700,22 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                       />
                       <select 
                         value={orderCurrency}
-                        onChange={(e) => setOrderCurrency(e.target.value as 'HUF' | 'EUR')}
+                        onChange={(e) => setOrderCurrency(e.target.value)}
                         className="bg-gray-50 border border-gray-200 rounded px-3 py-2 outline-none focus:border-lego-blue font-bold text-gray-900"
                       >
                         <option value="HUF">HUF</option>
                         <option value="EUR">EUR</option>
+                        <option value="USD">USD</option>
+                        <option value="GBP">GBP</option>
+                        <option value="CHF">CHF</option>
+                        <option value="PLN">PLN</option>
+                        <option value="CZK">CZK</option>
+                        <option value="DKK">DKK</option>
+                        <option value="SEK">SEK</option>
+                        <option value="NOK">NOK</option>
+                        <option value="RON">RON</option>
+                        <option value="BGN">BGN</option>
+                        <option value="ISK">ISK</option>
                       </select>
                    </div>
                  </div>

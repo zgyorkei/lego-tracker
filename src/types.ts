@@ -1,13 +1,24 @@
 export type Priority = 'low' | 'medium' | 'high';
 export type Status = 'planned' | 'ordered';
 
+export interface PriceSource {
+  id: string; // e.g., amazon
+  name: string; // e.g., Amazon EU
+  urlTemplate: string; // e.g., https://amazon.de/s?k={setNumber}
+  currency: 'HUF' | 'EUR' | 'USD';
+  color: string; // hex color for charts
+}
+
+export const DEFAULT_PRICE_SOURCES: PriceSource[] = [
+  { id: 'amazon', name: 'Amazon EU', urlTemplate: 'https://www.amazon.de/s?k=lego+{setNumber}', currency: 'EUR', color: '#2563eb' },
+  { id: 'arukereso', name: 'Arukereso', urlTemplate: 'https://www.arukereso.hu/CategorySearch.php?st={setNumber}', currency: 'HUF', color: '#10b981' }
+];
+
 export interface PriceHistory {
   id?: string;
   date: string;
-  amazonPriceEur: number;
-  arukeresoPriceHuf: number;
-  arukeresoStore: string;
   exchangeRate: number;
+  [key: string]: any; // generic placeholder for source rates, e.g. amazonPriceEur, amazonPriceHuf, arukeresoPriceHuf
 }
 
 export interface LegoSet {
@@ -33,11 +44,6 @@ export interface LegoSet {
   hasFetchedLegoInfo?: boolean;
   minifigures?: { id: string; name: string; image: string | null }[];
   minifiguresStatus?: Record<string, 'wanted' | 'got' | 'none'>;
-  marketPrices?: {
-    amazon?: { priceEur: number; priceHuf: number; url?: string };
-    arukereso?: { store: string; priceHuf: number; url?: string };
-    exchangeRate?: number;
-    error?: boolean;
-  };
+  marketPrices?: Record<string, { price: number; priceHuf: number; priceEur: number; store?: string; url?: string }>;
   legoPriceError?: boolean;
 }
