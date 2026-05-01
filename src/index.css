@@ -1,10 +1,59 @@
 @import "tailwindcss";
 
 @theme {
-  --color-lego-yellow: #FFD500;
-  --color-lego-red: #E3000B;
-  --color-lego-blue: #006CB7;
+  --color-lego-yellow: var(--theme-yellow);
+  --color-lego-red: var(--theme-red);
+  --color-lego-blue: var(--theme-blue);
   --color-lego-black: #212121;
+}
+
+:root {
+  /* Default: Classic Space / City */
+  --theme-yellow: #FFD500;
+  --theme-red: #E3000B;
+  --theme-blue: #006CB7;
+}
+
+html[data-theme="star-wars"] {
+  --theme-yellow: #E0E0E0; /* Light Grey */
+  --theme-red: #E3000B; /* Sith Red */
+  --theme-blue: #0A0A0A; /* Space Black */
+}
+
+html[data-theme="ninjago"] {
+  --theme-yellow: #FACC15; /* Gold */
+  --theme-red: #DC2626; /* Kai Red */
+  --theme-blue: #16A34A; /* Lloyd Green */
+}
+
+html[data-theme="hidden-side"] {
+  --theme-yellow: #A3E635; /* Neon Green */
+  --theme-red: #E81CFF; /* Neon Magenta */
+  --theme-blue: #7000FF; /* Ghost Purple */
+}
+
+html[data-theme="bionicle"] {
+  --theme-yellow: #B45309; /* Gold/Bronze */
+  --theme-red: #991B1B; /* Tahu Dark Red */
+  --theme-blue: #1E3A8A; /* Gali Dark Blue */
+}
+
+html[data-theme="technic"] {
+  --theme-yellow: #F97316; /* Orange */
+  --theme-red: #EF4444; /* Red */
+  --theme-blue: #52525B; /* Zinc Grey */
+}
+
+html[data-theme="friends"] {
+  --theme-yellow: #F472B6; /* Pink */
+  --theme-red: #C026D3; /* Purple */
+  --theme-blue: #2DD4BF; /* Teal */
+}
+
+html[data-theme="castle"] {
+  --theme-yellow: #FBBF24; /* Gold */
+  --theme-red: #991B1B; /* Dark Red */
+  --theme-blue: #1E3A8A; /* Dark Blue */
 }
 
 body {

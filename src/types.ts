@@ -46,6 +46,10 @@ export interface LegoSet {
   hasFetchedLegoInfo?: boolean;
   minifigures?: { id: string; name: string; image: string | null }[];
   minifiguresStatus?: Record<string, 'wanted' | 'got' | 'none'>;
-  marketPrices?: Record<string, { price: number; priceHuf: number; priceEur: number; store?: string; url?: string }>;
+  marketPrices?: {
+    exchangeRate?: number;
+    error?: boolean;
+    [source: string]: any;
+  };
   legoPriceError?: boolean;
 }
