@@ -288,7 +288,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
               {set.minifigures && set.minifigures.length > 0 && (
                 <button
                   onClick={() => setIsFlipped(true)}
-                  className="absolute bottom-2 left-2 right-2 bg-lego-blue hover:bg-blue-600 text-white text-[10px] font-black uppercase tracking-wider py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute bottom-2 left-2 right-2 z-20 bg-lego-blue hover:bg-blue-600 text-white text-[10px] font-black uppercase tracking-wider py-1.5 rounded opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                 >
                   View Checklist
                 </button>
