@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trash2, TrendingUp, TrendingDown, Clock, CheckCircle, ExternalLink, AlertCircle, X, RefreshCw } from 'lucide-react';
+import { Trash2, TrendingUp, TrendingDown, Clock, CheckCircle, ExternalLink, AlertCircle, X, RefreshCw, Star, Check, ArrowRight } from 'lucide-react';
 import { LegoSet, PriceHistory } from '../types';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
@@ -44,6 +44,26 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  
+  const [isFlipped, setIsFlipped] = useState(false);
+  const [currentWantedIndex, setCurrentWantedIndex] = useState(0);
+
+  const wantedFigures = set.minifigures?.filter(f => set.minifiguresStatus?.[f.id] === 'wanted' && f.image) || [];
+
+  useEffect(() => {
+    if (wantedFigures.length > 1 && !isFlipped) {
+      const interval = setInterval(() => {
+        setCurrentWantedIndex(prev => prev + 1);
+      }, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [wantedFigures.length, isFlipped]);
+
+  const toggleMinifigureStatus = (figureId: string, currentStatus?: 'wanted' | 'got' | 'none') => {
+    const nextStatus = currentStatus === 'got' ? 'none' : (currentStatus === 'wanted' ? 'got' : 'wanted');
+    const newStatuses = { ...(set.minifiguresStatus || {}), [figureId]: nextStatus };
+    onUpdate(set.id, { minifiguresStatus: newStatuses });
+  };
 
   useEffect(() => {
     if (showHistory) {
@@ -91,6 +111,19 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
          updates.name = data.name || set.name;
          updates.productImage = data.image || set.productImage;
          updates.hasFetchedLegoInfo = true;
+         
+         if ((updates.name || '').toLowerCase().includes('minifigure')) {
+             try {
+                 const mfRes = await fetch(`/api/minifigures/${set.setNumber}`);
+                 if (mfRes.ok) {
+                     const mfData = await mfRes.json();
+                     if (mfData.figures && mfData.figures.length > 0) {
+                         updates.minifigures = mfData.figures;
+                         updates.minifiguresStatus = set.minifiguresStatus || {};
+                     }
+                 }
+             } catch(e) {}
+         }
       }
       
       if (updatePrice) {
@@ -178,7 +211,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
   };
 
   const submitOrder = async () => {
-    if (!orderPrice || isNaN(parseFloat(orderPrice))) return;
+    if (orderPrice === '' || isNaN(parseFloat(orderPrice))) return;
     setIsSubmittingOrder(true);
     try {
       let finalPriceHuf = parseFloat(orderPrice);
@@ -214,16 +247,52 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
         set.status === 'ordered' ? 'border-green-500' : 'border-lego-yellow'
       }`}
     >
-      <div className="flex flex-col md:flex-row border-b border-gray-100">
-        <div className="w-full md:w-48 h-48 bg-white flex items-center justify-center relative overflow-hidden shrink-0 md:border-r border-gray-100">
-          {set.productImage ? (
-            <img src={set.productImage} alt={set.name} className="object-contain w-full h-full p-2" />
-          ) : (
-            <div className="text-gray-400 flex flex-col items-center">
-              <AlertCircle size={32} />
-              <span className="text-xs uppercase font-bold mt-1">No Image</span>
-            </div>
-          )}
+      <AnimatePresence mode="wait">
+        {!isFlipped ? (
+          <motion.div 
+            key="front"
+            initial={{ opacity: 0, rotateY: -90 }}
+            animate={{ opacity: 1, rotateY: 0 }}
+            exit={{ opacity: 0, rotateY: 90 }}
+            transition={{ duration: 0.3 }}
+            className="flex flex-col"
+          >
+            <div className="flex flex-col md:flex-row border-b border-gray-100">
+              <div className="w-full md:w-48 h-48 bg-white flex items-center justify-center relative overflow-hidden shrink-0 md:border-r border-gray-100 group">
+              {wantedFigures.length > 0 ? (
+                <div className="w-full h-full relative overflow-hidden bg-white">
+                  <AnimatePresence mode="wait">
+                    <motion.img 
+                      key={wantedFigures[currentWantedIndex % wantedFigures.length].id}
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      transition={{ duration: 0.3 }}
+                      src={wantedFigures[currentWantedIndex % wantedFigures.length].image!} 
+                      alt={wantedFigures[currentWantedIndex % wantedFigures.length].name} 
+                      className="object-contain w-full h-full p-2 absolute inset-0" 
+                    />
+                  </AnimatePresence>
+                  <div className="absolute top-2 right-2 bg-lego-blue text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-full shadow z-10">
+                    Wanted {((currentWantedIndex % wantedFigures.length) + 1)}/{wantedFigures.length}
+                  </div>
+                </div>
+              ) : set.productImage ? (
+                <img src={set.productImage} alt={set.name} className="object-contain w-full h-full p-2" />
+              ) : (
+                <div className="text-gray-400 flex flex-col items-center">
+                  <AlertCircle size={32} />
+                  <span className="text-xs uppercase font-bold mt-1">No Image</span>
+                </div>
+              )}
+              {set.minifigures && set.minifigures.length > 0 && (
+                <button
+                  onClick={() => setIsFlipped(true)}
+                  className="absolute bottom-2 left-2 right-2 bg-lego-blue hover:bg-blue-600 text-white text-[10px] font-black uppercase tracking-wider py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  View Checklist
+                </button>
+              )}
           <span className={`absolute top-2 left-2 px-2 py-1 rounded text-[10px] font-black uppercase ${
             set.priority === 'high' ? 'bg-red-500 text-white' : 
             set.priority === 'medium' ? 'bg-orange-400 text-white' : 'bg-gray-400 text-white'
@@ -440,6 +509,67 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
           </div>
         )}
       </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="back"
+            initial={{ opacity: 0, rotateY: 90 }}
+            animate={{ opacity: 1, rotateY: 0 }}
+            exit={{ opacity: 0, rotateY: -90 }}
+            transition={{ duration: 0.3 }}
+            className="flex flex-col border-b border-gray-100 bg-gray-50/50"
+          >
+            <div className="bg-white flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+                <h3 className="font-black text-gray-900 uppercase text-xs">Series Checklist</h3>
+                <button onClick={() => setIsFlipped(false)} className="text-[10px] font-black uppercase text-gray-500 hover:text-gray-900 flex items-center gap-1 bg-gray-100 hover:bg-gray-200 py-1.5 px-3 rounded transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px]">
+                   Back to Info <ArrowRight size={12} />
+                </button>
+            </div>
+            <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 max-h-[600px] overflow-y-auto w-full">
+                {set.minifigures?.map((fig) => {
+                    const status = set.minifiguresStatus?.[fig.id] || 'none';
+                    return (
+                        <div key={fig.id} className="bg-white border-2 border-black rounded shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex flex-col group relative overflow-hidden transition-all hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                            <div className="h-32 bg-gray-50 p-2 relative flex items-center justify-center border-b-2 border-black">
+                                {fig.image ? <img src={fig.image} alt={fig.name} className="w-full h-full object-contain" /> : <AlertCircle className="text-gray-300" />}
+                                {status === 'got' && (
+                                    <div className="absolute inset-0 bg-green-500/20 backdrop-blur-[1px] flex items-center justify-center">
+                                       <CheckCircle className="text-green-600 drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] w-12 h-12" />
+                                    </div>
+                                )}
+                                {status === 'wanted' && (
+                                    <div className="absolute inset-0 bg-lego-blue/10 flex items-start justify-end p-2 pointer-events-none">
+                                       <Star className="text-lego-blue fill-lego-blue drop-shadow w-5 h-5" />
+                                    </div>
+                                )}
+                            </div>
+                            <div className="p-2 flex-grow flex flex-col pt-3">
+                                <span className="text-[9px] font-black text-gray-400 leading-none uppercase">{fig.id}</span>
+                                <h4 className="text-[11px] font-bold leading-tight my-1.5">{fig.name}</h4>
+                                <div className="mt-auto flex gap-1 content-end pt-2">
+                                    <button 
+                                        onClick={() => toggleMinifigureStatus(fig.id, status === 'wanted' ? 'wanted' : 'none')}
+                                        className={`flex-1 py-1.5 flex items-center justify-center rounded border border-black transition-colors ${status === 'wanted' ? 'bg-lego-blue text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}
+                                        title="Want it"
+                                    >
+                                        <Star size={12} className={status === 'wanted' ? 'fill-current' : ''} />
+                                    </button>
+                                    <button 
+                                        onClick={() => toggleMinifigureStatus(fig.id, status === 'got' ? 'got' : (status === 'wanted' ? 'wanted' : 'none'))}
+                                        className={`flex-1 py-1.5 flex items-center justify-center rounded border border-black transition-colors ${status === 'got' ? 'bg-green-500 text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}
+                                        title="Got it"
+                                    >
+                                        <Check size={12} strokeWidth={status === 'got' ? 3 : 2} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showHistory && (

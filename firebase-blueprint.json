@@ -34,6 +34,8 @@
         "orderedDate": { "type": "string", "format": "date-time" },
         "orderedPriceHuf": { "type": "number" },
         "quantity": { "type": "number" },
+        "minifigures": { "type": "array" },
+        "minifiguresStatus": { "type": "object" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },

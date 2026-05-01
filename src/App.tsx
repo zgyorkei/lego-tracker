@@ -74,8 +74,9 @@ export default function App() {
             if (legoRes.ok) {
                 const legoData = await legoRes.json();
                 if (legoData && legoData.priceHuf) {
-                    await updateSet(set.id, {
-                       name: legoData.name || set.name,
+                    const finalName = legoData.name || set.name;
+                    const updates: any = {
+                       name: finalName,
                        legoPriceHuf: legoData.priceHuf,
                        ...(legoData.image ? { productImage: legoData.image } : {}),
                        legoUrl: legoData.url || set.legoUrl,
@@ -84,7 +85,22 @@ export default function App() {
                        releaseDate: legoData.releaseDate || null,
                        hasFetchedLegoInfo: true,
                        lastLegoPriceRefreshTime: Date.now()
-                    });
+                    };
+                    
+                    if ((finalName || '').toLowerCase().includes('minifigure')) {
+                        try {
+                            const mfRes = await fetch(`/api/minifigures/${set.setNumber}`);
+                            if (mfRes.ok) {
+                                const mfData = await mfRes.json();
+                                if (mfData.figures && mfData.figures.length > 0) {
+                                    updates.minifigures = mfData.figures;
+                                    updates.minifiguresStatus = set.minifiguresStatus || {};
+                                }
+                            }
+                        } catch(e) {}
+                    }
+                    
+                    await updateSet(set.id, updates);
                 }
             }
             

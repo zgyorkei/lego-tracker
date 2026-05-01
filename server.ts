@@ -44,6 +44,55 @@ async function startServer() {
     'Upgrade-Insecure-Requests': '1',
   });
 
+  // API Route: Fetch Minifigure Series Items
+  app.get('/api/minifigures/:setNumber', async (req, res) => {
+    const { setNumber } = req.params;
+    try {
+        const response = await axios.get(`https://brickset.com/sets?query=${setNumber}`, { headers: getCommonHeaders(), timeout: 10000 });
+        const $ = cheerio.load(response.data);
+        const results: any[] = [];
+        $('.set').each((i, el) => {
+            const heading = $(el).find('h1 a').clone().children().remove().end().text().trim();
+            const url = $(el).find('h1 a').attr('href') || '';
+            let image = $(el).find('img').attr('src');
+            
+            // replace /small/ with /images/ to get larger resolution
+            if (image) image = image.replace('/small/', '/images/');
+            
+            const match = url.match(new RegExp(`/sets/${setNumber}-(\\d+)/`));
+            if (match) {
+                const subId = match[1];
+                let name = heading.replace(`${setNumber}:`, '').trim();
+                if (name.startsWith('LEGO Minifigures')) return; // skip header
+                
+                // Exclude random packs, boxes, and complete sets
+                if (parseInt(subId) > 0 && 
+                    !name.toLowerCase().includes('random pack') &&
+                    !name.toLowerCase().includes('sealed box') &&
+                    !name.toLowerCase().includes('complete')) {
+                    results.push({
+                        id: `${setNumber}-${subId}`,
+                        name: name,
+                        image: image || null
+                    });
+                }
+            }
+        });
+        
+        // Sort results by ID
+        results.sort((a, b) => {
+           const idA = parseInt(a.id.split('-')[1]);
+           const idB = parseInt(b.id.split('-')[1]);
+           return idA - idB;
+        });
+
+        res.json({ figures: results });
+    } catch (error) {
+        console.error('Error fetching minifigures:', error);
+        res.status(500).json({ error: 'Failed to fetch minifigures' });
+    }
+  });
+
   // API Route: Fetch Lego Set Info
   app.get('/api/lego/:setNumber', async (req, res) => {
     const { setNumber } = req.params;
