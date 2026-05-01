@@ -11,30 +11,54 @@ interface SetCardProps {
   onDelete: (id: string) => void;
   getPriceHistory: (id: string) => Promise<PriceHistory[]>;
   onAddPriceHistory: (id: string, history: PriceHistory) => void;
-  autoUpdateEnabled?: boolean;
   priceSources?: PriceSource[];
   displayCurrency: string;
   exchangeRates: Record<string, number> | null;
 }
 
-const shouldRefresh = (lastRefreshTime?: number, autoUpdateEnabled: boolean = true) => {
-  if (!autoUpdateEnabled) return false;
-  if (!lastRefreshTime) return true;
-  
-  const now = new Date();
-  const today10am = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 10, 0, 0).getTime();
-  
-  if (now.getTime() < today10am) {
-    const yesterday10am = today10am - 24 * 60 * 60 * 1000;
-    return lastRefreshTime < yesterday10am;
-  } else {
-    return lastRefreshTime < today10am;
-  }
-};
-
-export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPriceHistory, onAddPriceHistory, autoUpdateEnabled = true, priceSources = [], displayCurrency, exchangeRates }) => {
+export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPriceHistory, onAddPriceHistory, priceSources = [], displayCurrency, exchangeRates }) => {
   const [history, setHistory] = useState<PriceHistory[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [isEditingPurchaseDate, setIsEditingPurchaseDate] = useState(false);
+  const [editedPurchaseDate, setEditedPurchaseDate] = useState('');
+
+  const handlePurchaseDateClick = () => {
+    if (set.status === 'ordered') {
+      setEditedPurchaseDate(set.orderedDate ? format(new Date(set.orderedDate), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'));
+      setIsEditingPurchaseDate(true);
+    }
+  };
+
+  const [isUpdatingDate, setIsUpdatingDate] = useState(false);
+
+  const savePurchaseDate = async () => {
+    if (editedPurchaseDate) {
+      if (set.orderedCurrency && set.orderedCurrency !== 'HUF' && set.orderedOriginalPrice) {
+        setIsUpdatingDate(true);
+        try {
+          const res = await fetch(`/api/exchange-rate/${editedPurchaseDate}`);
+          const data = await res.json();
+          let finalPriceHuf = set.orderedOriginalPrice;
+          if (data.rates && data.rates.HUF) {
+             const eurValue = set.orderedCurrency === 'EUR' ? finalPriceHuf : finalPriceHuf / (data.rates[set.orderedCurrency] || 1);
+             finalPriceHuf = eurValue * data.rates.HUF;
+          }
+          onUpdate(set.id, { 
+            orderedDate: new Date(editedPurchaseDate).toISOString(),
+            orderedPriceHuf: Math.round(finalPriceHuf)
+          });
+        } catch (e) {
+          console.error(e);
+          onUpdate(set.id, { orderedDate: new Date(editedPurchaseDate).toISOString() });
+        } finally {
+          setIsUpdatingDate(false);
+        }
+      } else {
+        onUpdate(set.id, { orderedDate: new Date(editedPurchaseDate).toISOString() });
+      }
+    }
+    setIsEditingPurchaseDate(false);
+  };
   
   const [loadingMarketPrices, setLoadingMarketPrices] = useState(false);
   const [loadingLegoInfo, setLoadingLegoInfo] = useState(false);
@@ -97,18 +121,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
   }, [showHistory, set.id]);
 
   useEffect(() => {
-    if (set.status === 'planned') {
-      const needsInfo = !set.hasFetchedLegoInfo;
-      const needsLegoPrice = shouldRefresh(set.lastLegoPriceRefreshTime, autoUpdateEnabled);
-      
-      if (needsInfo || needsLegoPrice) {
-        refreshLegoData(needsInfo, needsLegoPrice);
-      }
-      
-      if (shouldRefresh(set.lastPricesRefreshTime, autoUpdateEnabled)) {
-        refreshMarketPrices();
-      }
-    } else if (set.status === 'ordered') {
+    if (set.status === 'planned' || set.status === 'ordered') {
       if (!set.hasFetchedLegoInfo) {
          refreshLegoData(true, false);
       }
@@ -260,6 +273,8 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
         status: 'ordered',
         orderedPriceHuf: Math.round(finalPriceHuf),
         orderedDate: new Date(orderDate).toISOString(),
+        orderedOriginalPrice: parseFloat(orderPrice),
+        orderedCurrency: orderCurrency,
         quantity: orderQuantity
       });
       setShowOrderDialog(false);
@@ -375,7 +390,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                     onClick={() => openOrderDialog(set.legoPriceHuf)}
                     className="bg-green-500 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-full hover:bg-green-600 transition-colors shadow-sm"
                   >
-                    Ordered
+                    Purchased
                   </button>
                )}
             </div>
@@ -445,14 +460,33 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
           <div className="space-y-1 bg-green-50 p-4 sm:col-span-2 flex flex-col justify-between">
             <div className="mb-auto">
                <p className="text-[10px] uppercase font-black text-green-600 tracking-wider">
-                 ORDERED FOR {set.quantity && set.quantity > 1 ? `(x${set.quantity})` : ''}
+                 PURCHASED FOR {set.quantity && set.quantity > 1 ? `(x${set.quantity})` : ''}
                </p>
             </div>
             <div className="mt-2 text-sm font-black text-green-700 tracking-tight flex items-end justify-between">
               {formatPrice((set.orderedPriceHuf || 0) * (set.quantity || 1))}
-              <span className="text-[10px] font-bold text-green-600 flex items-center gap-1">
-                <CheckCircle size={10} /> {set.orderedDate ? format(new Date(set.orderedDate), 'yyyy.MM.dd') : ''}
-              </span>
+              {isEditingPurchaseDate || isUpdatingDate ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="date"
+                    value={editedPurchaseDate}
+                    onChange={(e) => setEditedPurchaseDate(e.target.value)}
+                    className="text-xs p-1 border rounded w-28 bg-white text-black"
+                    autoFocus
+                    disabled={isUpdatingDate}
+                    onBlur={savePurchaseDate}
+                    onKeyDown={(e) => e.key === 'Enter' && savePurchaseDate()}
+                  />
+                  {isUpdatingDate && <RefreshCw size={12} className="animate-spin text-green-700" />}
+                </div>
+              ) : (
+                <span 
+                  className="text-[10px] font-bold text-green-600 flex items-center gap-1 cursor-pointer hover:text-green-800 transition-colors"
+                  onClick={handlePurchaseDateClick}
+                >
+                  <CheckCircle size={10} /> {set.orderedDate ? format(new Date(set.orderedDate), 'yyyy.MM.dd') : ''}
+                </span>
+              )}
             </div>
           </div>
         ) : (
@@ -685,7 +719,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
               >
                 <X size={20} />
               </button>
-              <h2 className="text-xl font-black text-gray-900 uppercase">Set to Ordered</h2>
+              <h2 className="text-xl font-black text-gray-900 uppercase">Set to Purchased</h2>
               
               <div className="mt-4 space-y-4">
                  <div>
@@ -732,7 +766,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                  </div>
 
                  <div>
-                   <label className="block text-xs font-bold text-gray-500 uppercase">Order Date</label>
+                   <label className="block text-xs font-bold text-gray-500 uppercase">Purchase Date</label>
                    <input 
                      type="date"
                      value={orderDate}
@@ -748,7 +782,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                  >
                    {isSubmittingOrder ? (
                      <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }} className="w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
-                   ) : 'Confirm Order'}
+                   ) : 'Confirm Purchase'}
                  </button>
               </div>
             </motion.div>

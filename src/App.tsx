@@ -26,16 +26,14 @@ import { Status, Priority, PriceSource, DEFAULT_PRICE_SOURCES } from './types';
 export default function App() {
   const { sets, loading, addSet, updateSet, deleteSet, addPriceHistory, getPriceHistory, user } = useSets();
   const [filter, setFilter] = useState<Status | 'all'>('all');
+  const [sortBy, setSortBy] = useState<string>('date-desc');
   const [isAdding, setIsAdding] = useState(false);
   const [newSetNumber, setNewSetNumber] = useState('');
   const [newPriority, setNewPriority] = useState<Priority>('medium');
   const [searchingLego, setSearchingLego] = useState(false);
   const [isBatchRefreshing, setIsBatchRefreshing] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{current: number, total: number} | null>(null);
-  const [showApiKeySetting, setShowApiKeySetting] = useState(false);
   const [showPriceSourcesSetting, setShowPriceSourcesSetting] = useState(false);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('legoTrackerApiKey') || '');
-  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(() => localStorage.getItem('legoAutoUpdate') !== 'false');
   const [displayCurrency, setDisplayCurrency] = useState<string>(() => localStorage.getItem('legoDisplayCurrency') || 'HUF');
   const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null);
 
@@ -60,21 +58,68 @@ export default function App() {
      localStorage.setItem('legoPriceSources', JSON.stringify(newSources));
   };
 
-  const handleToggleAutoUpdate = () => {
-    const newValue = !autoUpdateEnabled;
-    setAutoUpdateEnabled(newValue);
-    localStorage.setItem('legoAutoUpdate', String(newValue));
-  };
-
-  const handleSaveApiKey = () => {
-    localStorage.setItem('legoTrackerApiKey', apiKey);
-    setShowApiKeySetting(false);
-  };
-
   const filteredSets = useMemo(() => {
-    if (filter === 'all') return sets;
-    return sets.filter(s => s.status === filter);
-  }, [sets, filter]);
+    let result = sets;
+    if (filter !== 'all') {
+      result = sets.filter(s => s.status === filter);
+    }
+    
+    result = [...result].sort((a, b) => {
+      const pVals: Record<Priority, number> = { high: 3, medium: 2, low: 1 };
+      
+      switch (sortBy) {
+        case 'priority-desc': {
+          const pA = pVals[a.priority || 'medium'];
+          const pB = pVals[b.priority || 'medium'];
+          if (pA !== pB) return pB - pA;
+          return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+        }
+        case 'priority-asc': {
+          const pA = pVals[a.priority || 'medium'];
+          const pB = pVals[b.priority || 'medium'];
+          if (pA !== pB) return pA - pB;
+          return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+        }
+        case 'name-asc': {
+          const nameA = (a.name || '').toLowerCase();
+          const nameB = (b.name || '').toLowerCase();
+          if (nameA < nameB) return -1;
+          if (nameA > nameB) return 1;
+          return 0;
+        }
+        case 'name-desc': {
+          const nameA = (a.name || '').toLowerCase();
+          const nameB = (b.name || '').toLowerCase();
+          if (nameA < nameB) return 1;
+          if (nameA > nameB) return -1;
+          return 0;
+        }
+        case 'set-asc': {
+          const setA = parseInt(a.setNumber) || 0;
+          const setB = parseInt(b.setNumber) || 0;
+          return setA - setB;
+        }
+        case 'set-desc': {
+          const setA = parseInt(a.setNumber) || 0;
+          const setB = parseInt(b.setNumber) || 0;
+          return setB - setA;
+        }
+        case 'date-asc': {
+          const dateA = new Date(a.createdAt || 0).getTime();
+          const dateB = new Date(b.createdAt || 0).getTime();
+          return dateA - dateB;
+        }
+        case 'date-desc':
+        default: {
+          const dateA = new Date(a.createdAt || 0).getTime();
+          const dateB = new Date(b.createdAt || 0).getTime();
+          return dateB - dateA;
+        }
+      }
+    });
+    
+    return result;
+  }, [sets, filter, sortBy]);
 
   const handleBatchRefresh = async () => {
     if (isBatchRefreshing || filteredSets.length === 0) return;
@@ -279,38 +324,11 @@ export default function App() {
                </select>
             </div>
             <button 
-              onClick={handleToggleAutoUpdate}
-              className={`px-3 py-1.5 ${autoUpdateEnabled ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-400 hover:bg-gray-500'} text-white rounded font-black text-[10px] uppercase flex items-center gap-2 transition-all`}
-              title="Toggle automatic daily 10:00 AM refresh"
-            >
-              <RefreshCcw size={14} style={autoUpdateEnabled ? { animation: 'spin 3s linear infinite' } : {}}/>
-              <span className="hidden sm:inline">Auto Update</span>
-            </button>
-            <button 
               onClick={() => setShowPriceSourcesSetting(true)}
               className="px-3 py-1.5 bg-black text-white rounded font-black text-[10px] uppercase flex items-center gap-2 hover:bg-gray-800 transition-colors"
             >
               <ShoppingBag size={14} /> <span className="hidden sm:inline">Sources</span>
             </button>
-            <button 
-              onClick={() => setShowApiKeySetting(true)}
-              className="px-3 py-1.5 bg-black text-white rounded font-black text-[10px] uppercase flex items-center gap-2 hover:bg-gray-800 transition-colors"
-            >
-              <Key size={14} /> <span className="hidden sm:inline">API Key</span>
-            </button>
-            <div className="hidden lg:flex gap-6 items-center border-x-2 border-black/10 px-6 mx-2">
-               <div className="text-right">
-                  <p className="text-[10px] font-black opacity-60 uppercase">Planned</p>
-                  <p className="text-sm font-black">{formatPrice(stats.orderedLegoRetail)} / {formatPrice(stats.plannedTotal)}</p>
-               </div>
-               <div className="text-right">
-                  <p className="text-[10px] font-black opacity-60 uppercase">Ordered</p>
-                  <p className="text-sm font-black flex items-center justify-end gap-1">
-                     {formatPrice(stats.orderedTotal)} <span className="text-green-600 font-bold ml-1">({formatPrice(stats.savings)})</span>
-                  </p>
-               </div>
-            </div>
-
             <button 
               onClick={signOut}
               className="p-2 hover:bg-black/5 rounded-full transition-colors flex items-center gap-2 font-black text-xs uppercase"
@@ -324,25 +342,42 @@ export default function App() {
 
       <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-          <div className="flex items-center gap-2 p-1 bg-white border-2 border-black rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-            <button 
-              onClick={() => setFilter('all')}
-              className={`px-4 py-1.5 text-xs font-black uppercase rounded ${filter === 'all' ? 'bg-lego-blue text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2 p-1 bg-white border-2 border-black rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+              <button 
+                onClick={() => setFilter('all')}
+                className={`px-4 py-1.5 text-xs font-black uppercase rounded ${filter === 'all' ? 'bg-lego-blue text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+              >
+                All
+              </button>
+              <button 
+                onClick={() => setFilter('planned')}
+                className={`px-4 py-1.5 text-xs font-black uppercase rounded ${filter === 'planned' ? 'bg-lego-yellow text-black' : 'text-gray-500 hover:bg-gray-100'}`}
+              >
+                Planned
+              </button>
+              <button 
+                onClick={() => setFilter('ordered')}
+                className={`px-4 py-1.5 text-xs font-black uppercase rounded ${filter === 'ordered' ? 'bg-green-500 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+              >
+                Purchased
+              </button>
+            </div>
+            
+            <select
+               value={sortBy}
+               onChange={(e) => setSortBy(e.target.value)}
+               className="px-3 py-2 text-xs font-black uppercase rounded-lg border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-white cursor-pointer hover:bg-gray-50 focus:outline-none"
             >
-              All
-            </button>
-            <button 
-              onClick={() => setFilter('planned')}
-              className={`px-4 py-1.5 text-xs font-black uppercase rounded ${filter === 'planned' ? 'bg-lego-yellow text-black' : 'text-gray-500 hover:bg-gray-100'}`}
-            >
-              Planned
-            </button>
-            <button 
-              onClick={() => setFilter('ordered')}
-              className={`px-4 py-1.5 text-xs font-black uppercase rounded ${filter === 'ordered' ? 'bg-green-500 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-            >
-              Ordered
-            </button>
+               <option value="date-desc">Date (Newest)</option>
+               <option value="date-asc">Date (Oldest)</option>
+               <option value="priority-desc">Priority (High to Low)</option>
+               <option value="priority-asc">Priority (Low to High)</option>
+               <option value="name-asc">Name (A-Z)</option>
+               <option value="name-desc">Name (Z-A)</option>
+               <option value="set-asc">Set No (Low to High)</option>
+               <option value="set-desc">Set No (High to Low)</option>
+            </select>
           </div>
           
           {filter !== 'ordered' && filteredSets.length > 0 && (
@@ -373,14 +408,14 @@ export default function App() {
           )}
         </div>
 
-        {/* Mobile Stats */}
-        <div className="lg:hidden grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div className="bg-white border-4 border-lego-yellow p-4 rounded-lg shadow-xl">
               <p className="text-xs font-black uppercase opacity-50 mb-1">Planned</p>
               <p className="text-xl font-black truncate">{formatPrice(stats.orderedLegoRetail)} / {formatPrice(stats.plannedTotal)}</p>
             </div>
             <div className="bg-white border-4 border-green-500 p-4 rounded-lg shadow-xl">
-              <p className="text-xs font-black uppercase opacity-50 mb-1">Ordered</p>
+              <p className="text-xs font-black uppercase opacity-50 mb-1">Purchased</p>
               <p className="text-xl font-black truncate flex items-center gap-1">
                  {formatPrice(stats.orderedTotal)} <span className="text-green-600 font-bold ml-1 text-sm">({formatPrice(stats.savings)})</span>
               </p>
@@ -407,7 +442,6 @@ export default function App() {
                   onDelete={deleteSet}
                   getPriceHistory={getPriceHistory}
                   onAddPriceHistory={addPriceHistory}
-                  autoUpdateEnabled={autoUpdateEnabled}
                   priceSources={priceSources}
                   displayCurrency={displayCurrency}
                   exchangeRates={exchangeRates}
@@ -432,62 +466,6 @@ export default function App() {
       >
         <Plus size={32} />
       </button>
-
-      <AnimatePresence>
-        {showApiKeySetting && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowApiKeySetting(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            />
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-white w-full max-w-md border-4 border-black p-6 rounded-2xl relative z-10 shadow-2xl"
-            >
-              <h2 className="text-2xl font-black uppercase mb-4 flex items-center gap-2">
-                <Key className="text-lego-blue" />
-                Gemini API Key
-              </h2>
-              <p className="text-sm font-bold text-gray-600 mb-6 px-1">
-                Prices and search overrides are heavily limited on the default key. Enter your own Gemini API Key to prevent 429 quota errors.
-              </p>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-gray-500 mb-1 ml-1 tracking-widest">Key Value</label>
-                  <input 
-                    type="password" 
-                    placeholder="AIzaSy..."
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    className="w-full bg-gray-100 border-2 border-black p-3 rounded-lg font-bold placeholder:text-gray-400 focus:outline-none focus:ring-4 focus:ring-lego-yellow transition-all"
-                  />
-                  <p className="text-[10px] uppercase tracking-widest text-gray-400 mt-2 px-1">Stored locally in your browser.</p>
-                </div>
-                <div className="flex gap-3 pt-2">
-                  <button 
-                    onClick={() => setShowApiKeySetting(false)}
-                    className="flex-1 py-3 font-black uppercase text-sm border-2 border-black rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    onClick={handleSaveApiKey}
-                    className="flex-1 py-3 font-black uppercase text-sm bg-lego-blue text-white border-2 border-black rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] transition-all"
-                  >
-                    Save Key
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {showPriceSourcesSetting && (
