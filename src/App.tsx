@@ -14,12 +14,14 @@ import {
   TrendingDown,
   RefreshCcw,
   Loader2,
-  Key
+  Key,
+  X
 } from 'lucide-react';
 import { useSets } from './hooks/useSets';
 import { signInWithGoogle, signOut } from './lib/firebase';
+import { ClassicSpaceLogo } from './components/ClassicSpaceLogo';
 import { SetCard } from './components/SetCard';
-import { Status, Priority } from './types';
+import { Status, Priority, PriceSource, DEFAULT_PRICE_SOURCES } from './types';
 
 export default function App() {
   const { sets, loading, addSet, updateSet, deleteSet, addPriceHistory, getPriceHistory, user } = useSets();
@@ -31,8 +33,32 @@ export default function App() {
   const [isBatchRefreshing, setIsBatchRefreshing] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{current: number, total: number} | null>(null);
   const [showApiKeySetting, setShowApiKeySetting] = useState(false);
+  const [showPriceSourcesSetting, setShowPriceSourcesSetting] = useState(false);
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('legoTrackerApiKey') || '');
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(() => localStorage.getItem('legoAutoUpdate') !== 'false');
+  const [displayCurrency, setDisplayCurrency] = useState<string>(() => localStorage.getItem('legoDisplayCurrency') || 'HUF');
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null);
+
+  useEffect(() => {
+     fetch('/api/exchange-rates')
+       .then(res => res.json())
+       .then(data => {
+          if (data.rates) {
+             setExchangeRates({ ...data.rates, EUR: 1 });
+          }
+       })
+       .catch(err => console.error("Could not fetch exchange rates:", err));
+  }, []);
+
+  const [priceSources, setPriceSources] = useState<PriceSource[]>(() => {
+    const saved = localStorage.getItem('legoPriceSources');
+    return saved ? JSON.parse(saved) : DEFAULT_PRICE_SOURCES;
+  });
+
+  const savePriceSources = (newSources: PriceSource[]) => {
+     setPriceSources(newSources);
+     localStorage.setItem('legoPriceSources', JSON.stringify(newSources));
+  };
 
   const handleToggleAutoUpdate = () => {
     const newValue = !autoUpdateEnabled;
@@ -107,7 +133,11 @@ export default function App() {
             await new Promise(resolve => setTimeout(resolve, 1000));
 
             // refresh market info
-            const marketRes = await fetch(`/api/prices/${set.setNumber}`, { headers });
+            const marketRes = await fetch(`/api/prices/${set.setNumber}`, { 
+                method: 'POST',
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sources: priceSources })
+            });
             if (marketRes.ok) {
                 const marketPrices = await marketRes.json();
                 await updateSet(set.id, {
@@ -116,15 +146,19 @@ export default function App() {
                 });
                 
                 const today = new Date().toISOString().split('T')[0];
-                if (marketPrices.amazon?.priceEur && marketPrices.arukereso?.priceHuf) {
-                    await addPriceHistory(set.id, {
-                       date: today,
-                       amazonPriceEur: marketPrices.amazon.priceEur,
-                       arukeresoPriceHuf: marketPrices.arukereso.priceHuf,
-                       arukeresoStore: marketPrices.arukereso.store,
-                       exchangeRate: marketPrices.exchangeRate
-                    });
-                }
+                
+                const historyEntry: any = {
+                    date: today,
+                    exchangeRate: marketPrices.exchangeRate
+                };
+                
+                priceSources.forEach(s => {
+                    if (marketPrices[s.id]) {
+                        historyEntry[`${s.id}Price`] = marketPrices[s.id].price;
+                    }
+                });
+                
+                await addPriceHistory(set.id, historyEntry);
             }
         } catch (e) {
             console.error('Batch update failed for set', set.setNumber, e);
@@ -135,14 +169,30 @@ export default function App() {
     setBatchProgress(null);
   };
 
+  const formatPrice = (priceHuf: number) => {
+    if (displayCurrency === 'HUF' || !exchangeRates) {
+      return `${priceHuf.toLocaleString()} HUF`;
+    }
+    const priceEur = priceHuf / exchangeRates.HUF;
+    const targetRate = exchangeRates[displayCurrency] || 1;
+    const finalPrice = priceEur * targetRate;
+    
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: displayCurrency,
+      maximumFractionDigits: displayCurrency === 'HUF' ? 0 : 2
+    }).format(finalPrice);
+  };
+
   const stats = useMemo(() => {
     const ordered = sets.filter(s => s.status === 'ordered');
     
     const plannedTotal = sets.reduce((acc, s) => acc + ((s.legoPriceHuf || 0) * (s.quantity || 1)), 0);
+    const orderedLegoRetail = ordered.reduce((acc, s) => acc + ((s.legoPriceHuf || 0) * (s.quantity || 1)), 0);
     const orderedTotal = ordered.reduce((acc, s) => acc + ((s.orderedPriceHuf || 0) * (s.quantity || 1)), 0);
     const savings = ordered.reduce((acc, s) => acc + (((s.legoPriceHuf || 0) - (s.orderedPriceHuf || 0)) * (s.quantity || 1)), 0);
 
-    return { plannedTotal, orderedTotal, savings };
+    return { plannedTotal, orderedLegoRetail, orderedTotal, savings };
   }, [sets]);
 
   const handleAddSet = async (e: React.FormEvent) => {
@@ -176,7 +226,7 @@ export default function App() {
         >
           <div className="flex justify-center mb-6">
             <div className="w-20 h-20 bg-lego-yellow rounded-xl border-4 border-black flex items-center justify-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-               <Package size={40} className="text-black" />
+               <ClassicSpaceLogo size={48} />
             </div>
           </div>
           <h1 className="text-4xl font-black text-lego-red uppercase tracking-tighter mb-2">Brick Tracker</h1>
@@ -198,12 +248,36 @@ export default function App() {
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
              <div className="p-2 bg-white border-2 border-black rounded shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                <Package size={24} className="text-lego-red" />
+                <ClassicSpaceLogo size={24} />
              </div>
              <h1 className="text-2xl font-black uppercase tracking-tighter hidden sm:block">Lego Tracker</h1>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
+            <div className="flex items-center gap-2">
+               <select
+                 value={displayCurrency}
+                 onChange={(e) => {
+                   setDisplayCurrency(e.target.value);
+                   localStorage.setItem('legoDisplayCurrency', e.target.value);
+                 }}
+                 className="px-2 py-1.5 bg-gray-100 border-2 border-black rounded font-black text-[10px] uppercase cursor-pointer outline-none hover:bg-gray-200 transition-colors"
+               >
+                 <option value="HUF">HUF</option>
+                 <option value="EUR">EUR</option>
+                 <option value="USD">USD</option>
+                 <option value="GBP">GBP</option>
+                 <option value="CHF">CHF</option>
+                 <option value="PLN">PLN</option>
+                 <option value="CZK">CZK</option>
+                 <option value="DKK">DKK</option>
+                 <option value="SEK">SEK</option>
+                 <option value="NOK">NOK</option>
+                 <option value="RON">RON</option>
+                 <option value="BGN">BGN</option>
+                 <option value="ISK">ISK</option>
+               </select>
+            </div>
             <button 
               onClick={handleToggleAutoUpdate}
               className={`px-3 py-1.5 ${autoUpdateEnabled ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-400 hover:bg-gray-500'} text-white rounded font-black text-[10px] uppercase flex items-center gap-2 transition-all`}
@@ -211,6 +285,12 @@ export default function App() {
             >
               <RefreshCcw size={14} style={autoUpdateEnabled ? { animation: 'spin 3s linear infinite' } : {}}/>
               <span className="hidden sm:inline">Auto Update</span>
+            </button>
+            <button 
+              onClick={() => setShowPriceSourcesSetting(true)}
+              className="px-3 py-1.5 bg-black text-white rounded font-black text-[10px] uppercase flex items-center gap-2 hover:bg-gray-800 transition-colors"
+            >
+              <ShoppingBag size={14} /> <span className="hidden sm:inline">Sources</span>
             </button>
             <button 
               onClick={() => setShowApiKeySetting(true)}
@@ -221,16 +301,12 @@ export default function App() {
             <div className="hidden lg:flex gap-6 items-center border-x-2 border-black/10 px-6 mx-2">
                <div className="text-right">
                   <p className="text-[10px] font-black opacity-60 uppercase">Planned</p>
-                  <p className="text-sm font-black">{stats.plannedTotal.toLocaleString()} HUF</p>
+                  <p className="text-sm font-black">{formatPrice(stats.orderedLegoRetail)} / {formatPrice(stats.plannedTotal)}</p>
                </div>
                <div className="text-right">
                   <p className="text-[10px] font-black opacity-60 uppercase">Ordered</p>
-                  <p className="text-sm font-black">{stats.orderedTotal.toLocaleString()} HUF</p>
-               </div>
-               <div className="text-right text-green-700">
-                  <p className="text-[10px] font-black opacity-60 uppercase">Saved</p>
                   <p className="text-sm font-black flex items-center justify-end gap-1">
-                    <PiggyBank size={14} /> {stats.savings.toLocaleString()} HUF
+                     {formatPrice(stats.orderedTotal)} <span className="text-green-600 font-bold ml-1">({formatPrice(stats.savings)})</span>
                   </p>
                </div>
             </div>
@@ -298,18 +374,16 @@ export default function App() {
         </div>
 
         {/* Mobile Stats */}
-        <div className="lg:hidden grid grid-cols-3 gap-2 mb-8">
-            <div className="bg-white border-2 border-black p-2 rounded shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-              <p className="text-[10px] font-black uppercase opacity-50">Planned</p>
-              <p className="text-xs font-black truncate">{stats.plannedTotal.toLocaleString()} HUF</p>
+        <div className="lg:hidden grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div className="bg-white border-4 border-lego-yellow p-4 rounded-lg shadow-xl">
+              <p className="text-xs font-black uppercase opacity-50 mb-1">Planned</p>
+              <p className="text-xl font-black truncate">{formatPrice(stats.orderedLegoRetail)} / {formatPrice(stats.plannedTotal)}</p>
             </div>
-            <div className="bg-white border-2 border-black p-2 rounded shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-              <p className="text-[10px] font-black uppercase opacity-50">Ordered</p>
-              <p className="text-xs font-black truncate">{stats.orderedTotal.toLocaleString()} HUF</p>
-            </div>
-            <div className="bg-green-100 border-2 border-black p-2 rounded shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-              <p className="text-[10px] font-black uppercase text-green-700">Saved</p>
-              <p className="text-xs font-black text-green-800 truncate">{stats.savings.toLocaleString()} HUF</p>
+            <div className="bg-white border-4 border-green-500 p-4 rounded-lg shadow-xl">
+              <p className="text-xs font-black uppercase opacity-50 mb-1">Ordered</p>
+              <p className="text-xl font-black truncate flex items-center gap-1">
+                 {formatPrice(stats.orderedTotal)} <span className="text-green-600 font-bold ml-1 text-sm">({formatPrice(stats.savings)})</span>
+              </p>
             </div>
         </div>
 
@@ -334,6 +408,9 @@ export default function App() {
                   getPriceHistory={getPriceHistory}
                   onAddPriceHistory={addPriceHistory}
                   autoUpdateEnabled={autoUpdateEnabled}
+                  priceSources={priceSources}
+                  displayCurrency={displayCurrency}
+                  exchangeRates={exchangeRates}
                 />
               ))}
             </AnimatePresence>
@@ -406,6 +483,166 @@ export default function App() {
                     Save Key
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showPriceSourcesSetting && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowPriceSourcesSetting(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-white w-full max-w-lg border-4 border-black p-6 rounded-2xl relative z-10 shadow-2xl flex flex-col max-h-[90vh]"
+            >
+              <h2 className="text-2xl font-black uppercase mb-2 flex items-center gap-2">
+                <ShoppingBag className="text-lego-blue" />
+                Price Sources
+              </h2>
+              <p className="text-sm font-bold text-gray-600 mb-6">
+                Configure websites to search for market prices. Use <code>{'{setNumber}'}</code> in the URL template where the Lego set number should go. Gemini will scrape these URLs.
+              </p>
+              
+              <div className="overflow-y-auto space-y-4 mb-4 pr-2">
+                {priceSources.map((source, index) => (
+                  <div key={index} className="bg-gray-50 border-2 border-black p-4 rounded-lg relative group">
+                    <button 
+                      onClick={() => {
+                        const newSources = [...priceSources];
+                        newSources.splice(index, 1);
+                        savePriceSources(newSources);
+                      }}
+                      className="absolute top-2 right-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X size={16} />
+                    </button>
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      <div>
+                        <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">ID (Short name)</label>
+                        <input 
+                          type="text" 
+                          value={source.id} 
+                          onChange={(e) => {
+                             const newSources = [...priceSources];
+                             newSources[index].id = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                             savePriceSources(newSources);
+                          }}
+                          className="w-full bg-white border border-black p-2 rounded text-sm font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Display Name</label>
+                        <input 
+                          type="text" 
+                          value={source.name} 
+                          onChange={(e) => {
+                             const newSources = [...priceSources];
+                             newSources[index].name = e.target.value;
+                             savePriceSources(newSources);
+                          }}
+                          className="w-full bg-white border border-black p-2 rounded text-sm font-bold"
+                        />
+                      </div>
+                    </div>
+                    <div className="mb-2">
+                      <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">URL Template</label>
+                      <input 
+                        type="text" 
+                        value={source.urlTemplate} 
+                        onChange={(e) => {
+                           const newSources = [...priceSources];
+                           newSources[index].urlTemplate = e.target.value;
+                           savePriceSources(newSources);
+                        }}
+                        className="w-full bg-white border border-black p-2 rounded text-sm font-mono"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                         <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Currency</label>
+                         <select 
+                           value={source.currency}
+                           onChange={(e) => {
+                              const newSources = [...priceSources];
+                              newSources[index].currency = e.target.value;
+                              savePriceSources(newSources);
+                           }}
+                           className="w-full bg-white border border-black p-2 rounded text-sm font-bold"
+                         >
+                           <option value="HUF">HUF</option>
+                           <option value="EUR">EUR</option>
+                           <option value="USD">USD</option>
+                           <option value="GBP">GBP</option>
+                           <option value="CHF">CHF</option>
+                           <option value="PLN">PLN</option>
+                           <option value="CZK">CZK</option>
+                           <option value="DKK">DKK</option>
+                           <option value="SEK">SEK</option>
+                           <option value="NOK">NOK</option>
+                           <option value="RON">RON</option>
+                           <option value="BGN">BGN</option>
+                           <option value="ISK">ISK</option>
+                         </select>
+                      </div>
+                      <div>
+                         <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Chart Color</label>
+                         <div className="flex gap-2">
+                            <input 
+                              type="color" 
+                              value={source.color} 
+                              onChange={(e) => {
+                                 const newSources = [...priceSources];
+                                 newSources[index].color = e.target.value;
+                                 savePriceSources(newSources);
+                              }}
+                              className="h-9 w-12 cursor-pointer border border-black rounded"
+                            />
+                            <input 
+                              type="text"
+                              value={source.color}
+                              readOnly
+                              className="w-full bg-gray-100 border border-black p-2 rounded text-sm font-mono text-gray-500"
+                            />
+                         </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              <button
+                onClick={() => {
+                   const newId = `source${priceSources.length + 1}`;
+                   savePriceSources([...priceSources, { id: newId, name: 'New Source', urlTemplate: 'https://example.com/search?q={setNumber}', currency: 'EUR', color: '#' + Math.floor(Math.random()*16777215).toString(16) }]);
+                }}
+                className="w-full py-3 mb-4 font-black uppercase text-sm border-2 border-dashed border-gray-400 text-gray-500 rounded-lg hover:bg-gray-50 hover:text-gray-900 transition-colors flex items-center justify-center gap-2"
+              >
+                <Plus size={16} /> Add Price Source
+              </button>
+
+              <div className="mt-auto pt-2 grid grid-cols-2 gap-3 border-t-2 border-gray-100">
+                <button 
+                  onClick={() => savePriceSources(DEFAULT_PRICE_SOURCES)}
+                  className="py-3 font-black uppercase text-[10px] text-gray-500 hover:text-gray-900 transition-colors underline text-left"
+                >
+                  Reset Defaults
+                </button>
+                <button 
+                  onClick={() => setShowPriceSourcesSetting(false)}
+                  className="py-3 font-black uppercase text-sm bg-lego-blue text-white border-2 border-black rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] transition-all"
+                >
+                  Done
+                </button>
               </div>
             </motion.div>
           </div>

@@ -9,11 +9,8 @@ dotenv.config();
 
 // Lazily load genAI to avoid startup crashes if API key is missing
 function getGenAI(customKey?: string) {
-  let apiKey = customKey || process.env.GEMINI_API_KEY;
+  const apiKey = customKey || process.env.GEMINI_API_KEY;
   if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
-    apiKey = 'AIzaSyCVrcS1sFK8zg9oulDGUYTXad6HpYJ6iZc';
-  }
-  if (!apiKey) {
     throw new Error("GEMINI_API_KEY is missing. Please set it in AI Studio or provide a custom key.");
   }
   return new GoogleGenAI({ apiKey });
@@ -200,25 +197,34 @@ async function startServer() {
     }
   });
 
-  // API Route: Fetch prices from Amazon and Arukereso
-  app.get('/api/prices/:setNumber', async (req, res) => {
+  // API Route: Fetch prices dynamically based on sources
+  app.post('/api/prices/:setNumber', async (req, res) => {
     const { setNumber } = req.params;
     const customKey = req.headers['x-gemini-api-key'] as string | undefined;
-    try {
-      const exRateRes = await axios.get('https://api.exchangerate-api.com/v4/latest/EUR');
-      const hufRate = exRateRes.data.rates.HUF;
+    const { sources } = req.body;
+    
+    if (!sources || !Array.isArray(sources) || sources.length === 0) {
+       return res.status(400).json({ error: 'No price sources provided' });
+    }
 
-      const amazonUrl = `https://www.amazon.de/s?k=lego+${setNumber}`;
-      const arukeresoUrl = `https://www.arukereso.hu/CategorySearch.php?st=${setNumber}`;
+    try {
+      const exRateRes = await axios.get('https://api.frankfurter.app/latest?from=EUR');
+      const rates = Object.assign({}, exRateRes.data.rates, { EUR: 1 });
+      const hufRate = rates.HUF;
+
+      let promptSources = sources.map((s: any) => `- "${s.id}": ${s.urlTemplate.replace('{setNumber}', setNumber)} (Expected currency: ${s.currency})`).join('\n');
+      
+      let expectedJsonFormat = sources.reduce((acc: any, s: any) => {
+          acc[s.id] = { price: 0, store: `string (name of the specific store)` };
+          return acc;
+      }, {});
 
       // We'll use Gemini to "search" for these specific prices since direct scraping is often blocked
-      const prompt = `Find the current lowest price for Lego set ${setNumber} on Amazon.de (in EUR) and on Arukereso.hu (in HUF, including the store name for the lowest price). 
-      Return ONLY a JSON object: 
-      { 
-        "amazonPriceEur": number, 
-        "arukeresoPriceHuf": number, 
-        "arukeresoStore": "string" 
-      }`;
+      const prompt = `Find the current lowest price for Lego set ${setNumber} on the following sources:
+${promptSources}
+
+Return ONLY a JSON object in this exact format: 
+${JSON.stringify(expectedJsonFormat, null, 2)}`;
 
       const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'];
       let text = '';
@@ -260,20 +266,27 @@ async function startServer() {
       
       if (jsonMatch) {
         const data = JSON.parse(jsonMatch[0]);
-        res.json({
-          amazon: {
-            priceEur: data.amazonPriceEur,
-            priceHuf: Math.round(data.amazonPriceEur * hufRate),
-            url: amazonUrl
-          },
-          arukereso: {
-            priceHuf: data.arukeresoPriceHuf,
-            priceEur: parseFloat((data.arukeresoPriceHuf / hufRate).toFixed(2)),
-            store: data.arukeresoStore,
-            url: arukeresoUrl
-          },
-          exchangeRate: hufRate
-        });
+        const responseData: any = { exchangeRate: hufRate };
+        
+        for (const s of sources) {
+            if (data[s.id]) {
+                const p = data[s.id].price;
+                const sourceRate = rates[s.currency] || 1;
+                // Convert price to EUR first, then to HUF
+                const priceEur = p / sourceRate;
+                const priceHuf = priceEur * hufRate;
+                
+                responseData[s.id] = {
+                    price: p, // in orginal currency
+                    priceHuf: priceHuf,
+                    priceEur: priceEur,
+                    store: data[s.id].store,
+                    url: s.urlTemplate.replace('{setNumber}', setNumber)
+                };
+            }
+        }
+        
+        res.json(responseData);
       } else {
         throw new Error('Failed to parse price data from Gemini');
       }
@@ -286,12 +299,23 @@ async function startServer() {
     }
   });
 
+  // API Route: Fetch latest exchange rates
+  app.get('/api/exchange-rates', async (req, res) => {
+    try {
+      const response = await axios.get(`https://api.frankfurter.app/latest?from=EUR`);
+      res.json({ rates: response.data.rates });
+    } catch (error) {
+      console.error('Error fetching exchange rates:', error);
+      res.status(500).json({ error: 'Failed to fetch exchange rates' });
+    }
+  });
+
   // API Route: Fetch historical exchange rate
   app.get('/api/exchange-rate/:date', async (req, res) => {
     const { date } = req.params;
     try {
-      const response = await axios.get(`https://api.frankfurter.app/${date}?from=EUR&to=HUF`);
-      res.json({ hufRate: response.data.rates.HUF });
+      const response = await axios.get(`https://api.frankfurter.app/${date}?from=EUR`);
+      res.json({ rates: response.data.rates });
     } catch (error) {
       console.error('Error fetching historical exchange rate:', error);
       res.status(500).json({ error: 'Failed to fetch historical exchange rate' });
