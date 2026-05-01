@@ -33,6 +33,8 @@ export interface LegoSet {
   legoUrl: string | null;
   orderedDate?: string;
   orderedPriceHuf?: number;
+  orderedOriginalPrice?: number;
+  orderedCurrency?: string;
   quantity?: number;
   createdAt: string;
   updatedAt: string;
