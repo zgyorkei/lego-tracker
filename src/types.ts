@@ -31,6 +31,8 @@ export interface LegoSet {
   lastPricesRefreshTime?: number;
   lastLegoPriceRefreshTime?: number;
   hasFetchedLegoInfo?: boolean;
+  minifigures?: { id: string; name: string; image: string | null }[];
+  minifiguresStatus?: Record<string, 'wanted' | 'got' | 'none'>;
   marketPrices?: {
     amazon?: { priceEur: number; priceHuf: number; url?: string };
     arukereso?: { store: string; priceHuf: number; url?: string };

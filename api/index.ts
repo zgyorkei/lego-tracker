@@ -44,6 +44,52 @@ const getCommonHeaders = () => ({
   'Upgrade-Insecure-Requests': '1',
 });
 
+// API Route: Fetch Minifigure Series Items
+app.get('/api/minifigures/:setNumber', async (req, res) => {
+  const { setNumber } = req.params;
+  try {
+      const response = await axios.get(`https://brickset.com/sets?query=${setNumber}`, { headers: getCommonHeaders(), timeout: 10000 });
+      const $ = cheerio.load(response.data);
+      const results: any[] = [];
+      $('.set').each((i, el) => {
+          const heading = $(el).find('h1 a').clone().children().remove().end().text().trim();
+          const url = $(el).find('h1 a').attr('href') || '';
+          let image = $(el).find('img').attr('src');
+          
+          if (image) image = image.replace('/small/', '/images/');
+          
+          const match = url.match(new RegExp(`/sets/${setNumber}-(\\d+)/`));
+          if (match) {
+              const subId = match[1];
+              let name = heading.replace(`${setNumber}:`, '').trim();
+              if (name.startsWith('LEGO Minifigures')) return; // skip header
+              
+              if (parseInt(subId) > 0 && 
+                  !name.toLowerCase().includes('random pack') &&
+                  !name.toLowerCase().includes('sealed box') &&
+                  !name.toLowerCase().includes('complete')) {
+                  results.push({
+                      id: `${setNumber}-${subId}`,
+                      name: name,
+                      image: image || null
+                  });
+              }
+          }
+      });
+      
+      results.sort((a, b) => {
+         const idA = parseInt(a.id.split('-')[1]);
+         const idB = parseInt(b.id.split('-')[1]);
+         return idA - idB;
+      });
+
+      res.json({ figures: results });
+  } catch (error) {
+      console.error('Error fetching minifigures:', error);
+      res.status(500).json({ error: 'Failed to fetch minifigures' });
+  }
+});
+
 // API Route: Fetch Lego Set Info
 app.get('/api/lego/:setNumber', async (req, res) => {
   const { setNumber } = req.params;
@@ -97,7 +143,14 @@ app.get('/api/lego/:setNumber', async (req, res) => {
         });
         console.log(`Brickset response status: ${bsRes.status}, data length: ${bsRes.data?.length}`);
         const $bs = cheerio.load(bsRes.data);
-        const name = $bs('h1').first().text().trim() || `Lego Set ${setNumber}`;
+        let name = $bs('h1').first().text().trim() || `Lego Set ${setNumber}`;
+        const theme = $bs('a[href^="/sets/theme-"]').first().text();
+        const subtheme = $bs('a[href^="/sets/theme-"][href*="subtheme-"]').first().text();
+        
+        if (theme === 'Collectable Minifigures' && subtheme) {
+            name = `LEGO Minifigures - ${subtheme}`;
+        }
+        
         const productImage = $bs('meta[property="og:image"]').attr('content') || null;
         console.log(`Parsed name from Brickset: ${name}, image: ${productImage}`);
         
@@ -136,7 +189,7 @@ app.get('/api/lego/:setNumber', async (req, res) => {
     try {
       const imagePrompt = skipImage ? "" : "and the main product image URL. ";
       const imageJsonFormat = skipImage ? "" : ', "imageUrl": "string"';
-      const prompt = `Search for Lego set ${setNumber}. ALWAYS find the official ENGLISH name, current HUF price, ${imagePrompt}If it's an unreleased set or not on lego.com, prioritize searching jaysbrickblog.com to find information such as price (convert USD/EUR to HUF roughly), image, and release date. If you get the info from an unofficial source like jaysbrickblog, set 'isTemporary' to true. Return ONLY a JSON object: { "name": "string", "priceHuf": 1234${imageJsonFormat}, "isTemporary": boolean, "releaseDate": "string | null" }.`;
+      const prompt = `Search for Lego set ${setNumber}. ALWAYS find the official ENGLISH name (if it's a Collectible Minifigures Series, return the name of the Series, not an individual figure), current HUF price, ${imagePrompt}If it's an unreleased set or not on lego.com, prioritize searching jaysbrickblog.com to find information such as price (convert USD/EUR to HUF roughly), image, and release date. If you get the info from an unofficial source like jaysbrickblog, set 'isTemporary' to true. Return ONLY a JSON object: { "name": "string", "priceHuf": 1234${imageJsonFormat}, "isTemporary": boolean, "releaseDate": "string | null" }.`;
       
       let text = '';
       const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'];

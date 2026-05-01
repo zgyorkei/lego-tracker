@@ -61,7 +61,7 @@ service cloud.firestore {
         incoming().updatedAt == request.time &&
         (
           // Action: General Update
-          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'priority', 'orderedDate', 'orderedPriceHuf', 'name', 'productImage', 'legoPriceHuf', 'legoUrl', 'isTemporary', 'releaseDate', 'hasFetchedLegoInfo', 'lastLegoPriceRefreshTime', 'marketPrices', 'lastPricesRefreshTime', 'legoPriceError', 'updatedAt', 'quantity'])
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'priority', 'orderedDate', 'orderedPriceHuf', 'name', 'productImage', 'legoPriceHuf', 'legoUrl', 'isTemporary', 'releaseDate', 'hasFetchedLegoInfo', 'lastLegoPriceRefreshTime', 'marketPrices', 'lastPricesRefreshTime', 'legoPriceError', 'updatedAt', 'quantity', 'minifigures', 'minifiguresStatus'])
         );
         
       allow delete: if isSignedIn() && isOwner(existing().userId);
