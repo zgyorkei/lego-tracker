@@ -14,15 +14,17 @@ interface SetCardProps {
   priceSources?: PriceSource[];
   displayCurrency: string;
   exchangeRates: Record<string, number> | null;
+  readOnly?: boolean;
 }
 
-export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPriceHistory, onAddPriceHistory, priceSources = [], displayCurrency, exchangeRates }) => {
+export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPriceHistory, onAddPriceHistory, priceSources = [], displayCurrency, exchangeRates, readOnly = false }) => {
   const [history, setHistory] = useState<PriceHistory[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [isEditingPurchaseDate, setIsEditingPurchaseDate] = useState(false);
   const [editedPurchaseDate, setEditedPurchaseDate] = useState('');
 
   const handlePurchaseDateClick = () => {
+    if (readOnly) return;
     if (set.status === 'ordered') {
       setEditedPurchaseDate(set.orderedDate ? format(new Date(set.orderedDate), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'));
       setIsEditingPurchaseDate(true);
@@ -109,6 +111,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
   }, [wantedFigures.length, isFlipped]);
 
   const toggleMinifigureStatus = (figureId: string, currentStatus?: 'wanted' | 'got' | 'none') => {
+    if (readOnly) return;
     const nextStatus = currentStatus === 'got' ? 'none' : (currentStatus === 'wanted' ? 'got' : 'wanted');
     const newStatuses = { ...(set.minifiguresStatus || {}), [figureId]: nextStatus };
     onUpdate(set.id, { minifiguresStatus: newStatuses });
@@ -245,6 +248,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
   };
 
   const openOrderDialog = (initialPriceHuf?: number, initialCurrency: string = 'HUF', initialPrice?: number) => {
+    if (readOnly) return;
     if (initialCurrency !== 'HUF' && initialPrice) {
       setOrderPrice(initialPrice.toString());
       setOrderCurrency(initialCurrency);
@@ -292,7 +296,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className={`bg-white rounded-lg shadow-xl overflow-hidden border-4 ${
+      className={`bg-white rounded-lg shadow-xl overflow-hidden border-4 flex flex-col h-full ${
         set.status === 'ordered' ? 'border-green-500' : 'border-lego-yellow'
       }`}
     >
@@ -304,9 +308,9 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
             animate={{ opacity: 1, rotateY: 0 }}
             exit={{ opacity: 0, rotateY: 90 }}
             transition={{ duration: 0.3 }}
-            className="flex flex-col"
+            className="flex flex-col flex-1 w-full"
           >
-            <div className="flex flex-col md:flex-row border-b border-gray-100">
+            <div className="flex flex-col md:flex-row border-b border-gray-100 flex-1">
               <div className="w-full md:w-48 h-48 bg-white flex items-center justify-center relative overflow-hidden shrink-0 md:border-r border-gray-100 group">
               {wantedFigures.length > 0 ? (
                 <div className="w-full h-full relative overflow-hidden bg-white">
@@ -359,16 +363,16 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
               </div>
               <div className="flex items-center space-x-1 whitespace-nowrap">
                 <button 
-                  onClick={refreshLegoInfoOnly}
-                  disabled={loadingLegoInfo}
-                  className="text-gray-400 hover:text-blue-500 transition-colors p-1 disabled:opacity-50"
+                  onClick={() => readOnly ? null : refreshLegoInfoOnly()}
+                  disabled={loadingLegoInfo || readOnly}
+                  className="text-gray-400 hover:text-blue-500 transition-colors p-1 disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Refresh Name/Image"
                 >
                   <RefreshCw size={18} className={loadingLegoInfo ? "animate-spin" : ""} />
                 </button>
                 <button 
                   onClick={() => setShowDeleteConfirm(true)}
-                  className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                  className="text-gray-400 hover:text-red-500 transition-colors p-1 disabled:opacity-50"
                   title="Remove Set"
                 >
                   <Trash2 size={18} />
@@ -385,7 +389,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
               {showHistory ? 'Hide History' : 'Show History'}
             </button>
             <div className="flex gap-2">
-               {set.status === 'planned' && (
+               {set.status === 'planned' && !readOnly && (
                   <button 
                     onClick={() => openOrderDialog(set.legoPriceHuf)}
                     className="bg-green-500 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-full hover:bg-green-600 transition-colors shadow-sm"
@@ -399,7 +403,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
       </div>
 
       <div className="bg-white grid grid-cols-1 sm:grid-cols-3 border-t border-gray-100 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
-        <div className="relative group h-full">
+        <div className="relative group h-full flex flex-col">
           {loadingLegoPrice && (
             <div className="absolute top-2 right-2 text-gray-400">
               <RefreshCw size={14} className="animate-spin" />
@@ -407,8 +411,9 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
           )}
           {!loadingLegoPrice && (
              <button 
-               onClick={refreshLegoPriceOnly} 
-               className="absolute top-2 right-2 text-gray-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+               onClick={() => readOnly ? null : refreshLegoPriceOnly()} 
+               disabled={readOnly}
+               className="absolute top-2 right-2 text-gray-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity z-10 disabled:opacity-50 disabled:cursor-not-allowed"
                title="Refresh Official Price"
              >
                <RefreshCw size={14} />
@@ -416,7 +421,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
           )}
 
           {set.legoPriceError ? (
-            <div className="h-full p-4 flex flex-col justify-between bg-red-50 hover:bg-red-100 transition-colors cursor-pointer relative" onClick={refreshLegoPriceOnly}>
+            <div className="flex-1 p-4 flex flex-col justify-between bg-red-50 hover:bg-red-100 transition-colors cursor-pointer relative" onClick={() => !readOnly && refreshLegoPriceOnly()}>
               <p className="text-[10px] uppercase font-black text-red-500 tracking-wider">Official Price</p>
               <div className="mt-2">
                 <p className="text-sm font-black text-red-600 flex items-center gap-1">
@@ -428,7 +433,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
               </div>
             </div>
           ) : (
-            <div className="h-full p-4 hover:bg-gray-50 transition-colors flex flex-col justify-between">
+            <div className="flex-1 p-4 hover:bg-gray-50 transition-colors flex flex-col justify-between">
               <div className="mb-auto">
                 {set.legoUrl && !set.isTemporary ? (
                   <a href={set.legoUrl} target="_blank" rel="noreferrer" className="group/link text-[10px] font-black text-blue-500 hover:underline leading-none flex items-center gap-1 uppercase tracking-wider">
@@ -457,7 +462,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
         </div>
 
         {set.status === 'ordered' ? (
-          <div className="space-y-1 bg-green-50 p-4 sm:col-span-2 flex flex-col justify-between">
+          <div className="space-y-1 bg-green-50 p-4 sm:col-span-2 h-full flex flex-col justify-between">
             <div className="mb-auto">
                <p className="text-[10px] uppercase font-black text-green-600 tracking-wider">
                  PURCHASED FOR {set.quantity && set.quantity > 1 ? `(x${set.quantity})` : ''}
@@ -490,7 +495,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
             </div>
           </div>
         ) : (
-          <div className="relative group sm:col-span-2">
+          <div className="relative group sm:col-span-2 h-full flex flex-col">
              {loadingMarketPrices && (
                 <div className="absolute top-2 right-2 text-gray-400 z-10">
                   <RefreshCw size={14} className="animate-spin" />
@@ -498,8 +503,9 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
              )}
              {!loadingMarketPrices && (
                  <button 
-                   onClick={refreshMarketPrices} 
-                   className="absolute top-2 right-2 text-gray-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                   onClick={() => readOnly ? null : refreshMarketPrices()} 
+                   disabled={readOnly}
+                   className="absolute top-2 right-2 text-gray-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity z-10 disabled:opacity-50 disabled:cursor-not-allowed"
                    title="Refresh Market Prices"
                  >
                    <RefreshCw size={14} />
@@ -507,7 +513,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
              )}
 
              {set.marketPrices?.error ? (
-               <div className="h-full p-4 flex flex-col justify-between bg-red-50 cursor-pointer hover:bg-red-100 transition-colors relative" onClick={refreshMarketPrices}>
+               <div className="flex-1 p-4 flex flex-col justify-between bg-red-50 cursor-pointer hover:bg-red-100 transition-colors relative" onClick={() => !readOnly && refreshMarketPrices()}>
                   <p className="text-[10px] uppercase font-black text-red-500 tracking-wider">Market Prices</p>
                   <div className="mt-2">
                     <p className="text-sm font-black text-red-600 flex items-center gap-1">
@@ -516,7 +522,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                   </div>
                </div>
              ) : (set.marketPrices && !set.marketPrices.error) ? (
-               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 h-full divide-y sm:divide-y-0 sm:divide-x divide-gray-100 overflow-x-auto">
+               <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-100 overflow-x-auto">
                   {priceSources.map((source) => {
                      const priceData = set.marketPrices![source.id] as any;
                      if (!priceData) return <div key={source.id} className="p-4 flex flex-col justify-between h-full"><p className="text-[10px] font-black text-gray-400 mt-auto mb-auto">{source.name.toUpperCase()} (N/A)</p></div>;
@@ -525,7 +531,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                       <div 
                         key={source.id}
                         onClick={() => openOrderDialog(priceData.priceHuf, source.currency as any, priceData.price)}
-                        className="text-left cursor-pointer hover:bg-gray-50 p-4 transition-colors relative flex flex-col justify-between min-w-[120px]"
+                        className={`text-left ${readOnly ? '' : 'cursor-pointer hover:bg-gray-50'} p-4 transition-colors relative flex flex-col justify-between min-w-[120px]`}
                       >
                          <div className="mb-auto">
                            {priceData.url ? (
@@ -553,7 +559,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                   })}
                </div>
              ) : (
-               <div className="h-full flex items-center justify-center">
+               <div className="flex-1 flex items-center justify-center">
                   <div className="text-xs text-gray-500 font-bold uppercase text-center p-2">Wait for market prices...</div>
                </div>
              )}
@@ -568,7 +574,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
             animate={{ opacity: 1, rotateY: 0 }}
             exit={{ opacity: 0, rotateY: -90 }}
             transition={{ duration: 0.3 }}
-            className="flex flex-col border-b border-gray-100 bg-gray-50/50"
+            className="flex flex-col border-b border-gray-100 bg-gray-50/50 flex-1 w-full"
           >
             <div className="bg-white flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 z-10 shadow-sm">
                 <h3 className="font-black text-gray-900 uppercase text-xs">Series Checklist</h3>

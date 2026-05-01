@@ -71,6 +71,18 @@ export function useSets() {
       setSets(setsData);
       setLoading(false);
     }, (error) => {
+      // Fallback to cached sets if fetch fails
+      try {
+        const cached = localStorage.getItem('cachedSets');
+        if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                setSets(parsed);
+            }
+        }
+      } catch (e) {}
+      
+      setLoading(false);
       handleFirestoreError(error, OperationType.LIST, 'sets');
     });
 

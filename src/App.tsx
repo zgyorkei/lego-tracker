@@ -15,16 +15,85 @@ import {
   RefreshCcw,
   Loader2,
   Key,
-  X
+  X,
+  Eye,
+  LogOut as LogOutIcon,
+  Palette,
+  Gift
 } from 'lucide-react';
 import { useSets } from './hooks/useSets';
 import { signInWithGoogle, signOut } from './lib/firebase';
 import { ClassicSpaceLogo } from './components/ClassicSpaceLogo';
 import { SetCard } from './components/SetCard';
-import { Status, Priority, PriceSource, DEFAULT_PRICE_SOURCES } from './types';
+import { GiftRegistryDialog } from './components/GiftRegistryDialog';
+import { Status, Priority, PriceSource, DEFAULT_PRICE_SOURCES, LegoSet } from './types';
+import { DEMO_SETS } from './demoData';
+
+const getMockSets = (): LegoSet[] => {
+  let sourceSets = DEMO_SETS;
+  try {
+    const cached = localStorage.getItem('cachedSets');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        sourceSets = parsed;
+      }
+    }
+  } catch (e) {
+    console.error("Failed to parse cached sets", e);
+  }
+
+  // selection: one from each priority, one minifigures series and at least one purchased
+  const high = sourceSets.filter(s => s.priority === 'high');
+  const medium = sourceSets.filter(s => s.priority === 'medium');
+  const low = sourceSets.filter(s => s.priority === 'low');
+  const minifigs = sourceSets.filter(s => (s.minifigures && s.minifigures.length > 0) || (s.name && s.name.toLowerCase().includes('minifigure')));
+  const purchased = sourceSets.filter(s => s.status === 'ordered');
+
+  const selected: LegoSet[] = [];
+  const addRandom = (arr: LegoSet[]) => {
+    if (arr.length > 0) {
+      const rnd = arr[Math.floor(Math.random() * arr.length)];
+      if (!selected.find(s => s.id === rnd.id)) {
+        selected.push(rnd);
+      }
+    }
+  };
+
+  addRandom(high);
+  addRandom(medium);
+  addRandom(low);
+  addRandom(minifigs);
+  addRandom(purchased);
+
+  // If we couldn't find enough to show, just return the source Sets or defaults
+  if (selected.length === 0) return DEMO_SETS;
+  
+  return selected;
+};
+
+const AVAILABLE_THEMES = [
+  { id: 'classic', name: 'Classic Space' },
+  { id: 'star-wars', name: 'Star Wars' },
+  { id: 'ninjago', name: 'Ninjago' },
+  { id: 'hidden-side', name: 'Hidden Side' },
+  { id: 'bionicle', name: 'Bionicle' },
+  { id: 'technic', name: 'Technic' },
+  { id: 'friends', name: 'Friends' },
+  { id: 'castle', name: 'Castle/City' }
+];
 
 export default function App() {
   const { sets, loading, addSet, updateSet, deleteSet, addPriceHistory, getPriceHistory, user } = useSets();
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [mockSets, setMockSets] = useState<LegoSet[]>(() => getMockSets());
+
+  // Cache sets whenever they change
+  useEffect(() => {
+    if (sets && sets.length > 0) {
+      localStorage.setItem('cachedSets', JSON.stringify(sets));
+    }
+  }, [sets]);
   const [filter, setFilter] = useState<Status | 'all'>('all');
   const [sortBy, setSortBy] = useState<string>('date-desc');
   const [isAdding, setIsAdding] = useState(false);
@@ -34,8 +103,22 @@ export default function App() {
   const [isBatchRefreshing, setIsBatchRefreshing] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{current: number, total: number} | null>(null);
   const [showPriceSourcesSetting, setShowPriceSourcesSetting] = useState(false);
+  const [currentTheme, setCurrentTheme] = useState(() => localStorage.getItem('brickTrackerTheme') || 'classic');
+  const [showThemeSelector, setShowThemeSelector] = useState(false);
+  const [showGiftRegistry, setShowGiftRegistry] = useState(false);
   const [displayCurrency, setDisplayCurrency] = useState<string>(() => localStorage.getItem('legoDisplayCurrency') || 'HUF');
   const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null);
+
+  useEffect(() => {
+    if (currentTheme === 'classic') {
+      document.documentElement.removeAttribute('data-theme');
+    } else {
+      document.documentElement.setAttribute('data-theme', currentTheme);
+    }
+    localStorage.setItem('brickTrackerTheme', currentTheme);
+  }, [currentTheme]);
+
+  const activeSets = isDemoMode ? mockSets : sets;
 
   useEffect(() => {
      fetch('/api/exchange-rates')
@@ -59,9 +142,9 @@ export default function App() {
   };
 
   const filteredSets = useMemo(() => {
-    let result = sets;
+    let result = activeSets;
     if (filter !== 'all') {
-      result = sets.filter(s => s.status === filter);
+      result = activeSets.filter(s => s.status === filter);
     }
     
     result = [...result].sort((a, b) => {
@@ -119,7 +202,7 @@ export default function App() {
     });
     
     return result;
-  }, [sets, filter, sortBy]);
+  }, [activeSets, filter, sortBy]);
 
   const handleBatchRefresh = async () => {
     if (isBatchRefreshing || filteredSets.length === 0) return;
@@ -230,15 +313,20 @@ export default function App() {
   };
 
   const stats = useMemo(() => {
-    const ordered = sets.filter(s => s.status === 'ordered');
+    const ordered = activeSets.filter(s => s.status === 'ordered');
     
-    const plannedTotal = sets.reduce((acc, s) => acc + ((s.legoPriceHuf || 0) * (s.quantity || 1)), 0);
+    const plannedTotal = activeSets.reduce((acc, s) => acc + ((s.legoPriceHuf || 0) * (s.quantity || 1)), 0);
     const orderedLegoRetail = ordered.reduce((acc, s) => acc + ((s.legoPriceHuf || 0) * (s.quantity || 1)), 0);
     const orderedTotal = ordered.reduce((acc, s) => acc + ((s.orderedPriceHuf || 0) * (s.quantity || 1)), 0);
-    const savings = ordered.reduce((acc, s) => acc + (((s.legoPriceHuf || 0) - (s.orderedPriceHuf || 0)) * (s.quantity || 1)), 0);
+    const savings = ordered.reduce((acc, s) => {
+      if (s.legoPriceHuf && s.legoPriceHuf > 0 && typeof s.orderedPriceHuf === 'number') {
+        return acc + ((s.legoPriceHuf - s.orderedPriceHuf) * (s.quantity || 1));
+      }
+      return acc;
+    }, 0);
 
     return { plannedTotal, orderedLegoRetail, orderedTotal, savings };
-  }, [sets]);
+  }, [activeSets]);
 
   const handleAddSet = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -261,7 +349,7 @@ export default function App() {
     setIsAdding(false);
   };
 
-  if (!user) {
+  if (!user && !isDemoMode) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <motion.div 
@@ -276,12 +364,25 @@ export default function App() {
           </div>
           <h1 className="text-4xl font-black text-lego-red uppercase tracking-tighter mb-2">Brick Tracker</h1>
           <p className="text-gray-500 font-bold mb-8 uppercase text-sm tracking-widest">Plan. Track. Save.</p>
-          <button 
-            onClick={signInWithGoogle}
-            className="lego-button bg-lego-blue w-full flex items-center justify-center gap-3"
-          >
-            <LogIn size={20} /> Login with Google
-          </button>
+          <div className="space-y-3">
+            <button 
+              onClick={signInWithGoogle}
+              className="lego-button bg-lego-blue w-full flex items-center justify-center gap-3"
+            >
+              <LogIn size={20} /> Login with Google
+            </button>
+            <button 
+              onClick={() => setIsDemoMode(true)}
+              className="w-full flex items-center justify-center gap-3 py-3 border-2 border-black rounded-lg font-black uppercase text-sm bg-white hover:bg-gray-50 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] transition-all"
+            >
+              <Eye size={20} /> Try Demo Mode
+            </button>
+            <div className="pt-4 text-center">
+              <a href="https://github.com/zgyorkei/lego-tracker" target="_blank" rel="noreferrer" className="text-xs font-bold text-gray-500 hover:text-black hover:underline uppercase tracking-wider transition-colors inline-block">
+                View on GitHub
+              </a>
+            </div>
+          </div>
         </motion.div>
       </div>
     );
@@ -295,7 +396,7 @@ export default function App() {
              <div className="p-2 bg-white border-2 border-black rounded shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                 <ClassicSpaceLogo size={24} />
              </div>
-             <h1 className="text-2xl font-black uppercase tracking-tighter hidden sm:block">Lego Tracker</h1>
+             <h1 className="text-2xl font-black uppercase tracking-tighter hidden sm:block">Brick Tracker</h1>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
@@ -329,13 +430,23 @@ export default function App() {
             >
               <ShoppingBag size={14} /> <span className="hidden sm:inline">Sources</span>
             </button>
-            <button 
-              onClick={signOut}
-              className="p-2 hover:bg-black/5 rounded-full transition-colors flex items-center gap-2 font-black text-xs uppercase"
-            >
-              <span className="hidden sm:inline">{user.displayName?.split(' ')[0]}</span>
-              <LogOut size={20} />
-            </button>
+            {isDemoMode ? (
+              <button 
+                onClick={() => setIsDemoMode(false)}
+                className="p-2 hover:bg-black/5 rounded-full transition-colors flex items-center gap-2 font-black text-xs uppercase"
+              >
+                <span className="hidden sm:inline text-red-600">Exit Demo</span>
+                <LogOutIcon size={20} className="text-red-600" />
+              </button>
+            ) : (
+              <button 
+                onClick={signOut}
+                className="p-2 hover:bg-black/5 rounded-full transition-colors flex items-center gap-2 font-black text-xs uppercase"
+              >
+                <span className="hidden sm:inline">{user?.displayName?.split(' ')[0]}</span>
+                <LogOutIcon size={20} />
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -380,8 +491,18 @@ export default function App() {
             </select>
           </div>
           
-          {filter !== 'ordered' && filteredSets.length > 0 && (
-            <div className="flex items-center gap-4 w-full sm:w-auto">
+          <div className="flex items-center justify-end gap-2 shrink-0">
+            {filter === 'planned' && (
+              <button
+                onClick={() => setShowGiftRegistry(true)}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white border-2 border-black px-4 py-1.5 rounded-lg font-black uppercase text-xs shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
+                title="Gift Registry"
+              >
+                <Gift size={14} /> <span className="hidden sm:inline">Gift Registry</span>
+              </button>
+            )}
+            {filter !== 'ordered' && filteredSets.length > 0 && (
+              <div className="flex items-center gap-4 w-full sm:w-auto">
               {isBatchRefreshing && batchProgress ? (
                 <div className="flex-1 sm:w-48 flex items-center gap-2 bg-gray-100 border-2 border-black p-1.5 rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                   <Loader2 size={16} className="animate-spin text-lego-blue" />
@@ -398,14 +519,15 @@ export default function App() {
               ) : (
                 <button
                   onClick={handleBatchRefresh}
-                  disabled={isBatchRefreshing}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white border-2 border-black px-4 py-1.5 rounded-lg font-black uppercase text-xs shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
+                  disabled={isBatchRefreshing || isDemoMode}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white border-2 border-black px-4 py-1.5 rounded-lg font-black uppercase text-xs shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <RefreshCcw size={14} /> Update All
                 </button>
               )}
             </div>
           )}
+          </div>
         </div>
 
         {/* Stats */}
@@ -417,7 +539,7 @@ export default function App() {
             <div className="bg-white border-4 border-green-500 p-4 rounded-lg shadow-xl">
               <p className="text-xs font-black uppercase opacity-50 mb-1">Purchased</p>
               <p className="text-xl font-black truncate flex items-center gap-1">
-                 {formatPrice(stats.orderedTotal)} <span className="text-green-600 font-bold ml-1 text-sm">({formatPrice(stats.savings)})</span>
+                 {formatPrice(stats.orderedTotal)} <span className={`font-bold ml-1 text-sm ${stats.savings < 0 ? 'text-red-500' : 'text-green-600'}`}>({formatPrice(stats.savings)})</span>
               </p>
             </div>
         </div>
@@ -439,12 +561,13 @@ export default function App() {
                   key={set.id} 
                   set={set} 
                   onUpdate={updateSet} 
-                  onDelete={deleteSet}
+                  onDelete={(id) => isDemoMode ? setMockSets(mockSets.filter(s => s.id !== id)) : deleteSet(id)}
                   getPriceHistory={getPriceHistory}
                   onAddPriceHistory={addPriceHistory}
                   priceSources={priceSources}
                   displayCurrency={displayCurrency}
                   exchangeRates={exchangeRates}
+                  readOnly={isDemoMode}
                 />
               ))}
             </AnimatePresence>
@@ -461,10 +584,10 @@ export default function App() {
 
       <button 
         onClick={() => setIsAdding(true)}
-        className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-lego-red text-white border-2 border-black rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:bg-red-600 hover:-translate-y-1 hover:shadow-[4px_6px_0px_0px_rgba(0,0,0,1)] active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] transition-all"
+        className="fixed bottom-6 right-6 z-50 w-12 h-12 bg-lego-red text-white border-2 border-black rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:bg-red-600 hover:-translate-y-1 hover:shadow-[4px_6px_0px_0px_rgba(0,0,0,1)] active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] transition-all"
         title="Add New Set"
       >
-        <Plus size={32} />
+        <Plus size={24} />
       </button>
 
       <AnimatePresence>
@@ -494,41 +617,45 @@ export default function App() {
               <div className="overflow-y-auto space-y-4 mb-4 pr-2">
                 {priceSources.map((source, index) => (
                   <div key={index} className="bg-gray-50 border-2 border-black p-4 rounded-lg relative group">
-                    <button 
-                      onClick={() => {
-                        const newSources = [...priceSources];
-                        newSources.splice(index, 1);
-                        savePriceSources(newSources);
-                      }}
-                      className="absolute top-2 right-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X size={16} />
-                    </button>
+                    {!isDemoMode && (
+                      <button 
+                        onClick={() => {
+                          const newSources = [...priceSources];
+                          newSources.splice(index, 1);
+                          savePriceSources(newSources);
+                        }}
+                        className="absolute top-2 right-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X size={16} />
+                      </button>
+                    )}
                     <div className="grid grid-cols-2 gap-2 mb-2">
                       <div>
                         <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">ID (Short name)</label>
                         <input 
                           type="text" 
+                          disabled={isDemoMode}
                           value={source.id} 
                           onChange={(e) => {
                              const newSources = [...priceSources];
                              newSources[index].id = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
                              savePriceSources(newSources);
                           }}
-                          className="w-full bg-white border border-black p-2 rounded text-sm font-bold"
+                          className="w-full bg-white border border-black p-2 rounded text-sm font-bold disabled:bg-gray-100 disabled:text-gray-500"
                         />
                       </div>
                       <div>
                         <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Display Name</label>
                         <input 
                           type="text" 
+                          disabled={isDemoMode}
                           value={source.name} 
                           onChange={(e) => {
                              const newSources = [...priceSources];
                              newSources[index].name = e.target.value;
                              savePriceSources(newSources);
                           }}
-                          className="w-full bg-white border border-black p-2 rounded text-sm font-bold"
+                          className="w-full bg-white border border-black p-2 rounded text-sm font-bold disabled:bg-gray-100 disabled:text-gray-500"
                         />
                       </div>
                     </div>
@@ -536,13 +663,14 @@ export default function App() {
                       <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">URL Template</label>
                       <input 
                         type="text" 
+                        disabled={isDemoMode}
                         value={source.urlTemplate} 
                         onChange={(e) => {
                            const newSources = [...priceSources];
                            newSources[index].urlTemplate = e.target.value;
                            savePriceSources(newSources);
                         }}
-                        className="w-full bg-white border border-black p-2 rounded text-sm font-mono"
+                        className="w-full bg-white border border-black p-2 rounded text-sm font-mono disabled:bg-gray-100 disabled:text-gray-500"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
@@ -550,12 +678,13 @@ export default function App() {
                          <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Currency</label>
                          <select 
                            value={source.currency}
+                           disabled={isDemoMode}
                            onChange={(e) => {
                               const newSources = [...priceSources];
                               newSources[index].currency = e.target.value;
                               savePriceSources(newSources);
                            }}
-                           className="w-full bg-white border border-black p-2 rounded text-sm font-bold"
+                           className="w-full bg-white border border-black p-2 rounded text-sm font-bold disabled:bg-gray-100 disabled:text-gray-500"
                          >
                            <option value="HUF">HUF</option>
                            <option value="EUR">EUR</option>
@@ -577,13 +706,14 @@ export default function App() {
                          <div className="flex gap-2">
                             <input 
                               type="color" 
+                              disabled={isDemoMode}
                               value={source.color} 
                               onChange={(e) => {
                                  const newSources = [...priceSources];
                                  newSources[index].color = e.target.value;
                                  savePriceSources(newSources);
                               }}
-                              className="h-9 w-12 cursor-pointer border border-black rounded"
+                              className="h-9 w-12 cursor-pointer border border-black rounded disabled:opacity-50"
                             />
                             <input 
                               type="text"
@@ -598,20 +728,23 @@ export default function App() {
                 ))}
               </div>
               
-              <button
-                onClick={() => {
-                   const newId = `source${priceSources.length + 1}`;
-                   savePriceSources([...priceSources, { id: newId, name: 'New Source', urlTemplate: 'https://example.com/search?q={setNumber}', currency: 'EUR', color: '#' + Math.floor(Math.random()*16777215).toString(16) }]);
-                }}
-                className="w-full py-3 mb-4 font-black uppercase text-sm border-2 border-dashed border-gray-400 text-gray-500 rounded-lg hover:bg-gray-50 hover:text-gray-900 transition-colors flex items-center justify-center gap-2"
-              >
-                <Plus size={16} /> Add Price Source
-              </button>
+              {!isDemoMode && (
+                <button
+                  onClick={() => {
+                     const newId = `source${priceSources.length + 1}`;
+                     savePriceSources([...priceSources, { id: newId, name: 'New Source', urlTemplate: 'https://example.com/search?q={setNumber}', currency: 'EUR', color: '#' + Math.floor(Math.random()*16777215).toString(16) }]);
+                  }}
+                  className="w-full py-3 mb-4 font-black uppercase text-sm border-2 border-dashed border-gray-400 text-gray-500 rounded-lg hover:bg-gray-50 hover:text-gray-900 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Plus size={16} /> Add Price Source
+                </button>
+              )}
 
               <div className="mt-auto pt-2 grid grid-cols-2 gap-3 border-t-2 border-gray-100">
                 <button 
-                  onClick={() => savePriceSources(DEFAULT_PRICE_SOURCES)}
-                  className="py-3 font-black uppercase text-[10px] text-gray-500 hover:text-gray-900 transition-colors underline text-left"
+                  onClick={() => !isDemoMode && savePriceSources(DEFAULT_PRICE_SOURCES)}
+                  disabled={isDemoMode}
+                  className="py-3 font-black uppercase text-[10px] text-gray-500 hover:text-gray-900 transition-colors underline text-left disabled:opacity-50 disabled:no-underline"
                 >
                   Reset Defaults
                 </button>
@@ -624,6 +757,15 @@ export default function App() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showGiftRegistry && (
+          <GiftRegistryDialog
+            onClose={() => setShowGiftRegistry(false)}
+            plannedSets={activeSets.filter(s => s.status === 'planned')}
+          />
         )}
       </AnimatePresence>
 
@@ -707,8 +849,8 @@ export default function App() {
                   </button>
                   <button 
                     type="submit"
-                    disabled={searchingLego}
-                    className="flex-1 py-3 font-black uppercase text-sm bg-lego-blue text-white border-2 border-black rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] transition-all disabled:opacity-50"
+                    disabled={searchingLego || isDemoMode}
+                    className="flex-1 py-3 font-black uppercase text-sm bg-lego-blue text-white border-2 border-black rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {searchingLego ? 'Fetching...' : 'Track Set'}
                   </button>
@@ -718,6 +860,42 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {showThemeSelector && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            className="fixed bottom-40 right-6 bg-white p-4 rounded-xl shadow-2xl border-4 border-black z-50 flex flex-col gap-2 min-w-[200px]"
+          >
+            <div className="flex justify-between items-center mb-2 border-b-2 border-gray-100 pb-2">
+              <span className="font-black uppercase text-sm">Select Theme</span>
+              <button onClick={() => setShowThemeSelector(false)} className="text-gray-400 hover:text-gray-900"><X size={16} /></button>
+            </div>
+            {AVAILABLE_THEMES.map(theme => (
+              <button
+                key={theme.id}
+                onClick={() => {
+                  setCurrentTheme(theme.id);
+                  setShowThemeSelector(false);
+                }}
+                className={`text-left px-3 py-2 rounded-lg font-bold text-sm uppercase tracking-wider transition-colors ${currentTheme === theme.id ? 'bg-lego-yellow text-black' : 'hover:bg-gray-100 text-gray-600'}`}
+              >
+                {theme.name}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <button 
+        onClick={() => setShowThemeSelector(!showThemeSelector)}
+        className="fixed bottom-24 right-6 bg-white text-lego-blue w-12 h-12 flex items-center justify-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] border-2 border-black transition-transform hover:scale-110 hover:-rotate-12 z-40 rounded-full"
+        title="Change Theme"
+      >
+        <Palette size={24} className="animate-pulse" />
+      </button>
+
     </div>
   );
 }
