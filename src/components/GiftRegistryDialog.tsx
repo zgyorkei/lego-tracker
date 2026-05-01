@@ -13,6 +13,7 @@ export function GiftRegistryDialog({ onClose, plannedSets }: GiftRegistryDialogP
   const [selectedSetIds, setSelectedSetIds] = useState<Set<string>>(new Set());
   const [generating, setGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [batchImages, setBatchImages] = useState<Record<string, string>>({});
   
   const registryRef = useRef<HTMLDivElement>(null);
 
@@ -29,6 +30,35 @@ export function GiftRegistryDialog({ onClose, plannedSets }: GiftRegistryDialogP
     if (!registryRef.current || selectedSetIds.size === 0) return;
     setGenerating(true);
     try {
+      // Find sets that have missing or failed proxy images, and query gemini!
+      // But actually, we already show the proxy image URLs in the DOM. Wait, the proxy fails 403.
+      // So let's batch fetch new image URLs for all selected sets!
+      const setNumbersToFetch = selectedSets.map(s => s.setNumber);
+      
+      const reqApiKey = localStorage.getItem('brickTrackerApiKey');
+      const headers = reqApiKey ? { 'x-gemini-api-key': reqApiKey, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+      
+      const searchRes = await fetch('/api/batch-images', {
+         method: 'POST',
+         headers,
+         body: JSON.stringify({ setNumbers: setNumbersToFetch })
+      });
+      
+      let newImageMap: Record<string, string> = {};
+      if (searchRes.ok) {
+         newImageMap = await searchRes.json();
+      } else {
+         console.warn('Batch search failed, falling back to existing images if any');
+      }
+
+      // We need to wait for DOM to update with new images or inject them manually before canvas 
+      // Instead, we will store them in state and wait a tick
+      if (Object.keys(newImageMap).length > 0) {
+          setBatchImages(newImageMap);
+          // Wait for images to load
+          await new Promise(r => setTimeout(r, 2000));
+      }
+
       const dataUrl = await toPng(registryRef.current, {
         pixelRatio: 2,
         backgroundColor: '#ffffff',
@@ -148,10 +178,12 @@ export function GiftRegistryDialog({ onClose, plannedSets }: GiftRegistryDialogP
             <p className="text-center font-bold text-gray-500 mb-8 uppercase tracking-widest text-sm">Sets I'm missing from my collection</p>
             
             <div className="grid grid-cols-2 gap-6">
-              {selectedSets.map(set => (
+              {selectedSets.map(set => {
+                const finalImgUrl = batchImages[set.setNumber] || set.productImage;
+                return (
                 <div key={set.id} className="border-4 border-black p-4 bg-gray-50 flex flex-col items-center">
                   <div className="h-48 w-full bg-white mb-4 border-2 border-dashed border-gray-300 flex items-center justify-center relative">
-                    {set.productImage && <img src={set.productImage} alt={set.name} crossOrigin="anonymous" className="max-w-full max-h-full object-contain p-2 mix-blend-multiply" />}
+                    {finalImgUrl && <img src={`/api/proxy-image?url=${encodeURIComponent(finalImgUrl)}`} alt={set.name} className="max-w-full max-h-full object-contain p-2 mix-blend-multiply" crossOrigin="anonymous" />}
                   </div>
                   <div className="w-full text-center mb-4">
                     <span className="bg-lego-blue text-white font-black px-3 py-1 text-sm inline-block shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] mb-2">
@@ -168,7 +200,7 @@ export function GiftRegistryDialog({ onClose, plannedSets }: GiftRegistryDialogP
                               .filter(f => set.minifiguresStatus?.[f.id] === 'wanted')
                               .map(f => (
                                 <div key={f.id} className="w-12 h-12 bg-white border-2 border-black relative rounded p-1 group flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                                  {f.image && <img src={f.image} alt={f.name} crossOrigin="anonymous" className="w-full h-full object-contain" />}
+                                  {f.image && <img src={`/api/proxy-image?url=${encodeURIComponent(f.image)}`} alt={f.name} className="w-full h-full object-contain" crossOrigin="anonymous" />}
                                 </div>
                               ))}
                            {set.minifigures.filter(f => set.minifiguresStatus?.[f.id] === 'wanted').length === 0 && (
@@ -178,7 +210,7 @@ export function GiftRegistryDialog({ onClose, plannedSets }: GiftRegistryDialogP
                      </div>
                   )}
                 </div>
-              ))}
+              )})}
             </div>
             
             <div className="mt-8 text-center text-xs font-bold text-gray-400 flex items-center justify-center gap-2 uppercase tracking-widest">
