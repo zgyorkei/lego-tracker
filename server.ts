@@ -90,6 +90,115 @@ async function startServer() {
     }
   });
 
+  // API Route: Batch search for images using Gemini
+  app.post('/api/batch-images', async (req, res) => {
+    const { setNumbers } = req.body;
+    let customKey = req.headers['x-gemini-api-key'] as string | undefined;
+    
+    if (!setNumbers || !Array.isArray(setNumbers) || setNumbers.length === 0) {
+        return res.status(400).json({ error: 'No set numbers provided' });
+    }
+
+    try {
+      const queryList = setNumbers.map(n => `"Lego ${n}"`).join(', ');
+      const prompt = `Find the main high-quality product image URL for the following Lego sets: ${queryList}. 
+Return ONLY a JSON object mapping each set number to its image URL. Example format: { "75192": "https://example.com/image1.jpg", "10294": "https://example.com/image2.png" }. Use the googleSearch tool to perform standard Google searches. Find direct image links if possible (e.g., from retailer sites, wikis, or brickset). Ensure the URLs are absolute.`;
+
+      const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'];
+      let text = '';
+      let lastError: any;
+
+      for (const model of models) {
+         for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+               const result = await getGenAI(customKey).models.generateContent({
+                  model,
+                  contents: prompt,
+                  config: { tools: [{ googleSearch: {} }], responseMimeType: 'application/json' }
+               });
+               text = result.text || '{}';
+               break;
+            } catch (e: any) {
+               console.warn(`Batch image search model ${model} (attempt ${attempt}) failed:`, e.message);
+               lastError = e;
+               if (e.message && e.message.includes('503')) {
+                  await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+               } else if (e.message && e.message.includes('429')) {
+                  const retryMatch = e.message.match(/retry in ([\d\.]+)s/);
+                  const waitSecs = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : 90;
+                  throw { isRateLimit: true, retryAfter: waitSecs };
+               } else {
+                  break; // Don't retry for other errors like 404
+               }
+            }
+         }
+         if (text) break;
+      }
+      if (!text) {
+         throw lastError;
+      }
+
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0]);
+        res.json(data);
+      } else {
+        throw new Error('Could not parse Gemini response');
+      }
+    } catch (error: any) {
+      console.error('Batch image search error:', error);
+      if (error?.isRateLimit) {
+          return res.status(429).json({ error: 'Rate limit exceeded.', retryAfter: error.retryAfter });
+      }
+      res.status(200).json({});
+    }
+  });
+
+  // API Route: Proxy image to bypass CORS
+  app.get('/api/proxy-image', async (req, res) => {
+    try {
+      let imageUrl = req.query.url as string;
+      if (!imageUrl) {
+        return res.status(400).send('URL is required');
+      }
+
+      if (imageUrl.startsWith('//')) {
+        imageUrl = 'https:' + imageUrl;
+      } else if (imageUrl.startsWith('/')) {
+        imageUrl = 'https://www.lego.com' + imageUrl;
+      }
+      
+      const response = await fetch(imageUrl, {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            'Referer': 'https://www.lego.com/'
+        }
+      });
+
+      if (!response.ok) {
+        console.error('Image proxy fetch error:', response.status, response.statusText, imageUrl);
+        const transparentPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=31536000');
+        return res.send(Buffer.from(transparentPngBase64, 'base64'));
+      }
+
+      const contentType = response.headers.get('content-type');
+      res.setHeader('Content-Type', contentType || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+      
+      const arrayBuffer = await response.arrayBuffer();
+      res.send(Buffer.from(arrayBuffer));
+    } catch (error) {
+      console.error('Image proxy error:', error);
+      const transparentPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+      return res.send(Buffer.from(transparentPngBase64, 'base64'));
+    }
+  });
+
   // API Route: Fetch Lego Set Info
   app.get('/api/lego/:setNumber', async (req, res) => {
     const { setNumber } = req.params;

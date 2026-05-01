@@ -491,18 +491,18 @@ export default function App() {
             </select>
           </div>
           
-          <div className="flex items-center justify-end gap-2 shrink-0">
+          <div className="flex flex-wrap items-center justify-end gap-4 shrink-0 sm:ml-auto mt-4 sm:mt-0 w-full sm:w-auto">
             {filter === 'planned' && (
               <button
                 onClick={() => setShowGiftRegistry(true)}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white border-2 border-black px-4 py-1.5 rounded-lg font-black uppercase text-xs shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white border-2 border-black px-4 py-1.5 rounded-lg font-black uppercase text-xs shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
                 title="Gift Registry"
               >
-                <Gift size={14} /> <span className="hidden sm:inline">Gift Registry</span>
+                <Gift size={14} /> <span>Gift Registry</span>
               </button>
             )}
             {filter !== 'ordered' && filteredSets.length > 0 && (
-              <div className="flex items-center gap-4 w-full sm:w-auto">
+              <div className="flex-1 sm:flex-none flex items-center w-full sm:w-auto">
               {isBatchRefreshing && batchProgress ? (
                 <div className="flex-1 sm:w-48 flex items-center gap-2 bg-gray-100 border-2 border-black p-1.5 rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                   <Loader2 size={16} className="animate-spin text-lego-blue" />
@@ -525,8 +525,8 @@ export default function App() {
                   <RefreshCcw size={14} /> Update All
                 </button>
               )}
-            </div>
-          )}
+              </div>
+            )}
           </div>
         </div>
 
