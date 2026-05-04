@@ -21,6 +21,21 @@ export interface PriceHistory {
   [key: string]: any; // generic placeholder for source rates, e.g. amazonPriceEur, amazonPriceHuf, arukeresoPriceHuf
 }
 
+export interface Registry {
+  id: string; // the token
+  userId: string;
+  title: string;
+  sets: LegoSet[];
+  createdAt: string;
+}
+
+export interface RegistryReservation {
+  id: string; // combination of registryId and setId, or just setId
+  setId: string;
+  reservedBy: string; // Name of the visitor
+  createdAt: string;
+}
+
 export interface LegoSet {
   id: string;
   userId: string;

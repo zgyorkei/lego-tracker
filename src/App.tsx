@@ -323,17 +323,18 @@ export default function App() {
     setActiveOperation(null);
   };
 
-  // Daily refresh logic
+  // Daily refresh logic (Gemini API quota resets at midnight PT / 8-9am UTC)
   useEffect(() => {
     const checkSchedule = () => {
       const now = new Date();
-      if (now.getHours() === 10) {
-        const todayStr = now.toISOString().split('T')[0];
-        const lastRefresh = localStorage.getItem('brickTrackerLastDailyRefresh');
-        if (lastRefresh !== todayStr) {
-          handleBatchRefresh(true); // skip lego info, only market prices
-          localStorage.setItem('brickTrackerLastDailyRefresh', todayStr);
-        }
+      // Define a "quota day" that starts at 9:00 AM UTC (safely after midnight PT)
+      // By subtracting 9 hours, any time before 9 AM UTC falls into the previous calendar day
+      const quotaDay = new Date(now.getTime() - 9 * 60 * 60 * 1000).toISOString().split('T')[0];
+      
+      const lastRefresh = localStorage.getItem('brickTrackerLastDailyRefresh');
+      if (lastRefresh !== quotaDay) {
+        handleBatchRefresh(true); // skip lego info, only market prices
+        localStorage.setItem('brickTrackerLastDailyRefresh', quotaDay);
       }
     };
     
