@@ -1,8 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Check, Image as ImageIcon, Download, Share2 } from 'lucide-react';
+import { X, Check, Share2, ClipboardList, Link as LinkIcon } from 'lucide-react';
 import { LegoSet } from '../types';
-import { toPng } from 'html-to-image';
+import { collection, doc, setDoc } from 'firebase/firestore';
+import { db, auth } from '../lib/firebase';
 
 interface GiftRegistryDialogProps {
   onClose: () => void;
@@ -12,11 +13,9 @@ interface GiftRegistryDialogProps {
 export function GiftRegistryDialog({ onClose, plannedSets }: GiftRegistryDialogProps) {
   const [selectedSetIds, setSelectedSetIds] = useState<Set<string>>(new Set());
   const [generating, setGenerating] = useState(false);
-  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
-  const [batchImages, setBatchImages] = useState<Record<string, string>>({});
+  const [createdLink, setCreatedLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   
-  const registryRef = useRef<HTMLDivElement>(null);
-
   const toggleSet = (id: string) => {
     const newKeys = new Set(selectedSetIds);
     if (newKeys.has(id)) newKeys.delete(id);
@@ -26,17 +25,16 @@ export function GiftRegistryDialog({ onClose, plannedSets }: GiftRegistryDialogP
 
   const selectedSets = plannedSets.filter(s => selectedSetIds.has(s.id));
 
-  const generateImage = async () => {
-    if (!registryRef.current || selectedSetIds.size === 0) return;
+  const generateLink = async () => {
+    if (selectedSetIds.size === 0) return;
+    if (!auth.currentUser) {
+       alert("You must be signed in to create a registry.");
+       return;
+    }
     setGenerating(true);
     try {
-      // Find sets that have missing or failed proxy images, and query gemini!
-      // But actually, we already show the proxy image URLs in the DOM. Wait, the proxy fails 403.
-      // So let's batch fetch new image URLs for all selected sets!
       const setNumbersToFetch = selectedSets.map(s => s.setNumber);
-      
       const headers = { 'Content-Type': 'application/json' };
-      
       const searchRes = await fetch('/api/batch-images', {
          method: 'POST',
          headers,
@@ -46,37 +44,39 @@ export function GiftRegistryDialog({ onClose, plannedSets }: GiftRegistryDialogP
       let newImageMap: Record<string, string> = {};
       if (searchRes.ok) {
          newImageMap = await searchRes.json();
-      } else {
-         console.warn('Batch search failed, falling back to existing images if any');
       }
 
-      // We need to wait for DOM to update with new images or inject them manually before canvas 
-      // Instead, we will store them in state and wait a tick
-      if (Object.keys(newImageMap).length > 0) {
-          setBatchImages(newImageMap);
-          // Wait for images to load
-          await new Promise(r => setTimeout(r, 2000));
-      }
+      // Generate a crypto random token
+      const array = new Uint8Array(12);
+      window.crypto.getRandomValues(array);
+      const token = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+      
+      const setsData = selectedSets.map(s => ({
+        ...s,
+        productImage: newImageMap[s.setNumber] || s.productImage
+      }));
 
-      const dataUrl = await toPng(registryRef.current, {
-        pixelRatio: 2,
-        backgroundColor: '#ffffff',
+      await setDoc(doc(db, 'registries', token), {
+         userId: auth.currentUser.uid,
+         title: "My Lego Gift Registry",
+         sets: setsData,
+         createdAt: new Date().toISOString()
       });
-      setGeneratedImage(dataUrl);
+      
+      setCreatedLink(`${window.location.origin}/registry/${token}`);
     } catch (e) {
       console.error(e);
-      alert('Failed to generate image. Some external images might be blocked by CORS.');
+      alert('Failed to generate link.');
     } finally {
       setGenerating(false);
     }
   };
 
-  const handleDownload = () => {
-    if (!generatedImage) return;
-    const link = document.createElement('a');
-    link.download = 'gift-registry.png';
-    link.href = generatedImage;
-    link.click();
+  const handleCopy = () => {
+    if (!createdLink) return;
+    navigator.clipboard.writeText(createdLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -94,12 +94,12 @@ export function GiftRegistryDialog({ onClose, plannedSets }: GiftRegistryDialogP
           <X size={24} />
         </button>
 
-        {!generatedImage ? (
+        {!createdLink ? (
           <div>
             <h2 className="text-2xl font-black text-gray-900 uppercase mb-4 flex items-center gap-2">
-              <ImageIcon /> Gift Registry
+              <ClipboardList /> Gift Registry
             </h2>
-            <p className="text-gray-500 font-bold mb-6">Select planned sets and generate an image to share.</p>
+            <p className="text-gray-500 font-bold mb-6">Select your wanted sets to create a shareable registry link. Visitors can reserve sets to prevent duplicate gifts.</p>
 
             {plannedSets.length === 0 ? (
               <p className="text-gray-400 font-bold text-center py-8">No planned sets available.</p>
@@ -137,87 +137,56 @@ export function GiftRegistryDialog({ onClose, plannedSets }: GiftRegistryDialogP
                 Cancel
               </button>
               <button 
-                onClick={generateImage}
+                onClick={generateLink}
                 disabled={selectedSetIds.size === 0 || generating}
                 className="px-6 py-3 font-black text-sm uppercase bg-lego-blue text-white rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[4px_6px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2 active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {generating ? 'Generating...' : 'Generate Sharing Image'}
+                {generating ? 'Generating...' : 'Create Shareable Link'}
               </button>
             </div>
           </div>
         ) : (
-          <div className="flex flex-col h-full">
+          <div className="flex flex-col h-full items-center justify-center py-8">
             <h2 className="text-2xl font-black text-gray-900 uppercase mb-4 flex items-center gap-2">
-              <ImageIcon /> Registry Generated
+              <Share2 /> Registry Created!
             </h2>
-            <div className="flex-1 bg-gray-100 rounded-lg border-2 border-gray-200 overflow-hidden flex items-center justify-center p-4">
-              <img src={generatedImage} alt="Gift Registry" className="max-w-full max-h-[60vh] object-contain shadow-lg" />
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
+            <p className="text-gray-500 font-bold mb-6 text-center max-w-md">
+              Your gift registry is ready. Share this link with friends and family. They do not need an account to view and reserve sets.
+            </p>
+            
+            <div className="flex w-full max-w-lg items-center bg-gray-100 rounded-lg border-2 border-gray-300 p-2 mb-8">
+              <input 
+                readOnly 
+                value={createdLink} 
+                className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-mono text-gray-700 outline-none px-2"
+              />
               <button 
-                onClick={() => setGeneratedImage(null)}
+                onClick={handleCopy}
+                className="ml-2 px-4 py-2 bg-black text-white font-black text-xs uppercase rounded hover:bg-gray-800 transition-colors flex items-center gap-2"
+              >
+                {copied ? <Check size={14} /> : <LinkIcon size={14} />}
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+
+            <div className="flex justify-center gap-3">
+              <button 
+                onClick={onClose}
                 className="px-6 py-3 font-black text-sm uppercase text-gray-500 hover:bg-gray-100 rounded-lg transition-colors border-2 border-transparent"
               >
-                Back
+                Close
               </button>
-              <button 
-                onClick={handleDownload}
+              <a 
+                href={createdLink} 
+                target="_blank" 
+                rel="noopener noreferrer"
                 className="px-6 py-3 font-black text-sm uppercase bg-lego-blue text-white rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[4px_6px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2 active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] transition-all"
               >
-                <Download size={18} /> Download
-              </button>
+                Open Registry Preview
+              </a>
             </div>
           </div>
         )}
-        
-        {/* Hidden Container for off-screen rendering */}
-        <div className="pointer-events-none absolute" style={{ top: -9999, left: -9999 }}>
-          <div ref={registryRef} className="bg-white p-8 w-[800px] border-8 border-black font-sans text-gray-900" style={{ fontFamily: '"Inter", sans-serif' }}>
-            <h1 className="text-4xl font-black uppercase text-center mb-2 tracking-tighter text-lego-red">My Gift Registry</h1>
-            <p className="text-center font-bold text-gray-500 mb-8 uppercase tracking-widest text-sm">Sets I'm missing from my collection</p>
-            
-            <div className="grid grid-cols-2 gap-6">
-              {selectedSets.map(set => {
-                const finalImgUrl = batchImages[set.setNumber] || set.productImage;
-                return (
-                <div key={set.id} className="border-4 border-black p-4 bg-gray-50 flex flex-col items-center">
-                  <div className="h-48 w-full bg-white mb-4 border-2 border-dashed border-gray-300 flex items-center justify-center relative">
-                    {finalImgUrl && <img src={`/api/proxy-image?url=${encodeURIComponent(finalImgUrl)}`} alt={set.name} className="max-w-full max-h-full object-contain p-2 mix-blend-multiply" crossOrigin="anonymous" />}
-                  </div>
-                  <div className="w-full text-center mb-4">
-                    <span className="bg-lego-blue text-white font-black px-3 py-1 text-sm inline-block shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] mb-2">
-                       #{set.setNumber}
-                    </span>
-                    <h3 className="font-black text-lg uppercase leading-tight line-clamp-2">{set.name}</h3>
-                  </div>
-
-                  {set.minifigures && set.minifigures.length > 0 && (
-                     <div className="w-full mt-auto pt-4 border-t-2 border-black">
-                        <p className="font-black text-xs uppercase text-gray-500 mb-2">Wanted Minifigures:</p>
-                        <div className="flex flex-wrap gap-2 justify-center">
-                           {set.minifigures
-                              .filter(f => set.minifiguresStatus?.[f.id] === 'wanted')
-                              .map(f => (
-                                <div key={f.id} className="w-12 h-12 bg-white border-2 border-black relative rounded p-1 group flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                                  {f.image && <img src={`/api/proxy-image?url=${encodeURIComponent(f.image)}`} alt={f.name} className="w-full h-full object-contain" crossOrigin="anonymous" />}
-                                </div>
-                              ))}
-                           {set.minifigures.filter(f => set.minifiguresStatus?.[f.id] === 'wanted').length === 0 && (
-                              <p className="text-xs text-green-600 font-bold">None missing!</p>
-                           )}
-                        </div>
-                     </div>
-                  )}
-                </div>
-              )})}
-            </div>
-            
-            <div className="mt-8 text-center text-xs font-bold text-gray-400 flex items-center justify-center gap-2 uppercase tracking-widest">
-               <ImageIcon size={12} /> Generated by Brick Tracker
-            </div>
-          </div>
-        </div>
-
       </motion.div>
     </div>
   );

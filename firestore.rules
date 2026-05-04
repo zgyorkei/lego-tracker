@@ -75,5 +75,19 @@ service cloud.firestore {
         allow delete: if isSignedIn() && get(/databases/$(database)/documents/sets/$(setId)).data.userId == request.auth.uid;
       }
     }
+
+    // Registries collection
+    match /registries/{registryId} {
+      allow get: if true;
+      allow list: if isOwner(resource.data.userId);
+      allow create: if isOwner(incoming().userId);
+      allow update: if isOwner(existing().userId) || isOwner(incoming().userId);
+      allow delete: if isOwner(existing().userId);
+
+      match /reservations/{setId} {
+        allow read: if true;
+        allow write: if true;
+      }
+    }
   }
 }
