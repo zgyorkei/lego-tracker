@@ -66,5 +66,7 @@ export interface LegoSet {
     error?: boolean;
     [source: string]: any;
   };
+  prices?: Record<string, number>;
+  lowestPrices?: { sourceName: string, url: string, priceText: string }[];
   legoPriceError?: boolean;
 }

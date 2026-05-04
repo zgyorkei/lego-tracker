@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from './lib/firebase';
 import { doc, getDoc, collection, onSnapshot, setDoc } from 'firebase/firestore';
-import { Registry, RegistryReservation } from './types';
+import { Registry, RegistryReservation, DEFAULT_PRICE_SOURCES } from './types';
 import { Gift, Check } from 'lucide-react';
 
 export default function RegistryView({ registryId }: { registryId: string }) {
@@ -121,6 +121,63 @@ export default function RegistryView({ registryId }: { registryId: string }) {
                         </div>
                      </div>
                   )}
+
+                  {(() => {
+                     let displayPrices = set.lowestPrices;
+                     if (!displayPrices || displayPrices.length === 0) {
+                       if (set.marketPrices) {
+                          const exRate = set.marketPrices.exchangeRate || 400;
+                          const available = Object.entries(set.marketPrices).map(([sid, pd]) => {
+                             if (sid === 'error' || sid === 'exchangeRate' || !pd) return null;
+                             const source = DEFAULT_PRICE_SOURCES.find(ps => ps.id === sid);
+                             if (!source) return null;
+                             
+                             const pVal = pd.priceHuf || (source.currency === 'EUR' ? pd.price * exRate : pd.price) || 0;
+                             if (pVal <= 0) return null;
+                             
+                             const formatted = new Intl.NumberFormat('hu-HU', {
+                               style: 'currency', currency: 'HUF', maximumFractionDigits: 0
+                             }).format(pVal);
+
+                             return {
+                                sourceName: source.name,
+                                url: pd.url || source.urlTemplate.replace('{setNumber}', set.setNumber).replace('{name}', encodeURIComponent(set.name)),
+                                priceText: formatted,
+                                costValueHuf: pVal
+                             };
+                          }).filter(Boolean) as any[];
+                          
+                          available.sort((a,b) => a.costValueHuf - b.costValueHuf);
+                          displayPrices = available.slice(0, 2).map(p => ({
+                             sourceName: p.sourceName,
+                             url: p.url,
+                             priceText: p.priceText
+                          }));
+                       }
+                     }
+
+                     if (!displayPrices || displayPrices.length === 0) return null;
+
+                     return (
+                        <div className="mt-4 pt-4 border-t-2 border-dashed border-gray-200">
+                           <p className="text-xs font-black uppercase text-gray-500 mb-2">Best Prices:</p>
+                           <div className="flex flex-col gap-2">
+                              {displayPrices.map((lp, idx) => (
+                                <a 
+                                  key={idx}
+                                  href={lp.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center justify-between p-2 border-2 border-black rounded bg-gray-50 hover:bg-white hover:-translate-y-[1px] hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all group"
+                                >
+                                   <span className="font-black text-xs uppercase group-hover:text-lego-blue transition-colors">{lp.sourceName}</span>
+                                   <span className="font-bold text-sm bg-lego-yellow px-2 py-0.5 border border-black">{lp.priceText}</span>
+                                </a>
+                              ))}
+                           </div>
+                        </div>
+                     );
+                  })()}
 
                   <div className="mt-6">
                     {reservingSet === set.id ? (

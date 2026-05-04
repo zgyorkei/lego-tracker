@@ -423,6 +423,14 @@ export default function App() {
             >
               <Eye size={20} /> Try Demo Mode
             </button>
+            <a 
+              href="https://lego.gykovacszoltan.hu/registry/f79e4444c51ee61e775b5521"
+              target="_blank"
+              rel="noreferrer"
+              className="w-full flex items-center justify-center gap-3 py-3 border-2 border-black rounded-lg font-black uppercase text-sm bg-lego-yellow text-black hover:brightness-95 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] transition-all"
+            >
+              <Gift size={20} /> Check Demo Registry
+            </a>
             <div className="pt-4 text-center">
               <a href="https://github.com/zgyorkei/lego-tracker" target="_blank" rel="noreferrer" className="text-xs font-bold text-gray-500 hover:text-black hover:underline uppercase tracking-wider transition-colors inline-block">
                 View on GitHub
@@ -835,6 +843,9 @@ export default function App() {
           <GiftRegistryDialog
             onClose={() => setShowGiftRegistry(false)}
             plannedSets={activeSets.filter(s => s.status === 'planned')}
+            priceSources={priceSources}
+            exchangeRates={exchangeRates}
+            displayCurrency={displayCurrency}
           />
         )}
       </AnimatePresence>
