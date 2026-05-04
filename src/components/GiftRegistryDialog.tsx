@@ -35,8 +35,7 @@ export function GiftRegistryDialog({ onClose, plannedSets }: GiftRegistryDialogP
       // So let's batch fetch new image URLs for all selected sets!
       const setNumbersToFetch = selectedSets.map(s => s.setNumber);
       
-      const reqApiKey = localStorage.getItem('brickTrackerApiKey');
-      const headers = reqApiKey ? { 'x-gemini-api-key': reqApiKey, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+      const headers = { 'Content-Type': 'application/json' };
       
       const searchRes = await fetch('/api/batch-images', {
          method: 'POST',
