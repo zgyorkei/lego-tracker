@@ -15,9 +15,10 @@ interface SetCardProps {
   displayCurrency: string;
   exchangeRates: Record<string, number> | null;
   readOnly?: boolean;
+  onStatusUpdate?: (status: {setId: string, message: string} | null) => void;
 }
 
-export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPriceHistory, onAddPriceHistory, priceSources = [], displayCurrency, exchangeRates, readOnly = false }) => {
+export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPriceHistory, onAddPriceHistory, priceSources = [], displayCurrency, exchangeRates, readOnly = false, onStatusUpdate }) => {
   const [history, setHistory] = useState<PriceHistory[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [isEditingPurchaseDate, setIsEditingPurchaseDate] = useState(false);
@@ -135,12 +136,21 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
     if (updateInfo) setLoadingLegoInfo(true);
     if (updatePrice) setLoadingLegoPrice(true);
     
+    // Set global status update
+    if (onStatusUpdate) {
+       onStatusUpdate({
+          setId: set.setNumber,
+          message: updateInfo ? "Fetching Set Data & Image" : "Fetching Lego Data"
+       });
+    }
+
     try {
       const shouldSkipImage = !!set.productImage;
-      const apiKey = localStorage.getItem('legoTrackerApiKey') || '';
+      const apiKey = localStorage.getItem('brickTrackerApiKey') || '';
       const headers: Record<string, string> = apiKey ? { 'x-gemini-api-key': apiKey } : {};
       const res = await fetch(`/api/lego/${set.setNumber}${shouldSkipImage ? '?skipImage=true' : ''}`, { headers });
       if (res.status === 429) {
+        if (onStatusUpdate) onStatusUpdate(null);
         return;
       }
       if (!res.ok) throw new Error('API error');
@@ -153,7 +163,13 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
          updates.productImage = data.image || set.productImage;
          updates.hasFetchedLegoInfo = true;
          
-         if ((updates.name || '').toLowerCase().includes('minifigure')) {
+         if ((updates.name || '').toLowerCase().includes('minifigure') || set.setNumber.length > 5 || set.name.toLowerCase().includes('minifigure')) {
+             if (onStatusUpdate && !set.minifigures) {
+                onStatusUpdate({
+                   setId: set.setNumber,
+                   message: "Fetching Minifigures"
+                });
+             }
              try {
                  const mfRes = await fetch(`/api/minifigures/${set.setNumber}`);
                  if (mfRes.ok) {
@@ -190,13 +206,22 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
     } finally {
       if (updateInfo) setLoadingLegoInfo(false);
       if (updatePrice) setLoadingLegoPrice(false);
+      if (onStatusUpdate) onStatusUpdate(null);
     }
   };
 
   const refreshMarketPrices = async () => {
     setLoadingMarketPrices(true);
+    
+    if (onStatusUpdate) {
+       onStatusUpdate({
+          setId: set.setNumber,
+          message: "Fetching Market Price using Gemini"
+       });
+    }
+
     try {
-      const apiKey = localStorage.getItem('legoTrackerApiKey') || '';
+      const apiKey = localStorage.getItem('brickTrackerApiKey') || '';
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (apiKey) headers['x-gemini-api-key'] = apiKey;
       const res = await fetch(`/api/prices/${set.setNumber}`, { 
@@ -205,6 +230,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
          body: JSON.stringify({ sources: priceSources }) 
       });
       if (res.status === 429) {
+         if (onStatusUpdate) onStatusUpdate(null);
          return;
       }
       if (!res.ok) throw new Error('API error');
@@ -236,6 +262,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
       });
     } finally {
       setLoadingMarketPrices(false);
+      if (onStatusUpdate) onStatusUpdate(null);
     }
   };
 
@@ -359,7 +386,13 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
             <div className="flex justify-between items-start">
               <div>
                 <h3 className="text-xl font-black text-gray-900 leading-tight uppercase tracking-tight pr-8">{set.name}</h3>
-                <p className="text-sm font-bold text-gray-500">#{set.setNumber}</p>
+                {set.legoUrl ? (
+                   <a href={set.legoUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-blue-500 hover:text-blue-600 hover:underline flex items-center gap-1 transition-colors w-fit mt-0.5">
+                     #{set.setNumber} <ExternalLink size={12} />
+                   </a>
+                ) : (
+                   <p className="text-sm font-bold text-gray-500 mt-0.5">#{set.setNumber}</p>
+                )}
               </div>
               <div className="flex items-center space-x-1 whitespace-nowrap">
                 <button 
@@ -381,18 +414,47 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
             </div>
           </div>
 
-          <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
-            <button 
-              onClick={() => setShowHistory(!showHistory)}
-              className="text-xs font-black text-lego-blue flex items-center gap-1 uppercase tracking-widest hover:bg-blue-50 px-2 py-1 rounded"
-            >
-              {showHistory ? 'Hide History' : 'Show History'}
-            </button>
-            <div className="flex gap-2">
+          <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-end">
+            <div />
+            <div className="flex gap-4 items-center">
+               {set.legoPriceHuf ? (
+                 <div className="flex flex-col items-end relative group">
+                   <p className="text-[10px] uppercase font-black text-gray-400 tracking-wider leading-none mb-1">
+                     {set.isTemporary ? 'UNRELEASED / LEAKED' : 'OFFICIAL PRICE'} {set.quantity && set.quantity > 1 ? `(x${set.quantity})` : ''}
+                   </p>
+                   <p className={`text-sm font-black tracking-tight flex items-center gap-1 ${set.isTemporary ? 'text-gray-500 line-through decoration-orange-400' : 'text-lego-blue'}`}>
+                     {formatPrice((set.legoPriceHuf || 0) * (set.quantity || 1))}
+                     {!readOnly && (
+                       <button onClick={() => refreshLegoPriceOnly()} disabled={loadingLegoPrice} className="text-gray-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 inline-flex">
+                          <RefreshCw size={12} className={loadingLegoPrice ? 'animate-spin' : ''} />
+                       </button>
+                     )}
+                   </p>
+                   {set.isTemporary && set.releaseDate && (
+                     <p className="text-[9px] font-bold text-gray-600">Expected: {set.releaseDate}</p>
+                   )}
+                 </div>
+               ) : loadingLegoPrice ? (
+                 <div className="text-gray-400 flex flex-col items-end">
+                    <p className="text-[10px] uppercase font-black tracking-wider leading-none mb-1">OFFICIAL PRICE</p>
+                    <div className="flex items-center gap-1">
+                       <RefreshCw size={14} className="animate-spin" />
+                    </div>
+                 </div>
+               ) : set.legoPriceError ? (
+                 <div className="text-red-500 flex flex-col items-end group cursor-pointer" onClick={() => !readOnly && refreshLegoPriceOnly()}>
+                    <p className="text-[10px] uppercase font-black tracking-wider leading-none mb-1">Official Price</p>
+                    <p className="text-sm font-black flex items-center gap-1">
+                      <AlertCircle size={14} /> Fetch Failed
+                      {!readOnly && <RefreshCw size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />}
+                    </p>
+                 </div>
+               ) : null}
+
                {set.status === 'planned' && !readOnly && (
                   <button 
                     onClick={() => openOrderDialog(set.legoPriceHuf)}
-                    className="bg-green-500 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-full hover:bg-green-600 transition-colors shadow-sm"
+                    className="bg-green-500 text-white text-xs font-black uppercase px-4 py-2 rounded-full hover:bg-green-600 transition-colors shadow-sm whitespace-nowrap"
                   >
                     Purchased
                   </button>
@@ -402,67 +464,9 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
         </div>
       </div>
 
-      <div className="bg-white grid grid-cols-1 sm:grid-cols-3 border-t border-gray-100 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
-        <div className="relative group h-full flex flex-col">
-          {loadingLegoPrice && (
-            <div className="absolute top-2 right-2 text-gray-400">
-              <RefreshCw size={14} className="animate-spin" />
-            </div>
-          )}
-          {!loadingLegoPrice && (
-             <button 
-               onClick={() => readOnly ? null : refreshLegoPriceOnly()} 
-               disabled={readOnly}
-               className="absolute top-2 right-2 text-gray-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity z-10 disabled:opacity-50 disabled:cursor-not-allowed"
-               title="Refresh Official Price"
-             >
-               <RefreshCw size={14} />
-             </button>
-          )}
-
-          {set.legoPriceError ? (
-            <div className="flex-1 p-4 flex flex-col justify-between bg-red-50 hover:bg-red-100 transition-colors cursor-pointer relative" onClick={() => !readOnly && refreshLegoPriceOnly()}>
-              <p className="text-[10px] uppercase font-black text-red-500 tracking-wider">Official Price</p>
-              <div className="mt-2">
-                <p className="text-sm font-black text-red-600 flex items-center gap-1">
-                  <AlertCircle size={14} /> Fetch Failed
-                </p>
-              </div>
-              <div className="absolute top-2 right-2 text-red-400">
-                <RefreshCw size={14} className="group-hover:rotate-180 transition-transform duration-500" />
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1 p-4 hover:bg-gray-50 transition-colors flex flex-col justify-between">
-              <div className="mb-auto">
-                {set.legoUrl && !set.isTemporary ? (
-                  <a href={set.legoUrl} target="_blank" rel="noreferrer" className="group/link text-[10px] font-black text-blue-500 hover:underline leading-none flex items-center gap-1 uppercase tracking-wider">
-                    OFFICIAL PRICE {set.quantity && set.quantity > 1 ? `(x${set.quantity})` : ''} <ExternalLink size={8} />
-                  </a>
-                ) : (
-                  <p className="text-[10px] uppercase font-black text-gray-400 tracking-wider leading-none">
-                    {set.isTemporary ? 'UNRELEASED / LEAKED' : 'OFFICIAL PRICE'} {set.quantity && set.quantity > 1 ? `(x${set.quantity})` : ''}
-                  </p>
-                )}
-              </div>
-              <div className="mt-2">
-                {set.isTemporary ? (
-                  <>
-                    <p className="text-sm font-black text-gray-500 line-through decoration-orange-400 tracking-tight">{formatPrice((set.legoPriceHuf || 0) * (set.quantity || 1))}</p>
-                    {set.releaseDate && (
-                       <p className="text-[9px] font-bold text-gray-600">Expected: {set.releaseDate}</p>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-sm font-black text-lego-blue tracking-tight">{formatPrice((set.legoPriceHuf || 0) * (set.quantity || 1))}</p>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
+      <div className="bg-white border-t border-gray-100 flex overflow-hidden min-h-[100px]">
         {set.status === 'ordered' ? (
-          <div className="space-y-1 bg-green-50 p-4 sm:col-span-2 h-full flex flex-col justify-between">
+          <div className="space-y-1 bg-green-50 p-4 w-full h-full flex flex-col justify-between">
             <div className="mb-auto">
                <p className="text-[10px] uppercase font-black text-green-600 tracking-wider">
                  PURCHASED FOR {set.quantity && set.quantity > 1 ? `(x${set.quantity})` : ''}
@@ -495,7 +499,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
             </div>
           </div>
         ) : (
-          <div className="relative group sm:col-span-2 h-full flex flex-col">
+          <div className="relative group w-full h-full flex flex-col">
              {loadingMarketPrices && (
                 <div className="absolute top-2 right-2 text-gray-400 z-10">
                   <RefreshCw size={14} className="animate-spin" />
@@ -522,16 +526,16 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                   </div>
                </div>
              ) : (set.marketPrices && !set.marketPrices.error) ? (
-               <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-100 overflow-x-auto">
+               <div className="flex-1 flex overflow-x-auto divide-x divide-gray-100 snap-x hide-scrollbar">
                   {priceSources.map((source) => {
                      const priceData = set.marketPrices![source.id] as any;
-                     if (!priceData) return <div key={source.id} className="p-4 flex flex-col justify-between h-full"><p className="text-[10px] font-black text-gray-400 mt-auto mb-auto">{source.name.toUpperCase()} (N/A)</p></div>;
+                     if (!priceData) return <div key={source.id} className="p-4 flex flex-col justify-between h-full min-w-[140px] snap-start shrink-0"><p className="text-[10px] font-black text-gray-400 mt-auto mb-auto">{source.name.toUpperCase()} (N/A)</p></div>;
                      
                      return (
                       <div 
                         key={source.id}
                         onClick={() => openOrderDialog(priceData.priceHuf, source.currency as any, priceData.price)}
-                        className={`text-left ${readOnly ? '' : 'cursor-pointer hover:bg-gray-50'} p-4 transition-colors relative flex flex-col justify-between min-w-[120px]`}
+                        className={`text-left ${readOnly ? '' : 'cursor-pointer hover:bg-gray-50'} p-4 transition-colors relative flex flex-col justify-between min-w-[160px] snap-start shrink-0`}
                       >
                          <div className="mb-auto">
                            {priceData.url ? (
@@ -582,12 +586,12 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                    Back to Info <ArrowRight size={12} />
                 </button>
             </div>
-            <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 max-h-[600px] overflow-y-auto w-full">
+            <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 max-h-[60vh] overflow-y-auto w-full">
                 {set.minifigures?.map((fig) => {
                     const status = set.minifiguresStatus?.[fig.id] || 'none';
                     return (
-                        <div key={fig.id} className="bg-white border-2 border-black rounded shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex flex-col group relative overflow-hidden transition-all hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-                            <div className="h-32 bg-gray-50 p-2 relative flex items-center justify-center border-b-2 border-black">
+                        <div key={fig.id} className="bg-white border-2 border-black rounded shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex flex-col group relative overflow-hidden transition-all hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] min-h-[220px]">
+                            <div className="h-32 min-h-32 bg-gray-50 p-2 relative flex items-center justify-center border-b-2 border-black shrink-0">
                                 {fig.image ? <img src={fig.image} alt={fig.name} className="w-full h-full object-contain" /> : <AlertCircle className="text-gray-300" />}
                                 {status === 'got' && (
                                     <div className="absolute inset-0 bg-green-500/20 backdrop-blur-[1px] flex items-center justify-center">
@@ -600,10 +604,10 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                                     </div>
                                 )}
                             </div>
-                            <div className="p-2 flex-grow flex flex-col pt-3">
-                                <span className="text-[9px] font-black text-gray-400 leading-none uppercase">{fig.id}</span>
-                                <h4 className="text-[11px] font-bold leading-tight my-1.5">{fig.name}</h4>
-                                <div className="mt-auto flex gap-1 content-end pt-2">
+                            <div className="p-2 flex-grow flex flex-col">
+                                <span className="text-[9px] font-black text-gray-400 leading-none uppercase shrink-0">{fig.id}</span>
+                                <h4 className="text-[11px] font-bold leading-tight my-1.5 shrink-0 line-clamp-3">{fig.name}</h4>
+                                <div className="mt-auto flex gap-1 content-end pt-2 shrink-0">
                                     <button 
                                         onClick={() => toggleMinifigureStatus(fig.id, status === 'wanted' ? 'wanted' : 'none')}
                                         className={`flex-1 py-1.5 flex items-center justify-center rounded border border-black transition-colors ${status === 'wanted' ? 'bg-lego-blue text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}
@@ -612,7 +616,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                                         <Star size={12} className={status === 'wanted' ? 'fill-current' : ''} />
                                     </button>
                                     <button 
-                                        onClick={() => toggleMinifigureStatus(fig.id, status === 'got' ? 'got' : (status === 'wanted' ? 'wanted' : 'none'))}
+                                        onClick={() => toggleMinifigureStatus(fig.id, status === 'got' ? 'got' : (status === 'wanted' ? 'got' : 'none'))}
                                         className={`flex-1 py-1.5 flex items-center justify-center rounded border border-black transition-colors ${status === 'got' ? 'bg-green-500 text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}
                                         title="Got it"
                                     >
@@ -623,83 +627,6 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                         </div>
                     );
                 })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showHistory && (
-          <motion.div 
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden bg-gray-50 border-t"
-          >
-            <div className="p-4 h-48 w-full">
-              {history.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                   <LineChart data={history.map(h => {
-                       const chartData: any = { date: h.date };
-                       // We only store the historical HUF rate in exchangeRate.
-                       // For everything else, we just use current exchangeRates for chart projection
-                       const historicalHufRate = h.exchangeRate || (exchangeRates ? exchangeRates.HUF : 400);
-                       const dateRates: Record<string, number> = { 
-                          HUF: historicalHufRate, 
-                          EUR: 1, 
-                          ...(exchangeRates || {})
-                       };
-                       // Override HUF with historical rate
-                       dateRates.HUF = historicalHufRate;
-                       
-                       const convertToDisplay = (price: number, sourceCurrency: string) => {
-                           let priceInEur = price;
-                           const sourceRate = dateRates[sourceCurrency] || 1;
-                           priceInEur = price / sourceRate;
-                           
-                           const targetRate = dateRates[displayCurrency] || 1;
-                           return priceInEur * targetRate;
-                       };
-
-                       priceSources.forEach(s => {
-                          if (h[`${s.id}Price`]) {
-                             chartData[`${s.id}Price`] = Math.round(convertToDisplay(h[`${s.id}Price`], s.currency));
-                          }
-                       });
-
-                       if (h.amazonPriceEur) chartData.amazonPriceEur = Math.round(convertToDisplay(h.amazonPriceEur, 'EUR'));
-                       if (h.arukeresoPriceHuf) chartData.arukeresoPriceHuf = Math.round(convertToDisplay(h.arukeresoPriceHuf, 'HUF'));
-
-                       return chartData;
-                   })}>
-                    <XAxis dataKey="date" hide />
-                    <YAxis hide domain={['auto', 'auto']} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                      labelStyle={{ fontWeight: 'bold', fontSize: '10px' }}
-                      formatter={(value: number) => {
-                         let symbol = displayCurrency;
-                         let prefix = true; // wait, Intl.NumberFormat does symbol placement automatically, but recharts formatter is custom.
-                         return [new Intl.NumberFormat('en-US', {
-                            style: 'currency',
-                            currency: displayCurrency,
-                            maximumFractionDigits: displayCurrency === 'HUF' ? 0 : 2
-                         }).format(value), ''];
-                      }}
-                    />
-                    {priceSources.map(s => (
-                       <Line key={s.id} type="monotone" dataKey={`${s.id}Price`} stroke={s.color} strokeWidth={3} dot={false} name={`${s.name}`} />
-                    ))}
-                    {/* Fallbacks for existing historical data before migration */}
-                    {!priceSources.find(s => s.id === 'amazon') && <Line type="monotone" dataKey="amazonPriceEur" stroke="#2563eb" strokeWidth={3} dot={false} name="Amazon (Legacy)" />}
-                    {!priceSources.find(s => s.id === 'arukereso') && <Line type="monotone" dataKey="arukeresoPriceHuf" stroke="#10b981" strokeWidth={3} dot={false} name="Arukereso (Legacy)" /> }
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-gray-400 text-xs font-bold uppercase">
-                  No pricing data collected yet
-                </div>
-              )}
             </div>
           </motion.div>
         )}

@@ -13,6 +13,7 @@ import {
   PiggyBank,
   TrendingDown,
   RefreshCcw,
+  RefreshCw,
   Loader2,
   Key,
   X,
@@ -85,6 +86,8 @@ const AVAILABLE_THEMES = [
 
 export default function App() {
   const { sets, loading, addSet, updateSet, deleteSet, addPriceHistory, getPriceHistory, user } = useSets();
+  const [showApiModal, setShowApiModal] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [mockSets, setMockSets] = useState<LegoSet[]>(() => getMockSets());
 
@@ -100,6 +103,7 @@ export default function App() {
   const [newSetNumber, setNewSetNumber] = useState('');
   const [newPriority, setNewPriority] = useState<Priority>('medium');
   const [searchingLego, setSearchingLego] = useState(false);
+  const [activeOperation, setActiveOperation] = useState<{setId: string, message: string} | null>(null);
   const [isBatchRefreshing, setIsBatchRefreshing] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{current: number, total: number} | null>(null);
   const [showPriceSourcesSetting, setShowPriceSourcesSetting] = useState(false);
@@ -148,6 +152,10 @@ export default function App() {
     }
     
     result = [...result].sort((a, b) => {
+      // Automatically place ordered (purchased) sets at the end
+      if (a.status === 'ordered' && b.status !== 'ordered') return 1;
+      if (a.status !== 'ordered' && b.status === 'ordered') return -1;
+
       const pVals: Record<Priority, number> = { high: 3, medium: 2, low: 1 };
       
       switch (sortBy) {
@@ -220,8 +228,10 @@ export default function App() {
         }
 
         try {
-            const reqApiKey = localStorage.getItem('legoTrackerApiKey') || '';
+            const reqApiKey = localStorage.getItem('brickTrackerApiKey') || '';
             const headers = reqApiKey ? { 'x-gemini-api-key': reqApiKey } : {};
+
+            setActiveOperation({ setId: set.setNumber, message: 'Fetching Set Data & Image' });
 
             // refresh lego info
             const legoRes = await fetch(`/api/lego/${set.setNumber}`, { headers });
@@ -241,7 +251,8 @@ export default function App() {
                        lastLegoPriceRefreshTime: Date.now()
                     };
                     
-                    if ((finalName || '').toLowerCase().includes('minifigure')) {
+                    if ((finalName || '').toLowerCase().includes('minifigure') || set.setNumber.length > 5 || set.name.toLowerCase().includes('minifigure')) {
+                        setActiveOperation({ setId: set.setNumber, message: 'Fetching Minifigures' });
                         try {
                             const mfRes = await fetch(`/api/minifigures/${set.setNumber}`);
                             if (mfRes.ok) {
@@ -260,6 +271,7 @@ export default function App() {
             
             await new Promise(resolve => setTimeout(resolve, 1000));
 
+            setActiveOperation({ setId: set.setNumber, message: 'Fetching Market Price' });
             // refresh market info
             const marketRes = await fetch(`/api/prices/${set.setNumber}`, { 
                 method: 'POST',
@@ -295,6 +307,7 @@ export default function App() {
     
     setIsBatchRefreshing(false);
     setBatchProgress(null);
+    setActiveOperation(null);
   };
 
   const formatPrice = (priceHuf: number) => {
@@ -429,6 +442,17 @@ export default function App() {
               className="px-3 py-1.5 bg-black text-white rounded font-black text-[10px] uppercase flex items-center gap-2 hover:bg-gray-800 transition-colors"
             >
               <ShoppingBag size={14} /> <span className="hidden sm:inline">Sources</span>
+            </button>
+            <button 
+              onClick={() => {
+                const current = localStorage.getItem('brickTrackerApiKey') || '';
+                setApiKeyInput(current);
+                setShowApiModal(true);
+              }}
+              className="px-3 py-1.5 bg-blue-600 border-2 border-transparent text-white rounded font-black text-[10px] uppercase flex items-center gap-2 hover:bg-blue-700 transition-colors"
+              title="Set custom Gemini API Key"
+            >
+              <Key size={14} /> <span className="hidden sm:inline">API Key</span>
             </button>
             {isDemoMode ? (
               <button 
@@ -568,6 +592,7 @@ export default function App() {
                   displayCurrency={displayCurrency}
                   exchangeRates={exchangeRates}
                   readOnly={isDemoMode}
+                  onStatusUpdate={setActiveOperation}
                 />
               ))}
             </AnimatePresence>
@@ -581,6 +606,27 @@ export default function App() {
           </div>
         )}
       </main>
+
+      <AnimatePresence>
+         {activeOperation && (
+            <motion.div 
+               initial={{ opacity: 0, y: 50, scale: 0.9 }}
+               animate={{ opacity: 1, y: 0, scale: 1 }}
+               exit={{ opacity: 0, y: 50, scale: 0.9 }}
+               className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-black/90 text-white px-6 py-4 rounded-xl shadow-2xl z-50 flex items-center gap-4 min-w-[320px] max-w-[90vw]"
+            >
+               <RefreshCw className="animate-spin text-lego-blue shrink-0" size={24} />
+               <div className="flex-1 min-w-0">
+                  <div className="font-mono text-xs text-gray-400 font-bold uppercase tracking-widest break-words truncate">
+                     Set #{activeOperation.setId}
+                  </div>
+                  <div className="font-black text-sm break-words leading-tight">
+                     {activeOperation.message}
+                  </div>
+               </div>
+            </motion.div>
+         )}
+      </AnimatePresence>
 
       <button 
         onClick={() => setIsAdding(true)}
@@ -731,8 +777,9 @@ export default function App() {
               {!isDemoMode && (
                 <button
                   onClick={() => {
-                     const newId = `source${priceSources.length + 1}`;
-                     savePriceSources([...priceSources, { id: newId, name: 'New Source', urlTemplate: 'https://example.com/search?q={setNumber}', currency: 'EUR', color: '#' + Math.floor(Math.random()*16777215).toString(16) }]);
+                     const newId = `source-${Date.now()}`;
+                     const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+                     savePriceSources([...priceSources, { id: newId, name: 'New Source', urlTemplate: 'https://example.com/search?q={setNumber}', currency: 'EUR', color: randomColor }]);
                   }}
                   className="w-full py-3 mb-4 font-black uppercase text-sm border-2 border-dashed border-gray-400 text-gray-500 rounded-lg hover:bg-gray-50 hover:text-gray-900 transition-colors flex items-center justify-center gap-2"
                 >
@@ -766,6 +813,65 @@ export default function App() {
             onClose={() => setShowGiftRegistry(false)}
             plannedSets={activeSets.filter(s => s.status === 'planned')}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showApiModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowApiModal(false)}
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-white w-full max-w-sm border-4 border-black p-6 rounded-2xl relative z-10 shadow-2xl flex flex-col"
+            >
+              <h2 className="text-2xl font-black uppercase mb-2 flex items-center gap-2">
+                <Key className="text-lego-blue" />
+                API Key
+              </h2>
+              <p className="text-sm font-bold text-gray-600 mb-6">
+                Enter your Google Gemini API Key for features like Batch Image Search or resolving unreleased sets info. Your key is stored locally in your browser.
+              </p>
+              
+              <input
+                type="password"
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                placeholder="AIzaSy..."
+                className="w-full bg-gray-50 border-2 border-black p-3 rounded text-sm font-mono mb-6"
+              />
+
+              <div className="flex gap-3 mt-auto">
+                <button 
+                  onClick={() => setShowApiModal(false)}
+                  className="flex-1 py-3 font-black uppercase text-sm border-2 border-black bg-gray-200 text-black hover:bg-gray-300 rounded shadow-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    const trimmed = apiKeyInput.trim();
+                    if (trimmed) {
+                      localStorage.setItem('brickTrackerApiKey', trimmed);
+                    } else {
+                      localStorage.removeItem('brickTrackerApiKey');
+                    }
+                    setShowApiModal(false);
+                  }}
+                  className="flex-1 py-3 font-black uppercase text-sm bg-lego-blue text-white border-2 border-black rounded shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] transition-all"
+                >
+                  Save
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

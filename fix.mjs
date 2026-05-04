@@ -1,5 +1,4 @@
 import fs from 'fs';
-let code = fs.readFileSync('src/components/SetCard.tsx', 'utf8');
-code = code.replace(/Order Date<\/label>/g, 'Purchase Date</label>');
-code = code.replace(/Confirm Order/g, 'Confirm Purchase');
-fs.writeFileSync('src/components/SetCard.tsx', code);
+const content = fs.readFileSync('server.ts', 'utf-8');
+const fixed = content.replaceAll("['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash']", "['gemini-3-flash-preview', 'gemini-3.1-pro-preview']");
+fs.writeFileSync('server.ts', fixed);
