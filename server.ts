@@ -45,43 +45,90 @@ async function startServer() {
   app.get('/api/minifigures/:setNumber', async (req, res) => {
     const { setNumber } = req.params;
     try {
-        const response = await axios.get(`https://brickset.com/sets?query=${setNumber}`, { headers: getCommonHeaders(), timeout: 10000 });
-        const $ = cheerio.load(response.data);
-        const results: any[] = [];
-        $('.set').each((i, el) => {
-            const heading = $(el).find('h1 a').clone().children().remove().end().text().trim();
-            const url = $(el).find('h1 a').attr('href') || '';
-            let image = $(el).find('img').attr('src');
-            
-            // replace /small/ with /images/ to get larger resolution
-            if (image) image = image.replace('/small/', '/images/');
-            
-            const match = url.match(new RegExp(`/sets/${setNumber}-(\\d+)/`));
-            if (match) {
-                const subId = match[1];
-                let name = heading.replace(`${setNumber}:`, '').trim();
-                if (name.startsWith('LEGO Minifigures')) return; // skip header
-                
-                // Exclude random packs, boxes, and complete sets
-                if (parseInt(subId) > 0 && 
-                    !name.toLowerCase().includes('random pack') &&
-                    !name.toLowerCase().includes('sealed box') &&
-                    !name.toLowerCase().includes('complete')) {
+        let results: any[] = [];
+
+        // 1. First try regular set minifigures list
+        const minResp = await axios.get(`https://brickset.com/minifigs/in-${setNumber}-1`, { headers: getCommonHeaders(), timeout: 10000 }).catch(e => null);
+        if (minResp && minResp.data) {
+            const $m = cheerio.load(minResp.data);
+            $m('article.set').each((i, el) => {
+                const href = $m(el).find('h1 a').attr('href') || '';
+                const img = $m(el).find('img').attr('src');
+                const name = $m(el).find('h1 a').html();
+                const match = href.match(/\/minifigs\/([^\/]+)\//);
+                if (match && name) {
                     results.push({
-                        id: `${setNumber}-${subId}`,
-                        name: name,
-                        image: image || null
+                        id: match[1],
+                        name: name.toString().replace(/<[^>]*>?/gm, '').trim(),
+                        image: img || null
                     });
                 }
+            });
+        }
+
+        // 2. If no results, fallback to Minifigure Series search
+        if (results.length === 0) {
+            const response = await axios.get(`https://brickset.com/sets?query=${setNumber}`, { headers: getCommonHeaders(), timeout: 10000 });
+            const $ = cheerio.load(response.data);
+            $('.set').each((i, el) => {
+                const heading = $(el).find('h1 a').clone().children().remove().end().text().trim();
+                const url = $(el).find('h1 a').attr('href') || '';
+                let image = $(el).find('img').attr('src');
+                
+                if (image) image = image.replace('/small/', '/images/');
+                
+                const match = url.match(new RegExp(`/sets/${setNumber}-(\\d+)/`));
+                if (match) {
+                    const subId = match[1];
+                    let name = heading.replace(`${setNumber}:`, '').trim();
+                    if (name.startsWith('LEGO Minifigures')) return;
+                    
+                    if (parseInt(subId) > 0 && 
+                        !name.toLowerCase().includes('random pack') &&
+                        !name.toLowerCase().includes('sealed box') &&
+                        !name.toLowerCase().includes('complete')) {
+                        results.push({
+                            id: `${setNumber}-${subId}`,
+                            name: name,
+                            image: image || null
+                        });
+                    }
+                }
+            });
+            results.sort((a, b) => parseInt(a.id.split('-')[1]) - parseInt(b.id.split('-')[1]));
+        }
+
+        // 3. Fallback using Gemini if still empty
+        if (results.length === 0) {
+            const customKey = req.headers['x-gemini-api-key'] as string | undefined;
+            if (customKey || process.env.GEMINI_API_KEY) {
+                console.log('Scraping minifigures failed, attempting Gemini Search fallback...');
+                const prompt = `Find all the minifigures or characters included in Lego set ${setNumber}. Prioritize searching jaysbrickblog.com and brickfanatics.com, or other reputable lego news sites. Return a JSON object with this exact shape: { "figures": [{ "id": "string (create a short distinct id, e.g. fig1)", "name": "string", "image": "string (direct image url or null)" }] } Return ONLY the JSON object.`;
+                const models = ['gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
+                
+                let text = '';
+                for (const model of models) {
+                    for (let attempt = 1; attempt <= 3; attempt++) {
+                        try {
+                            const result = await getGenAI(customKey).models.generateContent({
+                                model,
+                                contents: prompt,
+                                config: { tools: [{ googleSearch: {} }], responseMimeType: 'application/json' }
+                            });
+                            text = result.text || '{}';
+                            const parsed = JSON.parse(text);
+                            if (parsed.figures && Array.isArray(parsed.figures) && parsed.figures.length > 0) {
+                                results = parsed.figures;
+                                break;
+                            }
+                        } catch (e) {
+                            console.warn(`Gemini minifigures attempt ${attempt} with ${model} failed`, e);
+                        }
+                    }
+                    if (results.length > 0) break;
+                }
             }
-        });
-        
-        // Sort results by ID
-        results.sort((a, b) => {
-           const idA = parseInt(a.id.split('-')[1]);
-           const idB = parseInt(b.id.split('-')[1]);
-           return idA - idB;
-        });
+        }
 
         res.json({ figures: results });
     } catch (error) {
@@ -104,7 +151,7 @@ async function startServer() {
       const prompt = `Find the main high-quality product image URL for the following Lego sets: ${queryList}. 
 Return ONLY a JSON object mapping each set number to its image URL. Example format: { "75192": "https://example.com/image1.jpg", "10294": "https://example.com/image2.png" }. Use the googleSearch tool to perform standard Google searches. Find direct image links if possible (e.g., from retailer sites, wikis, or brickset). Ensure the URLs are absolute.`;
 
-      const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'];
+      const models = ['gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
       let text = '';
       let lastError: any;
 
@@ -245,10 +292,10 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       try {
         const imagePrompt = skipImage ? "" : "and the main product image URL. ";
         const imageJsonFormat = skipImage ? "" : ', "imageUrl": "string"';
-        const prompt = `Search for Lego set ${setNumber}. ALWAYS find the official ENGLISH name, current HUF price, ${imagePrompt}If it's an unreleased set or not on lego.com, prioritize searching jaysbrickblog.com to find information such as price (convert USD/EUR to HUF roughly), image, and release date. If you get the info from an unofficial source like jaysbrickblog, set 'isTemporary' to true. Return ONLY a JSON object: { "name": "string", "priceHuf": 1234${imageJsonFormat}, "isTemporary": boolean, "releaseDate": "string | null" }.`;
+        const prompt = `Search for Lego set ${setNumber}. ALWAYS find the official ENGLISH name, current HUF price, ${imagePrompt}If it's an unreleased set or not on lego.com, prioritize searching jaysbrickblog.com and brickfanatics.com to find information such as price (convert USD/EUR to HUF roughly), image, and release date. If you get the info from an unofficial source like jaysbrickblog or brickfanatics, set 'isTemporary' to true. Return ONLY a JSON object: { "name": "string", "priceHuf": 1234${imageJsonFormat}, "isTemporary": boolean, "releaseDate": "string | null" }.`;
         
         let text = '';
-        const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'];
+        const models = ['gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
         let lastError: any;
         
         for (const model of models) {
@@ -335,7 +382,7 @@ ${promptSources}
 Return ONLY a JSON object in this exact format: 
 ${JSON.stringify(expectedJsonFormat, null, 2)}`;
 
-      const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'];
+      const models = ['gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
       let text = '';
       let lastError: any;
       
