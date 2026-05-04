@@ -86,8 +86,6 @@ const AVAILABLE_THEMES = [
 
 export default function App() {
   const { sets, loading, addSet, updateSet, deleteSet, addPriceHistory, getPriceHistory, user } = useSets();
-  const [showApiModal, setShowApiModal] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState('');
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [mockSets, setMockSets] = useState<LegoSet[]>(() => getMockSets());
 
@@ -212,103 +210,137 @@ export default function App() {
     return result;
   }, [activeSets, filter, sortBy]);
 
-  const handleBatchRefresh = async () => {
+  const handleBatchRefresh = async (skipLegoInfo = false) => {
     if (isBatchRefreshing || filteredSets.length === 0) return;
     setIsBatchRefreshing(true);
     
-    setBatchProgress({ current: 0, total: filteredSets.length });
+    const headers = {};
+
+    if (!skipLegoInfo) {
+      setBatchProgress({ current: 0, total: filteredSets.length });
+      for (let i = 0; i < filteredSets.length; i++) {
+          setBatchProgress({ current: i + 1, total: filteredSets.length });
+          const set = filteredSets[i];
+          
+          if (i > 0) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+          }
+
+          try {
+              setActiveOperation({ setId: set.setNumber, message: 'Fetching Set Data & Image' });
+
+              const legoRes = await fetch(`/api/lego/${set.setNumber}`, { headers });
+              if (legoRes.status === 429) {
+                  alert("Rate limit exceeded while fetching Lego Info. Please check your Gemini API Key quota or wait.");
+                  break; // stop lego info updates
+              }
+              if (legoRes.ok) {
+                  const legoData = await legoRes.json();
+                  if (legoData && legoData.priceHuf !== undefined) {
+                      const finalName = legoData.name || set.name;
+                      const updates: any = {
+                         name: finalName,
+                         ...(legoData.image ? { productImage: legoData.image } : {}),
+                         legoUrl: legoData.url || set.legoUrl,
+                         legoPriceError: false,
+                         isTemporary: legoData.isTemporary || false,
+                         releaseDate: legoData.releaseDate || null,
+                         hasFetchedLegoInfo: true,
+                         lastLegoPriceRefreshTime: Date.now()
+                      };
+                      if (legoData.priceHuf > 0 || !set.legoPriceHuf) {
+                          updates.legoPriceHuf = legoData.priceHuf;
+                      }
+                      
+                      if ((finalName || '').toLowerCase().includes('minifigure') || set.setNumber.length > 5 || set.name.toLowerCase().includes('minifigure')) {
+                          setActiveOperation({ setId: set.setNumber, message: 'Fetching Minifigures' });
+                          try {
+                              const mfRes = await fetch(`/api/minifigures/${set.setNumber}`);
+                              if (mfRes.ok) {
+                                  const mfData = await mfRes.json();
+                                  if (mfData.figures && mfData.figures.length > 0) {
+                                      updates.minifigures = mfData.figures;
+                                      updates.minifiguresStatus = set.minifiguresStatus || {};
+                                  }
+                              }
+                          } catch(e) {}
+                      }
+                      
+                      await updateSet(set.id, updates);
+                  }
+              }
+          } catch (e) {
+              console.error('Batch update failed for set lego info', set.setNumber, e);
+          }
+      }
+    }
     
-    for (let i = 0; i < filteredSets.length; i++) {
-        setBatchProgress({ current: i + 1, total: filteredSets.length });
-        const set = filteredSets[i];
-        
-        // Add a delay between requests to avoid hitting rate limits
-        if (i > 0) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-        }
+    // Batch market prices
+    try {
+        setBatchProgress(null);
+        setActiveOperation({ setId: 'Bulk', message: 'Fetching Market Prices via Gemini...' });
+        const setNumbers = filteredSets.map(s => s.setNumber);
+        const marketRes = await fetch(`/api/prices-batch`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ setNumbers, sources: priceSources })
+        });
+        if (marketRes.status === 429) {
+            alert("Rate limit exceeded while fetching Market Prices. Please check your Gemini API Key quota or wait.");
+        } else if (marketRes.ok) {
+            const batchPrices = await marketRes.json();
+            const today = new Date().toISOString().split('T')[0];
 
-        try {
-            const reqApiKey = localStorage.getItem('brickTrackerApiKey') || '';
-            const headers = reqApiKey ? { 'x-gemini-api-key': reqApiKey } : {};
-
-            setActiveOperation({ setId: set.setNumber, message: 'Fetching Set Data & Image' });
-
-            // refresh lego info
-            const legoRes = await fetch(`/api/lego/${set.setNumber}`, { headers });
-            if (legoRes.ok) {
-                const legoData = await legoRes.json();
-                if (legoData && legoData.priceHuf) {
-                    const finalName = legoData.name || set.name;
-                    const updates: any = {
-                       name: finalName,
-                       legoPriceHuf: legoData.priceHuf,
-                       ...(legoData.image ? { productImage: legoData.image } : {}),
-                       legoUrl: legoData.url || set.legoUrl,
-                       legoPriceError: false,
-                       isTemporary: legoData.isTemporary || false,
-                       releaseDate: legoData.releaseDate || null,
-                       hasFetchedLegoInfo: true,
-                       lastLegoPriceRefreshTime: Date.now()
+            for (const set of filteredSets) {
+                const marketPrices = batchPrices[set.setNumber];
+                if (marketPrices) {
+                    await updateSet(set.id, {
+                        marketPrices,
+                        lastPricesRefreshTime: Date.now()
+                    });
+                    
+                    const historyEntry: any = {
+                        date: today,
+                        exchangeRate: marketPrices.exchangeRate
                     };
                     
-                    if ((finalName || '').toLowerCase().includes('minifigure') || set.setNumber.length > 5 || set.name.toLowerCase().includes('minifigure')) {
-                        setActiveOperation({ setId: set.setNumber, message: 'Fetching Minifigures' });
-                        try {
-                            const mfRes = await fetch(`/api/minifigures/${set.setNumber}`);
-                            if (mfRes.ok) {
-                                const mfData = await mfRes.json();
-                                if (mfData.figures && mfData.figures.length > 0) {
-                                    updates.minifigures = mfData.figures;
-                                    updates.minifiguresStatus = set.minifiguresStatus || {};
-                                }
-                            }
-                        } catch(e) {}
-                    }
+                    priceSources.forEach(s => {
+                        if (marketPrices[s.id]) {
+                            historyEntry[`${s.id}Price`] = marketPrices[s.id].price;
+                        }
+                    });
                     
-                    await updateSet(set.id, updates);
+                    await addPriceHistory(set.id, historyEntry);
                 }
             }
-            
-            await new Promise(resolve => setTimeout(resolve, 1000));
-
-            setActiveOperation({ setId: set.setNumber, message: 'Fetching Market Price' });
-            // refresh market info
-            const marketRes = await fetch(`/api/prices/${set.setNumber}`, { 
-                method: 'POST',
-                headers: { ...headers, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sources: priceSources })
-            });
-            if (marketRes.ok) {
-                const marketPrices = await marketRes.json();
-                await updateSet(set.id, {
-                    marketPrices,
-                    lastPricesRefreshTime: Date.now()
-                });
-                
-                const today = new Date().toISOString().split('T')[0];
-                
-                const historyEntry: any = {
-                    date: today,
-                    exchangeRate: marketPrices.exchangeRate
-                };
-                
-                priceSources.forEach(s => {
-                    if (marketPrices[s.id]) {
-                        historyEntry[`${s.id}Price`] = marketPrices[s.id].price;
-                    }
-                });
-                
-                await addPriceHistory(set.id, historyEntry);
-            }
-        } catch (e) {
-            console.error('Batch update failed for set', set.setNumber, e);
         }
+    } catch(e) {
+        console.error('Batch market prices failed', e);
     }
     
     setIsBatchRefreshing(false);
     setBatchProgress(null);
     setActiveOperation(null);
   };
+
+  // Daily refresh logic
+  useEffect(() => {
+    const checkSchedule = () => {
+      const now = new Date();
+      if (now.getHours() === 10) {
+        const todayStr = now.toISOString().split('T')[0];
+        const lastRefresh = localStorage.getItem('brickTrackerLastDailyRefresh');
+        if (lastRefresh !== todayStr) {
+          handleBatchRefresh(true); // skip lego info, only market prices
+          localStorage.setItem('brickTrackerLastDailyRefresh', todayStr);
+        }
+      }
+    };
+    
+    checkSchedule();
+    const interval = setInterval(checkSchedule, 60 * 1000); // Check every minute
+    return () => clearInterval(interval);
+  }, [filteredSets.length, priceSources, isBatchRefreshing]);
 
   const formatPrice = (priceHuf: number) => {
     if (displayCurrency === 'HUF' || !exchangeRates) {
@@ -443,17 +475,6 @@ export default function App() {
             >
               <ShoppingBag size={14} /> <span className="hidden sm:inline">Sources</span>
             </button>
-            <button 
-              onClick={() => {
-                const current = localStorage.getItem('brickTrackerApiKey') || '';
-                setApiKeyInput(current);
-                setShowApiModal(true);
-              }}
-              className="px-3 py-1.5 bg-blue-600 border-2 border-transparent text-white rounded font-black text-[10px] uppercase flex items-center gap-2 hover:bg-blue-700 transition-colors"
-              title="Set custom Gemini API Key"
-            >
-              <Key size={14} /> <span className="hidden sm:inline">API Key</span>
-            </button>
             {isDemoMode ? (
               <button 
                 onClick={() => setIsDemoMode(false)}
@@ -542,7 +563,7 @@ export default function App() {
                 </div>
               ) : (
                 <button
-                  onClick={handleBatchRefresh}
+                  onClick={() => handleBatchRefresh()}
                   disabled={isBatchRefreshing || isDemoMode}
                   className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white border-2 border-black px-4 py-1.5 rounded-lg font-black uppercase text-xs shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -578,22 +599,23 @@ export default function App() {
              <p className="font-black uppercase text-gray-400 animate-pulse tracking-widest text-sm">Building bricks...</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="columns-1 md:columns-2 gap-6">
             <AnimatePresence mode="popLayout">
               {filteredSets.map(set => (
-                <SetCard 
-                  key={set.id} 
-                  set={set} 
-                  onUpdate={updateSet} 
-                  onDelete={(id) => isDemoMode ? setMockSets(mockSets.filter(s => s.id !== id)) : deleteSet(id)}
-                  getPriceHistory={getPriceHistory}
-                  onAddPriceHistory={addPriceHistory}
-                  priceSources={priceSources}
-                  displayCurrency={displayCurrency}
-                  exchangeRates={exchangeRates}
-                  readOnly={isDemoMode}
-                  onStatusUpdate={setActiveOperation}
-                />
+                <div key={set.id} className="break-inside-avoid mb-6">
+                  <SetCard 
+                    set={set} 
+                    onUpdate={updateSet} 
+                    onDelete={(id) => isDemoMode ? setMockSets(mockSets.filter(s => s.id !== id)) : deleteSet(id)}
+                    getPriceHistory={getPriceHistory}
+                    onAddPriceHistory={addPriceHistory}
+                    priceSources={priceSources}
+                    displayCurrency={displayCurrency}
+                    exchangeRates={exchangeRates}
+                    readOnly={isDemoMode}
+                    onStatusUpdate={setActiveOperation}
+                  />
+                </div>
               ))}
             </AnimatePresence>
           </div>
@@ -813,65 +835,6 @@ export default function App() {
             onClose={() => setShowGiftRegistry(false)}
             plannedSets={activeSets.filter(s => s.status === 'planned')}
           />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showApiModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowApiModal(false)}
-              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            />
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-white w-full max-w-sm border-4 border-black p-6 rounded-2xl relative z-10 shadow-2xl flex flex-col"
-            >
-              <h2 className="text-2xl font-black uppercase mb-2 flex items-center gap-2">
-                <Key className="text-lego-blue" />
-                API Key
-              </h2>
-              <p className="text-sm font-bold text-gray-600 mb-6">
-                Enter your Google Gemini API Key for features like Batch Image Search or resolving unreleased sets info. Your key is stored locally in your browser.
-              </p>
-              
-              <input
-                type="password"
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder="AIzaSy..."
-                className="w-full bg-gray-50 border-2 border-black p-3 rounded text-sm font-mono mb-6"
-              />
-
-              <div className="flex gap-3 mt-auto">
-                <button 
-                  onClick={() => setShowApiModal(false)}
-                  className="flex-1 py-3 font-black uppercase text-sm border-2 border-black bg-gray-200 text-black hover:bg-gray-300 rounded shadow-md transition-colors"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={() => {
-                    const trimmed = apiKeyInput.trim();
-                    if (trimmed) {
-                      localStorage.setItem('brickTrackerApiKey', trimmed);
-                    } else {
-                      localStorage.removeItem('brickTrackerApiKey');
-                    }
-                    setShowApiModal(false);
-                  }}
-                  className="flex-1 py-3 font-black uppercase text-sm bg-lego-blue text-white border-2 border-black rounded shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] transition-all"
-                >
-                  Save
-                </button>
-              </div>
-            </motion.div>
-          </div>
         )}
       </AnimatePresence>
 

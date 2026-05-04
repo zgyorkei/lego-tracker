@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trash2, TrendingUp, TrendingDown, Clock, CheckCircle, ExternalLink, AlertCircle, X, RefreshCw, Star, Check, ArrowRight } from 'lucide-react';
+import { Trash2, TrendingUp, TrendingDown, Clock, CheckCircle, ExternalLink, AlertCircle, X, RefreshCw, Star, Check, ArrowRight, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react';
 import { LegoSet, PriceHistory, PriceSource } from '../types';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
@@ -21,6 +21,7 @@ interface SetCardProps {
 export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPriceHistory, onAddPriceHistory, priceSources = [], displayCurrency, exchangeRates, readOnly = false, onStatusUpdate }) => {
   const [history, setHistory] = useState<PriceHistory[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const [isEditingPurchaseDate, setIsEditingPurchaseDate] = useState(false);
   const [editedPurchaseDate, setEditedPurchaseDate] = useState('');
 
@@ -64,6 +65,27 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
   };
   
   const [loadingMarketPrices, setLoadingMarketPrices] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkScroll = () => {
+    if (scrollContainerRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
+      setCanScrollLeft(scrollLeft > 0);
+      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 1);
+    }
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(checkScroll, 100);
+    window.addEventListener('resize', checkScroll);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', checkScroll);
+    };
+  }, [set.marketPrices, priceSources]);
+
   const [loadingLegoInfo, setLoadingLegoInfo] = useState(false);
   const [loadingLegoPrice, setLoadingLegoPrice] = useState(false);
   
@@ -127,7 +149,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
   useEffect(() => {
     if (set.status === 'planned' || set.status === 'ordered') {
       if (!set.hasFetchedLegoInfo) {
-         refreshLegoData(true, false);
+         refreshLegoData(true, true);
       }
     }
   }, [set.setNumber, set.status]);
@@ -145,13 +167,11 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
     }
 
     try {
-      const shouldSkipImage = !!set.productImage;
-      const apiKey = localStorage.getItem('brickTrackerApiKey') || '';
-      const headers: Record<string, string> = apiKey ? { 'x-gemini-api-key': apiKey } : {};
-      const res = await fetch(`/api/lego/${set.setNumber}${shouldSkipImage ? '?skipImage=true' : ''}`, { headers });
+      const shouldSkipImage = !updateInfo;
+      
+      const res = await fetch(`/api/lego/${set.setNumber}?skipImage=${shouldSkipImage}`);
       if (res.status === 429) {
-        if (onStatusUpdate) onStatusUpdate(null);
-        return;
+        throw new Error('Rate limit exceeded (429)');
       }
       if (!res.ok) throw new Error('API error');
       const data = await res.json();
@@ -162,6 +182,11 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
          updates.name = data.name || set.name;
          updates.productImage = data.image || set.productImage;
          updates.hasFetchedLegoInfo = true;
+         // Always save price if it came back when fetching info
+         if (data.priceHuf > 0 && !set.legoPriceHuf) {
+            updates.legoPriceHuf = data.priceHuf;
+            updates.legoUrl = data.url || set.legoUrl;
+         }
          
          if ((updates.name || '').toLowerCase().includes('minifigure') || set.setNumber.length > 5 || set.name.toLowerCase().includes('minifigure')) {
              if (onStatusUpdate && !set.minifigures) {
@@ -221,17 +246,14 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
     }
 
     try {
-      const apiKey = localStorage.getItem('brickTrackerApiKey') || '';
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (apiKey) headers['x-gemini-api-key'] = apiKey;
       const res = await fetch(`/api/prices/${set.setNumber}`, { 
          method: 'POST', 
          headers, 
          body: JSON.stringify({ sources: priceSources }) 
       });
       if (res.status === 429) {
-         if (onStatusUpdate) onStatusUpdate(null);
-         return;
+         throw new Error('Rate limit exceeded (429)');
       }
       if (!res.ok) throw new Error('API error');
 
@@ -323,10 +345,26 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className={`bg-white rounded-lg shadow-xl overflow-hidden border-4 flex flex-col h-full ${
+      className={`bg-white rounded-lg shadow-xl overflow-hidden border-4 flex flex-col relative group ${
         set.status === 'ordered' ? 'border-green-500' : 'border-lego-yellow'
       }`}
     >
+      {isCollapsed ? (
+         <div 
+           className="p-4 flex justify-between items-center cursor-pointer bg-white" 
+           onClick={() => setIsCollapsed(false)}
+         >
+           <h3 className="text-sm font-black text-gray-900 uppercase tracking-tight truncate pr-4">{set.name} ({set.setNumber})</h3>
+           <ChevronDown size={20} className="text-gray-400 shrink-0" />
+         </div>
+      ) : (
+         <>
+         <button 
+           onClick={() => setIsCollapsed(true)} 
+           className="absolute top-2 right-2 z-[40] bg-white/90 p-1.5 rounded backdrop-blur-sm border border-gray-100 shadow-sm text-gray-400 hover:text-black transition-all hover:bg-gray-50 opacity-0 group-hover:opacity-100 focus:opacity-100"
+         >
+            <ChevronUp size={16} />
+         </button>
       <AnimatePresence mode="wait">
         {!isFlipped ? (
           <motion.div 
@@ -335,7 +373,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
             animate={{ opacity: 1, rotateY: 0 }}
             exit={{ opacity: 0, rotateY: 90 }}
             transition={{ duration: 0.3 }}
-            className="flex flex-col flex-1 w-full"
+            className="flex flex-col flex-1 w-full h-full"
           >
             <div className="flex flex-col md:flex-row border-b border-gray-100 flex-1">
               <div className="w-full md:w-48 h-48 bg-white flex items-center justify-center relative overflow-hidden shrink-0 md:border-r border-gray-100 group">
@@ -414,11 +452,10 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
             </div>
           </div>
 
-          <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-end">
-            <div />
+          <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
             <div className="flex gap-4 items-center">
                {set.legoPriceHuf ? (
-                 <div className="flex flex-col items-end relative group">
+                 <div className="flex flex-col items-start relative group">
                    <p className="text-[10px] uppercase font-black text-gray-400 tracking-wider leading-none mb-1">
                      {set.isTemporary ? 'UNRELEASED / LEAKED' : 'OFFICIAL PRICE'} {set.quantity && set.quantity > 1 ? `(x${set.quantity})` : ''}
                    </p>
@@ -435,36 +472,44 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                    )}
                  </div>
                ) : loadingLegoPrice ? (
-                 <div className="text-gray-400 flex flex-col items-end">
+                 <div className="text-gray-400 flex flex-col items-start">
                     <p className="text-[10px] uppercase font-black tracking-wider leading-none mb-1">OFFICIAL PRICE</p>
                     <div className="flex items-center gap-1">
                        <RefreshCw size={14} className="animate-spin" />
                     </div>
                  </div>
                ) : set.legoPriceError ? (
-                 <div className="text-red-500 flex flex-col items-end group cursor-pointer" onClick={() => !readOnly && refreshLegoPriceOnly()}>
+                 <div className="text-red-500 flex flex-col items-start group cursor-pointer" onClick={() => !readOnly && refreshLegoPriceOnly()}>
                     <p className="text-[10px] uppercase font-black tracking-wider leading-none mb-1">Official Price</p>
                     <p className="text-sm font-black flex items-center gap-1">
                       <AlertCircle size={14} /> Fetch Failed
                       {!readOnly && <RefreshCw size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />}
                     </p>
                  </div>
-               ) : null}
-
-               {set.status === 'planned' && !readOnly && (
-                  <button 
-                    onClick={() => openOrderDialog(set.legoPriceHuf)}
-                    className="bg-green-500 text-white text-xs font-black uppercase px-4 py-2 rounded-full hover:bg-green-600 transition-colors shadow-sm whitespace-nowrap"
-                  >
-                    Purchased
-                  </button>
+               ) : (
+                 <div className="text-gray-400 flex flex-col items-start group cursor-pointer" onClick={() => !readOnly && refreshLegoPriceOnly()}>
+                    <p className="text-[10px] uppercase font-black tracking-wider leading-none mb-1">Official Price</p>
+                    <p className="text-sm font-black flex items-center gap-1">
+                      UNKNOWN
+                      {!readOnly && <RefreshCw size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />}
+                    </p>
+                 </div>
                )}
             </div>
+
+            {set.status === 'planned' && !readOnly && (
+               <button 
+                 onClick={() => openOrderDialog(set.legoPriceHuf)}
+                 className="bg-green-500 text-white text-xs font-black uppercase px-4 py-2 rounded-full hover:bg-green-600 transition-colors shadow-sm whitespace-nowrap ml-4"
+               >
+                 Purchased
+               </button>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="bg-white border-t border-gray-100 flex overflow-hidden min-h-[100px]">
+      <div className="bg-white border-t border-gray-100 flex overflow-hidden min-h-[100px] mt-auto">
         {set.status === 'ordered' ? (
           <div className="space-y-1 bg-green-50 p-4 w-full h-full flex flex-col justify-between">
             <div className="mb-auto">
@@ -526,41 +571,64 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                   </div>
                </div>
              ) : (set.marketPrices && !set.marketPrices.error) ? (
-               <div className="flex-1 flex overflow-x-auto divide-x divide-gray-100 snap-x hide-scrollbar">
-                  {priceSources.map((source) => {
+               <div className="flex-1 relative group/scroll min-w-0 w-full overflow-hidden">
+                   {canScrollLeft && (
+                     <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-white to-transparent pointer-events-none z-10 flex items-center justify-start pointer-events-auto">
+                        <button onClick={(e) => { e.stopPropagation(); scrollContainerRef.current?.scrollBy({ left: -200, behavior: 'smooth' }) }} className="bg-white rounded-full shadow p-1 ml-1 text-gray-500 hover:text-black hover:scale-110 transition-all pointer-events-auto">
+                           <ChevronLeft size={14} />
+                        </button>
+                     </div>
+                   )}
+                   {canScrollRight && (
+                     <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white to-transparent pointer-events-none z-10 flex items-center justify-end pointer-events-auto">
+                        <button onClick={(e) => { e.stopPropagation(); scrollContainerRef.current?.scrollBy({ left: 200, behavior: 'smooth' }) }} className="bg-white rounded-full shadow p-1 mr-1 text-gray-500 hover:text-black hover:scale-110 transition-all pointer-events-auto">
+                           <ChevronRight size={14} />
+                        </button>
+                     </div>
+                   )}
+                   <div 
+                     ref={scrollContainerRef}
+                     onScroll={checkScroll}
+                     className="flex overflow-x-auto divide-x divide-gray-100 snap-x hide-scrollbar h-full"
+                   >
+                      {priceSources.map((source) => {
                      const priceData = set.marketPrices![source.id] as any;
                      if (!priceData) return <div key={source.id} className="p-4 flex flex-col justify-between h-full min-w-[140px] snap-start shrink-0"><p className="text-[10px] font-black text-gray-400 mt-auto mb-auto">{source.name.toUpperCase()} (N/A)</p></div>;
+                     
+                     const priceDiff = (priceData.priceHuf && set.legoPriceHuf) ? calculateDiff(priceData.priceHuf) : 0;
+                     const isGreatDeal = priceDiff <= -30 && set.legoPriceHuf > 0;
                      
                      return (
                       <div 
                         key={source.id}
                         onClick={() => openOrderDialog(priceData.priceHuf, source.currency as any, priceData.price)}
-                        className={`text-left ${readOnly ? '' : 'cursor-pointer hover:bg-gray-50'} p-4 transition-colors relative flex flex-col justify-between min-w-[160px] snap-start shrink-0`}
+                        className={`text-left ${readOnly ? '' : 'cursor-pointer'} ${isGreatDeal ? 'bg-green-500 hover:bg-green-600 text-white shadow-inner' : 'bg-white hover:bg-gray-50'} p-4 transition-colors relative flex flex-col justify-between min-w-[160px] snap-start shrink-0`}
                       >
                          <div className="mb-auto">
                            {priceData.url ? (
-                              <a href={priceData.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="group/link text-[10px] font-black text-blue-500 hover:underline leading-none flex items-center gap-1 uppercase tracking-wider">
+                              <a href={priceData.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className={`group/link text-[10px] font-black ${isGreatDeal ? 'text-white' : 'text-blue-500'} hover:underline leading-none flex items-center gap-1 uppercase tracking-wider`}>
                                 {source.name} <ExternalLink size={8} />
                               </a>
                            ) : (
-                              <p className="text-[10px] font-black text-gray-400 leading-none uppercase tracking-wider">{source.name}</p>
+                              <p className={`text-[10px] font-black ${isGreatDeal ? 'text-green-50' : 'text-gray-400'} leading-none uppercase tracking-wider`}>{source.name}</p>
                            )}
                            {priceData.store && priceData.store.toLowerCase() !== source.name.toLowerCase() && (
-                               <p className="text-[9px] font-bold text-gray-500 truncate mt-1">{priceData.store}</p>
+                               <p className={`text-[9px] font-bold ${isGreatDeal ? 'text-green-100' : 'text-gray-500'} truncate mt-1`}>{priceData.store}</p>
                            )}
                          </div>
                          <div className="flex justify-between items-end mt-2">
                           <div>
-                             <p className="text-sm font-black text-gray-700 tracking-tight">{priceData.priceHuf ? formatPrice(priceData.priceHuf) : '-'}</p>
+                             <p className={`text-sm font-black ${isGreatDeal ? 'text-white' : 'text-gray-700'} tracking-tight`}>{priceData.priceHuf ? formatPrice(priceData.priceHuf) : "-"}</p>
                           </div>
-                          <div className={`text-[10px] font-bold flex items-center gap-0.5 ${(priceData.priceHuf && calculateDiff(priceData.priceHuf) <= 0) ? 'text-green-500' : 'text-red-500'}`}>
-                             {priceData.priceHuf ? calculateDiff(priceData.priceHuf).toFixed(1) : 0}% 
-                             {(priceData.priceHuf && calculateDiff(priceData.priceHuf) <= 0) ? <TrendingDown size={10} /> : <TrendingUp size={10} />}
-                          </div>
+                          <div className={`text-[10px] font-bold flex items-center gap-0.5 ${(priceData.priceHuf && priceDiff <= 0) ? (isGreatDeal ? 'text-white bg-green-600 px-1.5 py-0.5 rounded' : 'text-green-500') : 'text-red-500'}`}>
+                              {priceData.priceHuf ? priceDiff.toFixed(1) : 0}% 
+                              {(priceData.priceHuf && priceDiff <= 0) ? <TrendingDown size={10} /> : <TrendingUp size={10} />}
+                           </div>
                         </div>
                       </div>
                      );
                   })}
+               </div>
                </div>
              ) : (
                <div className="flex-1 flex items-center justify-center">
@@ -762,6 +830,8 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
           </motion.div>
         )}
       </AnimatePresence>
+      </>
+      )}
     </motion.div>
   );
 };

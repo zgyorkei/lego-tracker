@@ -7,9 +7,16 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const withTimeout = (promise: Promise<any>, ms: number) => {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms))
+  ]);
+};
+
 // Lazily load genAI to avoid startup crashes if API key is missing
-function getGenAI(customKey?: string) {
-  const apiKey = customKey || process.env.GEMINI_API_KEY;
+function getGenAI() {
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
     throw new Error("GEMINI_API_KEY is missing. Please set it in AI Studio or provide a custom key.");
   }
@@ -100,21 +107,20 @@ async function startServer() {
 
         // 3. Fallback using Gemini if still empty
         if (results.length === 0) {
-            const customKey = req.headers['x-gemini-api-key'] as string | undefined;
-            if (customKey || process.env.GEMINI_API_KEY) {
+            if (process.env.GEMINI_API_KEY) {
                 console.log('Scraping minifigures failed, attempting Gemini Search fallback...');
                 const prompt = `Find all the minifigures or characters included in Lego set ${setNumber}. Prioritize searching jaysbrickblog.com and brickfanatics.com, or other reputable lego news sites. Return a JSON object with this exact shape: { "figures": [{ "id": "string (create a short distinct id, e.g. fig1)", "name": "string", "image": "string (direct image url or null)" }] } Return ONLY the JSON object.`;
-                const models = ['gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
+                const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-3.1-pro-preview', 'gemini-3-flash-preview'];
                 
                 let text = '';
                 for (const model of models) {
                     for (let attempt = 1; attempt <= 3; attempt++) {
                         try {
-                            const result = await getGenAI(customKey).models.generateContent({
+                            const result = await withTimeout(getGenAI().models.generateContent({
                                 model,
                                 contents: prompt,
                                 config: { tools: [{ googleSearch: {} }], responseMimeType: 'application/json' }
-                            });
+                            }), 15000);
                             text = result.text || '{}';
                             const parsed = JSON.parse(text);
                             if (parsed.figures && Array.isArray(parsed.figures) && parsed.figures.length > 0) {
@@ -140,7 +146,6 @@ async function startServer() {
   // API Route: Batch search for images using Gemini
   app.post('/api/batch-images', async (req, res) => {
     const { setNumbers } = req.body;
-    let customKey = req.headers['x-gemini-api-key'] as string | undefined;
     
     if (!setNumbers || !Array.isArray(setNumbers) || setNumbers.length === 0) {
         return res.status(400).json({ error: 'No set numbers provided' });
@@ -151,18 +156,18 @@ async function startServer() {
       const prompt = `Find the main high-quality product image URL for the following Lego sets: ${queryList}. 
 Return ONLY a JSON object mapping each set number to its image URL. Example format: { "75192": "https://example.com/image1.jpg", "10294": "https://example.com/image2.png" }. Use the googleSearch tool to perform standard Google searches. Find direct image links if possible (e.g., from retailer sites, wikis, or brickset). Ensure the URLs are absolute.`;
 
-      const models = ['gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
+      const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-3.1-pro-preview', 'gemini-3-flash-preview'];
       let text = '';
       let lastError: any;
 
       for (const model of models) {
          for (let attempt = 1; attempt <= 3; attempt++) {
             try {
-               const result = await getGenAI(customKey).models.generateContent({
+               const result = await withTimeout(getGenAI().models.generateContent({
                   model,
                   contents: prompt,
                   config: { tools: [{ googleSearch: {} }], responseMimeType: 'application/json' }
-               });
+               }), 15000);
                text = result.text || '{}';
                break;
             } catch (e: any) {
@@ -173,7 +178,8 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
                } else if (e.message && e.message.includes('429')) {
                   const retryMatch = e.message.match(/retry in ([\d\.]+)s/);
                   const waitSecs = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : 90;
-                  throw { isRateLimit: true, retryAfter: waitSecs };
+                  lastError = { isRateLimit: true, retryAfter: waitSecs, message: e.message };
+                  break; // Move to next model
                } else {
                   break; // Don't retry for other errors like 404
                }
@@ -255,10 +261,57 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
     const legoUrlEn = `https://www.lego.com/en-us/product/${setNumber}`;
 
     try {
+      // 1. Try Brickset first
+      try {
+        const bricksetRes = await axios.get(`https://brickset.com/sets/${setNumber}-1`, { headers: getCommonHeaders(), timeout: 10000 });
+        const $bs = cheerio.load(bricksetRes.data);
+        
+        const title = $bs('h1').text().trim();
+        let name = title ? title.replace(/^\d+\s/, '') : '';
+
+        let productImage = null;
+        if (!skipImage) {
+           productImage = $bs('a.highslide img').attr('src') || $bs('img[src*="images.brickset.com/sets/images"]').attr('src');
+        }
+
+        const rrpText = $bs('dt:contains("RRP")').next('dd').text();
+        const eurMatch = rrpText.match(/€([\d.]+)/);
+        const usdMatch = rrpText.match(/\$([\d.]+)/);
+        
+        let priceEur = 0;
+        if (eurMatch) {
+            priceEur = parseFloat(eurMatch[1]);
+        } else if (usdMatch) {
+            priceEur = parseFloat(usdMatch[1]) * 0.9;
+        }
+
+        let priceHuf = 0;
+        if (priceEur > 0) {
+           try {
+              const ratesRes = await axios.get(`https://api.frankfurter.app/latest?from=EUR`, { timeout: 5000 });
+              const eurToHuf = ratesRes.data.rates.HUF;
+              if (eurToHuf) priceHuf = Math.round(priceEur * eurToHuf);
+           } catch(e) {
+              priceHuf = Math.round(priceEur * 395); 
+           }
+        }
+        
+        if (priceHuf > 0 || name) {
+            console.log(`Brickset info fetched for ${setNumber}:`, { name, priceEur, priceHuf, image: productImage || null });
+            return res.json({ name, priceHuf, image: productImage || null, url: legoUrlHuf });
+        }
+      } catch (bricksetError: any) {
+        console.warn('Brickset scraping failed:', bricksetError.message);
+      }
+
       const responseHu = await axios.get(legoUrlHuf, { headers: getCommonHeaders(), timeout: 10000 });
       const $hu = cheerio.load(responseHu.data);
       
-      const priceText = $hu('span[data-test="product-price"]').first().text().trim();
+      let priceText = $hu('span[data-test="product-price"]').first().text().trim();
+      let priceHuf = parseInt(priceText.replace(/[^0-9]/g, '')) || 0;
+      if (priceHuf === 0) {
+        priceHuf = parseInt($hu('meta[property="product:price:amount"]').attr('content') || '0', 10);
+      }
       let productImage = null;
       if (!skipImage) {
         productImage = $hu('meta[property="og:image"]').attr('content');
@@ -266,7 +319,10 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
           productImage = $hu('img[class*="ProductImage"]').first().attr('src');
         }
       }
-      const priceHuf = parseInt(priceText.replace(/[^0-9]/g, '')) || 0;
+
+      if (priceHuf === 0) {
+        throw new Error("Price not found on Lego page (both span and meta were empty/0), trying fallback");
+      }
 
       let name = `Lego Set ${setNumber}`;
       try {
@@ -288,25 +344,24 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
     } catch (scrapingError: any) {
       console.warn('Scraping Lego.com failed, attempting Gemini Search fallback...', scrapingError.message);
 
-      const customKey = req.headers['x-gemini-api-key'] as string | undefined;
       try {
         const imagePrompt = skipImage ? "" : "and the main product image URL. ";
         const imageJsonFormat = skipImage ? "" : ', "imageUrl": "string"';
         const prompt = `Search for Lego set ${setNumber}. ALWAYS find the official ENGLISH name, current HUF price, ${imagePrompt}If it's an unreleased set or not on lego.com, prioritize searching jaysbrickblog.com and brickfanatics.com to find information such as price (convert USD/EUR to HUF roughly), image, and release date. If you get the info from an unofficial source like jaysbrickblog or brickfanatics, set 'isTemporary' to true. Return ONLY a JSON object: { "name": "string", "priceHuf": 1234${imageJsonFormat}, "isTemporary": boolean, "releaseDate": "string | null" }.`;
         
         let text = '';
-        const models = ['gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
+        const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-3.1-pro-preview', 'gemini-3-flash-preview'];
         let lastError: any;
         
         for (const model of models) {
           for (let attempt = 1; attempt <= 3; attempt++) {
             try {
               console.log(`Trying model ${model} (attempt ${attempt}) for lego info...`);
-              const result = await getGenAI(customKey).models.generateContent({
+              const result = await withTimeout(getGenAI().models.generateContent({
                 model,
                 contents: prompt,
                 config: { tools: [{ googleSearch: {} }] }
-              });
+              }), 15000);
               text = result.text || '';
               break;
             } catch (e: any) {
@@ -317,7 +372,8 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
                } else if (e.message && e.message.includes('429')) {
                   const retryMatch = e.message.match(/retry in ([\d\.]+)s/);
                   const waitSecs = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : 90;
-                  throw { isRateLimit: true, retryAfter: waitSecs };
+                  lastError = { isRateLimit: true, retryAfter: waitSecs, message: e.message };
+                  break; // Move to next model
                } else {
                   break; // Don't retry for other errors like 404
                }
@@ -353,10 +409,106 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
     }
   });
 
+  // API Route: Fetch prices dynamically based on sources for MULTIPLE SETS
+  app.post('/api/prices-batch', async (req, res) => {
+    const { setNumbers, sources } = req.body;
+    
+    if (!sources || !Array.isArray(sources) || sources.length === 0) {
+       return res.status(400).json({ error: 'No price sources provided' });
+    }
+    if (!setNumbers || !Array.isArray(setNumbers) || setNumbers.length === 0) {
+       return res.status(400).json({ error: 'No set numbers provided' });
+    }
+
+    try {
+      const exRateRes = await axios.get('https://api.frankfurter.app/latest?from=EUR');
+      const rates = Object.assign({}, exRateRes.data.rates, { EUR: 1 });
+      const hufRate = rates.HUF;
+
+      let expectedJsonFormat: any = {};
+      
+      let prompt = `Find the current lowest market prices for the following Lego sets across the listed sources.\n`;
+      let needsGoogleSearch = true; // We always use Google Search for batch to avoid massive local html fetching
+      
+      for (const setNumber of setNumbers) {
+         prompt += `\nSet Number: ${setNumber}\nSources:\n`;
+         expectedJsonFormat[setNumber] = {};
+         for (const s of sources) {
+            prompt += `- "${s.id}": ${s.urlTemplate.replace('{setNumber}', setNumber)} (Expected currency: ${s.currency})\n`;
+            expectedJsonFormat[setNumber][s.id] = { price: 0, store: `string (name of the specific store)` };
+         }
+      }
+
+      prompt += `\nReturn ONLY a JSON object mapping each setNumber to its sources in this exact format:\n${JSON.stringify(expectedJsonFormat, null, 2)}`;
+
+      const config: any = { tools: [{ googleSearch: {} }] };
+
+      const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-3.1-pro-preview', 'gemini-3-flash-preview'];
+      let text = '';
+      let lastError: any;
+      
+      for (const model of models) {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            console.log(`[Batch] Trying model ${model} (attempt ${attempt}) for prices...`);
+            const result = await withTimeout(getGenAI().models.generateContent({
+              model,
+              contents: prompt,
+              config
+            }), 25000); // Give it a bit more time for batch
+            text = result.text || '';
+            break;
+          } catch (e: any) {
+            lastError = e;
+            console.warn(`[Batch] Model ${model} attempt ${attempt} failed:`, e.message);
+          }
+        }
+        if (text) break;
+      }
+
+      if (!text) {
+        throw lastError || new Error("All models failed");
+      }
+
+      const match = text.match(/```json\n([\s\S]*?)\n```/);
+      if (match) text = match[1];
+      else {
+        const fallbackMatch = text.match(/\{[\s\S]*\}/);
+        if (fallbackMatch) text = fallbackMatch[0];
+      }
+
+      let parsedBatch = JSON.parse(text);
+      
+      // Calculate HUF and formatting per item
+      for (const setNumber of setNumbers) {
+          if (parsedBatch[setNumber]) {
+              const parsed = parsedBatch[setNumber];
+              parsed.exchangeRate = hufRate;
+              for (const s of sources) {
+                 if (parsed[s.id]) {
+                    const originalPrice = parsed[s.id].price;
+                    if (originalPrice) {
+                        const sourceCurrency = s.currency;
+                        const sourceRate = rates[sourceCurrency] || 1;
+                        const priceInEur = originalPrice / sourceRate;
+                        parsed[s.id].priceHuf = Math.round(priceInEur * hufRate);
+                        parsed[s.id].url = s.urlTemplate.replace('{setNumber}', setNumber);
+                    }
+                 }
+              }
+          }
+      }
+
+      res.json(parsedBatch);
+    } catch (error) {
+      console.error('Batch Price Error:', error);
+      res.status(500).json({ error: 'Failed to fetch batch market prices. Make sure your GEMINI_API_KEY is valid.', details: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
   // API Route: Fetch prices dynamically based on sources
   app.post('/api/prices/:setNumber', async (req, res) => {
     const { setNumber } = req.params;
-    const customKey = req.headers['x-gemini-api-key'] as string | undefined;
     const { sources } = req.body;
     
     if (!sources || !Array.isArray(sources) || sources.length === 0) {
@@ -375,14 +527,45 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
           return acc;
       }, {});
 
-      // We'll use Gemini to "search" for these specific prices since direct scraping is often blocked
-      const prompt = `Find the current lowest price for Lego set ${setNumber} on the following sources:
-${promptSources}
+      // Use cheerio to fetch the content of each source URL directly if possible
+      const fetchHTML = async (url: string) => {
+         try {
+            const res = await axios.get(url, { headers: getCommonHeaders(), timeout: 8000 });
+            const $ = cheerio.load(res.data);
+            $('script, style, svg, noscript, header, footer').remove();
+            return $('body').text().replace(/\s+/g, ' ').substring(0, 30000); // pass up to 30k chars to context
+         } catch (e) {
+            return null;
+         }
+      };
 
-Return ONLY a JSON object in this exact format: 
-${JSON.stringify(expectedJsonFormat, null, 2)}`;
+      const sourceHtmlMap: any = {};
+      await Promise.all(sources.map(async (s: any) => {
+          const url = s.urlTemplate.replace('{setNumber}', setNumber);
+          sourceHtmlMap[s.id] = await fetchHTML(url);
+      }));
 
-      const models = ['gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
+      let prompt = `Find the current lowest price for Lego set ${setNumber} on the following sources:\n`;
+      let needsGoogleSearch = false;
+
+      for (const s of sources) {
+         prompt += `- "${s.id}": ${s.urlTemplate.replace('{setNumber}', setNumber)} (Expected currency: ${s.currency})\n`;
+         if (sourceHtmlMap[s.id]) {
+            prompt += `  Extracted webpage text for ${s.id} (use this to find the price):\n  """${sourceHtmlMap[s.id]}"""\n\n`;
+         } else {
+            prompt += `  (Could not fetch webpage locally. Use googleSearch to find the price for this source. Ensure you don't hallucinate prices.)\n\n`;
+            needsGoogleSearch = true;
+         }
+      }
+
+      prompt += `Return ONLY a JSON object in this exact format:\n${JSON.stringify(expectedJsonFormat, null, 2)}`;
+
+      const config: any = {};
+      if (needsGoogleSearch) {
+          config.tools = [{ googleSearch: {} }];
+      }
+
+      const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-3.1-pro-preview', 'gemini-3-flash-preview'];
       let text = '';
       let lastError: any;
       
@@ -390,11 +573,11 @@ ${JSON.stringify(expectedJsonFormat, null, 2)}`;
         for (let attempt = 1; attempt <= 3; attempt++) {
           try {
             console.log(`Trying model ${model} (attempt ${attempt}) for prices...`);
-            const result = await getGenAI(customKey).models.generateContent({
+            const result = await withTimeout(getGenAI().models.generateContent({
               model,
               contents: prompt,
-              config: { tools: [{ googleSearch: {} }] }
-            });
+              config
+            }), 15000);
             text = result.text || '';
             break;
           } catch (e: any) {
@@ -405,7 +588,8 @@ ${JSON.stringify(expectedJsonFormat, null, 2)}`;
              } else if (e.message && e.message.includes('429')) {
                 const retryMatch = e.message.match(/retry in ([\d\.]+)s/);
                 const waitSecs = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : 90;
-                throw { isRateLimit: true, retryAfter: waitSecs };
+                lastError = { isRateLimit: true, retryAfter: waitSecs, message: e.message };
+                  break; // Move to next model
              } else {
                 break; // Don't retry for other errors like 404
              }
