@@ -509,7 +509,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
         </div>
       </div>
 
-      <div className="bg-white border-t border-gray-100 flex overflow-hidden min-h-[100px] mt-auto">
+      <div className="bg-white border-t border-gray-100 flex overflow-hidden lg:min-h-0 min-h-[50px] mt-auto">
         {set.status === 'ordered' ? (
           <div className="space-y-1 bg-green-50 p-4 w-full h-full flex flex-col justify-between">
             <div className="mb-auto">
@@ -561,17 +561,60 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                  </button>
              )}
 
-             {set.marketPrices?.error ? (
-               <div className="flex-1 p-4 flex flex-col justify-between bg-red-50 cursor-pointer hover:bg-red-100 transition-colors relative" onClick={() => !readOnly && refreshMarketPrices()}>
-                  <p className="text-[10px] uppercase font-black text-red-500 tracking-wider">Market Prices</p>
-                  <div className="mt-2">
-                    <p className="text-sm font-black text-red-600 flex items-center gap-1">
-                      <AlertCircle size={14} /> Fetch Failed
-                    </p>
-                  </div>
-               </div>
-             ) : (set.marketPrices && !set.marketPrices.error) ? (
-               <div className="flex-1 relative group/scroll min-w-0 w-full overflow-hidden">
+             {(() => {
+                const hasPreviousData = set.marketPrices && Object.keys(set.marketPrices).some(k => k !== 'error' && k !== 'exchangeRate');
+                const hasPricesFallback = set.prices && Object.keys(set.prices).length > 0;
+                let marketData = set.marketPrices;
+                
+                if (marketData?.error && !hasPreviousData && !hasPricesFallback) {
+                  return (
+                   <div className="flex-1 p-4 flex flex-col justify-between bg-red-50 cursor-pointer hover:bg-red-100 transition-colors relative" onClick={() => !readOnly && refreshMarketPrices()}>
+                      <p className="text-[10px] uppercase font-black text-red-500 tracking-wider">Market Prices</p>
+                      <div className="mt-2">
+                        <p className="text-sm font-black text-red-600 flex items-center gap-1">
+                          <AlertCircle size={14} /> Fetch Failed
+                        </p>
+                      </div>
+                   </div>
+                  );
+                }
+                
+                if (!marketData && !hasPricesFallback) {
+                   return (
+                     <div className="flex-1 flex items-center justify-center p-4">
+                        <div className="text-xs text-gray-500 font-bold uppercase text-center p-2">Wait for market prices...</div>
+                     </div>
+                   );
+                }
+                
+                let mergedPrices = marketData || { exchangeRate: exchangeRates?.EUR || 400, error: false };
+                if (hasPricesFallback && !hasPreviousData) {
+                   const simulated: any = { exchangeRate: mergedPrices.exchangeRate, error: mergedPrices.error };
+                   priceSources.forEach(s => {
+                      if (set.prices && set.prices[s.id]) {
+                          simulated[s.id] = { 
+                             price: set.prices[s.id], 
+                             store: s.name, 
+                             url: s.urlTemplate.replace('{setNumber}', set.setNumber).replace('{name}', encodeURIComponent(set.name))
+                          };
+                          if (s.currency === 'EUR' && exchangeRates) {
+                             simulated[s.id].priceHuf = set.prices[s.id] * exchangeRates.EUR;
+                          } else {
+                             simulated[s.id].priceHuf = set.prices[s.id];
+                          }
+                      }
+                   });
+                   mergedPrices = simulated;
+                }
+
+                return (
+                 <div className={`flex-1 relative group/scroll min-w-0 w-full overflow-hidden ${mergedPrices.error ? 'bg-red-50' : ''}`}>
+                   {mergedPrices.error && (
+                      <div className="absolute top-1 left-2 z-20 flex items-center gap-1">
+                        <AlertCircle size={10} className="text-red-500" />
+                        <span className="text-[8px] font-bold text-red-500 uppercase tracking-widest">Update Failed</span>
+                      </div>
+                   )}
                    {canScrollLeft && (
                      <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-white to-transparent pointer-events-none z-10 flex items-center justify-start pointer-events-auto">
                         <button onClick={(e) => { e.stopPropagation(); scrollContainerRef.current?.scrollBy({ left: -200, behavior: 'smooth' }) }} className="bg-white rounded-full shadow p-1 ml-1 text-gray-500 hover:text-black hover:scale-110 transition-all pointer-events-auto">
@@ -592,7 +635,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                      className="flex overflow-x-auto divide-x divide-gray-100 snap-x hide-scrollbar h-full"
                    >
                       {priceSources.map((source) => {
-                     const priceData = set.marketPrices![source.id] as any;
+                     const priceData = mergedPrices[source.id] as any;
                      if (!priceData) return <div key={source.id} className="p-4 flex flex-col justify-between h-full min-w-[140px] snap-start shrink-0"><p className="text-[10px] font-black text-gray-400 mt-auto mb-auto">{source.name.toUpperCase()} (N/A)</p></div>;
                      
                      const priceDiff = (priceData.priceHuf && set.legoPriceHuf) ? calculateDiff(priceData.priceHuf) : 0;
@@ -602,7 +645,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                       <div 
                         key={source.id}
                         onClick={() => openOrderDialog(priceData.priceHuf, source.currency as any, priceData.price)}
-                        className={`text-left ${readOnly ? '' : 'cursor-pointer'} ${isGreatDeal ? 'bg-green-500 hover:bg-green-600 text-white shadow-inner' : 'bg-white hover:bg-gray-50'} p-4 transition-colors relative flex flex-col justify-between min-w-[160px] snap-start shrink-0`}
+                        className={`text-left ${readOnly ? '' : 'cursor-pointer'} ${isGreatDeal ? 'bg-green-500 hover:bg-green-600 text-white shadow-inner' : (mergedPrices.error ? 'bg-red-50 hover:bg-red-100' : 'bg-white hover:bg-gray-50')} p-4 transition-colors relative flex flex-col justify-between min-w-[160px] snap-start shrink-0 pt-5`}
                       >
                          <div className="mb-auto">
                            {priceData.url ? (
@@ -630,11 +673,8 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                   })}
                </div>
                </div>
-             ) : (
-               <div className="flex-1 flex items-center justify-center">
-                  <div className="text-xs text-gray-500 font-bold uppercase text-center p-2">Wait for market prices...</div>
-               </div>
-             )}
+                );
+             })()}
           </div>
         )}
       </div>
