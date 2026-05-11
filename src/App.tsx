@@ -574,9 +574,22 @@ export default function App() {
                 <button
                   onClick={() => handleBatchRefresh()}
                   disabled={isBatchRefreshing || isDemoMode}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white border-2 border-black px-4 py-1.5 rounded-lg font-black uppercase text-xs shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="group w-full sm:w-auto flex items-center justify-center gap-2 bg-white border-2 border-black px-4 py-1.5 rounded-lg font-black uppercase text-xs shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <RefreshCcw size={14} /> Update All
+                  {(() => {
+                     const lastUpdatedTime = filteredSets.reduce((max, s) => Math.max(max, s.lastPricesRefreshTime || 0), 0);
+                     const lastUpdatedStr = lastUpdatedTime > 0 ? 
+                        new Date(lastUpdatedTime).toLocaleString('hu-HU', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 
+                        'Never';
+
+                     return (
+                        <>
+                           <RefreshCcw size={14} className="group-hover:animate-spin-once" />
+                           <span className="hidden group-hover:inline">Update All</span>
+                           <span className="inline group-hover:hidden whitespace-nowrap">Updated: {lastUpdatedStr}</span>
+                        </>
+                     );
+                  })()}
                 </button>
               )}
               </div>
