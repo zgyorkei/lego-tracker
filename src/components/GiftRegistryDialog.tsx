@@ -311,7 +311,7 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
                          {isSelected && <Check size={16} />}
                        </div>
                        <div className="w-16 h-16 bg-white rounded shadow-sm border border-gray-100 flex items-center justify-center shrink-0 overflow-hidden">
-                         {set.productImage ? <img src={set.productImage} alt={set.name} className="max-w-full max-h-full object-contain" /> : <div className="text-gray-300 text-xs">No img</div>}
+                         {set.productImage ? <img src={set.productImage} alt={set.name} className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" /> : <div className="text-gray-300 text-xs">No img</div>}
                        </div>
                        <div className="flex-1 min-w-0">
                          <p className="font-bold text-xs truncate">{set.setNumber}</p>
