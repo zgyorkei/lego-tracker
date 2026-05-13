@@ -389,6 +389,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                       src={wantedFigures[currentWantedIndex % wantedFigures.length].image!} 
                       alt={wantedFigures[currentWantedIndex % wantedFigures.length].name} 
                       className="object-contain w-full h-full p-2 absolute inset-0" 
+                      referrerPolicy="no-referrer"
                     />
                   </AnimatePresence>
                   <div className="absolute top-2 right-2 bg-lego-blue text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-full shadow z-10">
@@ -396,7 +397,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                   </div>
                 </div>
               ) : set.productImage ? (
-                <img src={set.productImage} alt={set.name} className="object-contain w-full h-full p-2" />
+                <img src={set.productImage} alt={set.name} className="object-contain w-full h-full p-2" referrerPolicy="no-referrer" />
               ) : (
                 <div className="text-gray-400 flex flex-col items-center">
                   <AlertCircle size={32} />
@@ -700,7 +701,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
                     return (
                         <div key={fig.id} className="bg-white border-2 border-black rounded shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex flex-col group relative overflow-hidden transition-all hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] min-h-[220px]">
                             <div className="h-32 min-h-32 bg-gray-50 p-2 relative flex items-center justify-center border-b-2 border-black shrink-0">
-                                {fig.image ? <img src={fig.image} alt={fig.name} className="w-full h-full object-contain" /> : <AlertCircle className="text-gray-300" />}
+                                {fig.image ? <img src={fig.image} alt={fig.name} className="w-full h-full object-contain" referrerPolicy="no-referrer" /> : <AlertCircle className="text-gray-300" />}
                                 {status === 'got' && (
                                     <div className="absolute inset-0 bg-green-500/20 backdrop-blur-[1px] flex items-center justify-center">
                                        <CheckCircle className="text-green-600 drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] w-12 h-12" />

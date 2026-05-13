@@ -98,7 +98,7 @@ export default function RegistryView({ registryId }: { registryId: string }) {
                 
                 <div className="h-48 p-4 bg-gray-50 flex items-center justify-center relative border-b-4 border-black">
                    {set.productImage ? (
-                      <img src={set.productImage} alt={set.name} className="max-w-full max-h-full object-contain drop-shadow-md mix-blend-multiply" />
+                      <img src={set.productImage} alt={set.name} className="max-w-full max-h-full object-contain drop-shadow-md mix-blend-multiply" referrerPolicy="no-referrer" />
                    ) : (
                       <div className="text-gray-300 font-bold uppercase">No Image</div>
                    )}
@@ -115,7 +115,7 @@ export default function RegistryView({ registryId }: { registryId: string }) {
                         <p className="text-xs font-black uppercase text-gray-500 mb-2">Wanted Minifigs:</p>
                         <div className="flex flex-wrap gap-2">
                            {set.minifigures.filter(f => set.minifiguresStatus?.[f.id] === 'wanted').map(f => (
-                              <img key={f.id} src={f.image || ''} alt={f.name} className="w-8 h-8 object-contain border border-gray-200 rounded block" title={f.name} />
+                              <img key={f.id} src={f.image || ''} alt={f.name} className="w-8 h-8 object-contain border border-gray-200 rounded block" title={f.name} referrerPolicy="no-referrer" />
                            ))}
                            {set.minifigures.filter(f => set.minifiguresStatus?.[f.id] === 'wanted').length === 0 && <span className="text-xs text-gray-400 font-bold">None missing</span>}
                         </div>
