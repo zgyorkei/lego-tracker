@@ -260,6 +260,9 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
     const legoUrlHuf = `https://www.lego.com/hu-hu/product/${setNumber}`;
     const legoUrlEn = `https://www.lego.com/en-us/product/${setNumber}`;
 
+    let fallbackImage: string | null = null;
+    let fallbackName: string | null = null;
+
     try {
       // 1. Try Brickset first
       try {
@@ -268,10 +271,12 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         
         const title = $bs('h1').text().trim();
         let name = title ? title.replace(/^\d+\s/, '') : '';
+        if (name) fallbackName = name;
 
         let productImage = null;
         if (!skipImage) {
            productImage = $bs('a.highslide img').attr('src') || $bs('img[src*="images.brickset.com/sets/images"]').attr('src');
+           if (productImage) fallbackImage = productImage;
         }
 
         const rrpText = $bs('dt:contains("RRP")').next('dd').text();
@@ -318,6 +323,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         if (!productImage) {
           productImage = $hu('img[class*="ProductImage"]').first().attr('src');
         }
+        if (productImage) fallbackImage = productImage;
       }
 
       if (priceHuf === 0) {
@@ -336,8 +342,10 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         });
         const $en = cheerio.load(responseEn.data);
         name = $en('h1[data-test="product-overview-name"]').first().text().trim() || $en('h1').first().text().trim() || name;
+        if (name && name !== `Lego Set ${setNumber}`) fallbackName = name;
       } catch (enError) {
         name = $hu('h1[data-test="product-overview-name"]').first().text().trim() || $hu('h1').first().text().trim() || name; // fallback to HU string if EN fails
+        if (name && name !== `Lego Set ${setNumber}`) fallbackName = name;
       }
 
       res.json({ name, priceHuf, image: productImage, url: legoUrlHuf });
@@ -389,9 +397,9 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         if (jsonMatch) {
           const data = JSON.parse(jsonMatch[0]);
           res.json({
-            name: data.name,
+            name: data.name || fallbackName || `Lego Set ${setNumber}`,
             priceHuf: data.priceHuf,
-            image: data.imageUrl,
+            image: data.imageUrl || fallbackImage,
             url: legoUrlHuf,
             isTemporary: data.isTemporary || false,
             releaseDate: data.releaseDate || null
