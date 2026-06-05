@@ -85,8 +85,26 @@ service cloud.firestore {
       allow delete: if isOwner(existing().userId);
 
       match /reservations/{setId} {
+        // Anyone with the registry link can see what's already reserved.
         allow read: if true;
-        allow write: if true;
+
+        // First reservation wins: a reservation can be created only if one does
+        // not already exist for this set (create == resource is null), and the
+        // payload is shape-validated. This matches the client UX where an
+        // overwrite attempt surfaces "maybe someone else just got it".
+        allow create: if incoming().keys().hasOnly(['setId', 'reservedBy', 'createdAt']) &&
+          incoming().setId == setId &&
+          incoming().reservedBy is string &&
+          incoming().reservedBy.size() > 0 &&
+          incoming().reservedBy.size() <= 100 &&
+          incoming().createdAt is string &&
+          incoming().createdAt.size() <= 40;
+
+        // No overwriting an existing reservation by visitors.
+        allow update: if false;
+
+        // Only the registry owner may clear/manage reservations.
+        allow delete: if isOwner(get(/databases/$(database)/documents/registries/$(registryId)).data.userId);
       }
     }
   }
