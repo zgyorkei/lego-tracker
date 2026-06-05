@@ -14,6 +14,12 @@
   --theme-blue: #006CB7;
 }
 
+html[data-theme="batman"] {
+  --theme-yellow: #EAB308; /* Bat Symbol Gold */
+  --theme-red: #374151; /* Suit Grey */
+  --theme-blue: #000000; /* Cape Black */
+}
+
 html[data-theme="star-wars"] {
   --theme-yellow: #E0E0E0; /* Light Grey */
   --theme-red: #E3000B; /* Sith Red */

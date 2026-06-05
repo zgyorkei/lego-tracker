@@ -75,6 +75,7 @@ const getMockSets = (): LegoSet[] => {
 
 const AVAILABLE_THEMES = [
   { id: 'classic', name: 'Classic Space' },
+  { id: 'batman', name: 'Batman' },
   { id: 'star-wars', name: 'Star Wars' },
   { id: 'ninjago', name: 'Ninjago' },
   { id: 'hidden-side', name: 'Hidden Side' },
