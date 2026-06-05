@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useSets } from './hooks/useSets';
 import { signInWithGoogle, signOut } from './lib/firebase';
+import { formatPrice as formatPriceUtil } from './lib/currency';
 import { ClassicSpaceLogo } from './components/ClassicSpaceLogo';
 import { SetCard } from './components/SetCard';
 import { GiftRegistryDialog } from './components/GiftRegistryDialog';
@@ -344,20 +345,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [filteredSets.length, priceSources, isBatchRefreshing]);
 
-  const formatPrice = (priceHuf: number) => {
-    if (displayCurrency === 'HUF' || !exchangeRates) {
-      return `${priceHuf.toLocaleString()} HUF`;
-    }
-    const priceEur = priceHuf / exchangeRates.HUF;
-    const targetRate = exchangeRates[displayCurrency] || 1;
-    const finalPrice = priceEur * targetRate;
-    
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: displayCurrency,
-      maximumFractionDigits: displayCurrency === 'HUF' ? 0 : 2
-    }).format(finalPrice);
-  };
+  const formatPrice = (priceHuf: number) => formatPriceUtil(priceHuf, displayCurrency, exchangeRates);
 
   const stats = useMemo(() => {
     const ordered = activeSets.filter(s => s.status === 'ordered');

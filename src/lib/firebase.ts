@@ -4,13 +4,6 @@ import { getFirestore } from 'firebase/firestore';
 
 // In our AI Studio environment, we load from a generated JSON config.
 // In Vercel/production, we load from environment variables so secrets aren't exposed in standard Git repositories.
-let firebaseConfig: any;
-
-try {
-  // We use a dynamic require pattern or just vite's built in optional loading if possible.
-  // Wait, let's use import.meta.env primarily, and fallback.
-} catch (e) {}
-
 const getFirebaseConfig = () => {
     // If we're deployed on Vercel, use the VITE_ prefixed environment variables you set
     if (import.meta.env.VITE_FIREBASE_API_KEY) {
@@ -37,7 +30,7 @@ const getFirebaseConfig = () => {
     return {};
 };
 
-firebaseConfig = getFirebaseConfig();
+const firebaseConfig: any = getFirebaseConfig();
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');

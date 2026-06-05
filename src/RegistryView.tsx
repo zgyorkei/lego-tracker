@@ -127,7 +127,7 @@ export default function RegistryView({ registryId }: { registryId: string }) {
                      if (!displayPrices || displayPrices.length === 0) {
                        if (set.marketPrices) {
                           const exRate = set.marketPrices.exchangeRate || 400;
-                          const available = Object.entries(set.marketPrices).map(([sid, pd]) => {
+                          const available = Object.entries(set.marketPrices).map(([sid, pd]: [string, any]) => {
                              if (sid === 'error' || sid === 'exchangeRate' || !pd) return null;
                              const source = DEFAULT_PRICE_SOURCES.find(ps => ps.id === sid);
                              if (!source) return null;

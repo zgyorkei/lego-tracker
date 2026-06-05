@@ -2,6 +2,7 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import RegistryView from './RegistryView.tsx';
+import {ErrorBoundary} from './components/ErrorBoundary.tsx';
 import './index.css';
 
 const path = window.location.pathname;
@@ -14,6 +15,8 @@ if (path.startsWith('/registry/')) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {Content}
+    <ErrorBoundary>
+      {Content}
+    </ErrorBoundary>
   </StrictMode>,
 );

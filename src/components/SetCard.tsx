@@ -4,6 +4,7 @@ import { Trash2, TrendingUp, TrendingDown, Clock, CheckCircle, ExternalLink, Ale
 import { LegoSet, PriceHistory, PriceSource } from '../types';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
+import { formatPrice as formatPriceUtil, convertFromHuf } from '../lib/currency';
 
 interface SetCardProps {
   set: LegoSet;
@@ -100,27 +101,9 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
   const [isFlipped, setIsFlipped] = useState(false);
   const [currentWantedIndex, setCurrentWantedIndex] = useState(0);
 
-  const formatPrice = (priceHuf: number) => {
-    if (displayCurrency === 'HUF' || !exchangeRates) {
-      return `${priceHuf.toLocaleString()} HUF`;
-    }
-    const priceEur = priceHuf / exchangeRates.HUF;
-    const targetRate = exchangeRates[displayCurrency] || 1;
-    const finalPrice = priceEur * targetRate;
-    
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: displayCurrency,
-      maximumFractionDigits: displayCurrency === 'HUF' ? 0 : 2
-    }).format(finalPrice);
-  };
+  const formatPrice = (priceHuf: number) => formatPriceUtil(priceHuf, displayCurrency, exchangeRates);
 
-  const getPriceValue = (priceHuf: number) => {
-    if (displayCurrency === 'HUF' || !exchangeRates) return priceHuf;
-    const priceEur = priceHuf / exchangeRates.HUF;
-    const targetRate = exchangeRates[displayCurrency] || 1;
-    return priceEur * targetRate;
-  };
+  const getPriceValue = (priceHuf: number) => convertFromHuf(priceHuf, displayCurrency, exchangeRates);
 
   const wantedFigures = set.minifigures?.filter(f => set.minifiguresStatus?.[f.id] === 'wanted' && f.image) || [];
 
@@ -565,7 +548,7 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
              {(() => {
                 const hasPreviousData = set.marketPrices && Object.keys(set.marketPrices).some(k => k !== 'error' && k !== 'exchangeRate');
                 const hasPricesFallback = set.prices && Object.keys(set.prices).length > 0;
-                let marketData = set.marketPrices;
+                const marketData = set.marketPrices;
                 
                 if (marketData?.error && !hasPreviousData && !hasPricesFallback) {
                   return (
