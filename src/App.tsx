@@ -220,6 +220,11 @@ export default function App() {
 
     if (!skipLegoInfo) {
       setBatchProgress({ current: 0, total: filteredSets.length });
+      // Track which sets already have an image (pre-existing or fetched in the
+      // loop below) so the remaining gaps can be filled with a single
+      // /api/batch-images call afterwards.
+      const imagesResolved = new Set<string>();
+      filteredSets.forEach(s => { if (s.productImage) imagesResolved.add(s.setNumber); });
       for (let i = 0; i < filteredSets.length; i++) {
           setBatchProgress({ current: i + 1, total: filteredSets.length });
           const set = filteredSets[i];
@@ -238,6 +243,7 @@ export default function App() {
               }
               if (legoRes.ok) {
                   const legoData = await legoRes.json();
+                  if (legoData?.image) imagesResolved.add(set.setNumber);
                   if (legoData && legoData.priceHuf !== undefined) {
                       const finalName = legoData.name || set.name;
                       const updates: any = {
@@ -275,8 +281,33 @@ export default function App() {
               console.error('Batch update failed for set lego info', set.setNumber, e);
           }
       }
+
+      // Gap-fill: any sets still without an image get one via a single batched
+      // call (cheerio-first, Gemini only for the misses).
+      const setsMissingImage = filteredSets.filter(s => !imagesResolved.has(s.setNumber));
+      if (setsMissingImage.length > 0) {
+          try {
+              setActiveOperation({ setId: 'Bulk', message: 'Fetching Missing Images...' });
+              const imgRes = await fetch('/api/batch-images', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ setNumbers: setsMissingImage.map(s => s.setNumber) })
+              });
+              if (imgRes.ok) {
+                  const imageMap: Record<string, string> = await imgRes.json();
+                  for (const s of setsMissingImage) {
+                      const img = imageMap[s.setNumber];
+                      if (img) {
+                          await updateSet(s.id, { productImage: img });
+                      }
+                  }
+              }
+          } catch (e) {
+              console.error('Batch image gap-fill failed', e);
+          }
+      }
     }
-    
+
     // Batch market prices
     try {
         setBatchProgress(null);
