@@ -120,6 +120,10 @@ interface GeminiCallOptions {
   models?: string[];
   timeoutMs?: number;
   attemptsPerModel?: number;
+  // Hard ceiling on total time spent across all models/attempts. Prevents the
+  // fallback chain from running long enough to exceed a serverless function's
+  // execution limit. Defaults to 40s.
+  overallBudgetMs?: number;
   // Returns true when the response text should be accepted. Lets callers reject
   // empty/invalid payloads and fall through to the next attempt/model.
   accept?: (text: string) => boolean;
@@ -136,13 +140,19 @@ async function callGeminiWithFallback(opts: GeminiCallOptions): Promise<string> 
   const models = opts.models ?? DEFAULT_GEMINI_MODELS;
   const timeoutMs = opts.timeoutMs ?? 15000;
   const attemptsPerModel = opts.attemptsPerModel ?? 3;
+  const overallBudgetMs = opts.overallBudgetMs ?? 40000;
   const accept = opts.accept ?? ((t: string) => !!t);
   const label = opts.logLabel ?? 'gemini';
+  const startedAt = Date.now();
   let lastError: any;
 
   for (const model of models) {
     let advanceModel = false;
     for (let attempt = 1; attempt <= attemptsPerModel && !advanceModel; attempt++) {
+      if (Date.now() - startedAt > overallBudgetMs) {
+        console.warn(`[${label}] Gemini fallback budget (${overallBudgetMs}ms) exhausted; giving up.`);
+        throw lastError ?? new Error('Gemini fallback time budget exhausted');
+      }
       try {
         console.log(`[${label}] Trying model ${model} (attempt ${attempt})...`);
         const result: any = await withTimeout(
@@ -460,7 +470,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       try {
         const bricksetRes = await axios.get(`https://brickset.com/sets/${setNumber}-1`, {
           headers: getCommonHeaders(),
-          timeout: 10000,
+          timeout: 7000,
         });
         const $bs = cheerio.load(bricksetRes.data);
 
@@ -515,7 +525,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
 
       const responseHu = await axios.get(legoUrlHuf, {
         headers: getCommonHeaders(),
-        timeout: 10000,
+        timeout: 7000,
       });
       const $hu = cheerio.load(responseHu.data);
 
@@ -709,7 +719,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       // Use cheerio to fetch the content of each source URL directly if possible
       const fetchHTML = async (url: string) => {
         try {
-          const r = await axios.get(url, { headers: getCommonHeaders(), timeout: 8000 });
+          const r = await axios.get(url, { headers: getCommonHeaders(), timeout: 6000 });
           const $ = cheerio.load(r.data);
           $('script, style, svg, noscript, header, footer').remove();
           return $('body').text().replace(/\s+/g, ' ').substring(0, 30000);
