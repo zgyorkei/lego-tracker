@@ -15,9 +15,10 @@
 }
 
 html[data-theme="batman"] {
-  --theme-yellow: #EAB308; /* Bat Symbol Gold */
-  --theme-red: #374151; /* Suit Grey */
-  --theme-blue: #000000; /* Cape Black */
+  /* LEGO Batman: Legacy of the Dark Knight suit */
+  --theme-yellow: #FACC15; /* Bat Symbol Yellow */
+  --theme-red: #22D3EE; /* Cyan Suit Accent */
+  --theme-blue: #1E293B; /* Gunmetal Suit Grey */
 }
 
 html[data-theme="star-wars"] {
