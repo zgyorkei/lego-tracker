@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trash2, TrendingUp, TrendingDown, Clock, CheckCircle, ExternalLink, AlertCircle, X, RefreshCw, Star, Check, ArrowRight, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trash2, TrendingUp, TrendingDown, Clock, CheckCircle, ExternalLink, AlertCircle, X, RefreshCw, Star, Check, ArrowRight, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Undo2 } from 'lucide-react';
 import { LegoSet, PriceHistory, PriceSource } from '../types';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
@@ -322,6 +322,12 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
     }
   };
 
+  const revertToPlanned = () => {
+    if (readOnly) return;
+    if (!window.confirm('Move this set back to the planned state?')) return;
+    onUpdate(set.id, { status: 'planned' });
+  };
+
   return (
     <motion.div 
       layout
@@ -496,10 +502,19 @@ export const SetCard: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPr
       <div className="bg-white border-t border-gray-100 flex overflow-hidden lg:min-h-0 min-h-[50px] mt-auto">
         {set.status === 'ordered' ? (
           <div className="space-y-1 bg-green-50 p-4 w-full h-full flex flex-col justify-between">
-            <div className="mb-auto">
+            <div className="mb-auto flex items-start justify-between gap-2">
                <p className="text-[10px] uppercase font-black text-green-600 tracking-wider">
                  PURCHASED FOR {set.quantity && set.quantity > 1 ? `(x${set.quantity})` : ''}
                </p>
+               {!readOnly && (
+                 <button
+                   onClick={revertToPlanned}
+                   title="Revert to planned"
+                   className="text-[10px] font-bold text-green-600 hover:text-green-900 flex items-center gap-0.5 whitespace-nowrap transition-colors shrink-0"
+                 >
+                   <Undo2 size={10} /> Revert
+                 </button>
+               )}
             </div>
             <div className="mt-2 text-sm font-black text-green-700 tracking-tight flex items-end justify-between">
               {formatPrice((set.orderedPriceHuf || 0) * (set.quantity || 1))}
