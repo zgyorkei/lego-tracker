@@ -28,8 +28,30 @@ import { formatPrice as formatPriceUtil } from './lib/currency';
 import { ClassicSpaceLogo } from './components/ClassicSpaceLogo';
 import { SetCard } from './components/SetCard';
 import { GiftRegistryDialog } from './components/GiftRegistryDialog';
-import { Status, Priority, PriceSource, DEFAULT_PRICE_SOURCES, LegoSet } from './types';
+import { Status, Priority, PriceSource, DEFAULT_PRICE_SOURCES, PERMANENT_SOURCE_IDS, LegoSet } from './types';
 import { DEMO_SETS } from './demoData';
+
+// Ensures the permanent BrickLink sources are always present (existing users may
+// have an older legoPriceSources in localStorage). Missing ones are inserted
+// right after the Amazon entry; idempotent.
+const ensureBrickLinkSources = (sources: PriceSource[]): PriceSource[] => {
+  const result = [...sources];
+  const amazonIdx = result.findIndex(s => s.id === 'amazon');
+  let insertAt = amazonIdx >= 0 ? amazonIdx + 1 : 0;
+  for (const id of PERMANENT_SOURCE_IDS) {
+    const existingIdx = result.findIndex(s => s.id === id);
+    if (existingIdx === -1) {
+      const def = DEFAULT_PRICE_SOURCES.find(s => s.id === id);
+      if (def) {
+        result.splice(insertAt, 0, def);
+        insertAt++;
+      }
+    } else {
+      insertAt = existingIdx + 1;
+    }
+  }
+  return result;
+};
 
 const getMockSets = (): LegoSet[] => {
   let sourceSets = DEMO_SETS;
@@ -137,8 +159,15 @@ export default function App() {
 
   const [priceSources, setPriceSources] = useState<PriceSource[]>(() => {
     const saved = localStorage.getItem('legoPriceSources');
-    return saved ? JSON.parse(saved) : DEFAULT_PRICE_SOURCES;
+    const base = saved ? JSON.parse(saved) : DEFAULT_PRICE_SOURCES;
+    return ensureBrickLinkSources(base);
   });
+
+  // Persist any permanent sources injected at load time (one-time on mount).
+  useEffect(() => {
+    localStorage.setItem('legoPriceSources', JSON.stringify(priceSources));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const savePriceSources = (newSources: PriceSource[]) => {
      setPriceSources(newSources);
@@ -725,10 +754,16 @@ export default function App() {
               </p>
               
               <div className="overflow-y-auto space-y-4 mb-4 pr-2">
-                {priceSources.map((source, index) => (
+                {priceSources.map((source, index) => {
+                  const isPermanent = PERMANENT_SOURCE_IDS.includes(source.id);
+                  const lockEdit = isDemoMode || isPermanent;
+                  return (
                   <div key={index} className="bg-gray-50 border-2 border-black p-4 rounded-lg relative group">
-                    {!isDemoMode && (
-                      <button 
+                    {isPermanent && (
+                      <span className="absolute top-2 right-2 text-[9px] font-black uppercase tracking-wider text-gray-400 pointer-events-none">Permanent</span>
+                    )}
+                    {!isDemoMode && !isPermanent && (
+                      <button
                         onClick={() => {
                           const newSources = [...priceSources];
                           newSources.splice(index, 1);
@@ -743,9 +778,9 @@ export default function App() {
                       <div>
                         <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">ID (Short name)</label>
                         <input 
-                          type="text" 
-                          disabled={isDemoMode}
-                          value={source.id} 
+                          type="text"
+                          disabled={lockEdit}
+                          value={source.id}
                           onChange={(e) => {
                              const newSources = [...priceSources];
                              newSources[index].id = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
@@ -757,9 +792,9 @@ export default function App() {
                       <div>
                         <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Display Name</label>
                         <input 
-                          type="text" 
-                          disabled={isDemoMode}
-                          value={source.name} 
+                          type="text"
+                          disabled={lockEdit}
+                          value={source.name}
                           onChange={(e) => {
                              const newSources = [...priceSources];
                              newSources[index].name = e.target.value;
@@ -772,9 +807,9 @@ export default function App() {
                     <div className="mb-2">
                       <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">URL Template</label>
                       <input 
-                        type="text" 
-                        disabled={isDemoMode}
-                        value={source.urlTemplate} 
+                        type="text"
+                        disabled={lockEdit}
+                        value={source.urlTemplate}
                         onChange={(e) => {
                            const newSources = [...priceSources];
                            newSources[index].urlTemplate = e.target.value;
@@ -788,7 +823,7 @@ export default function App() {
                          <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Currency</label>
                          <select 
                            value={source.currency}
-                           disabled={isDemoMode}
+                           disabled={lockEdit}
                            onChange={(e) => {
                               const newSources = [...priceSources];
                               newSources[index].currency = e.target.value;
@@ -815,9 +850,9 @@ export default function App() {
                          <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Chart Color</label>
                          <div className="flex gap-2">
                             <input 
-                              type="color" 
-                              disabled={isDemoMode}
-                              value={source.color} 
+                              type="color"
+                              disabled={lockEdit}
+                              value={source.color}
                               onChange={(e) => {
                                  const newSources = [...priceSources];
                                  newSources[index].color = e.target.value;
@@ -835,7 +870,8 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
               
               {!isDemoMode && (

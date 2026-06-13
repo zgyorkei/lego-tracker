@@ -194,6 +194,23 @@ const extractJson = (text: string): string | null => {
   return match ? match[0] : null;
 };
 
+// Permanent BrickLink price-source ids. Must match PERMANENT_SOURCE_IDS in
+// src/types.ts. Both ids point at the same BrickLink page, so the prompt hint
+// below is what tells Gemini them apart (cheapest vs New/Sealed).
+const BRICKLINK_SOURCE_IDS = ['bricklink', 'bricklink-new'];
+
+// Per-source instruction appended to the price prompt. Lets the two BrickLink
+// sources (same URL) resolve to different prices.
+function sourceHint(id: string): string {
+  if (id === 'bricklink') {
+    return ' (BrickLink: report the SINGLE LOWEST current "Items for Sale" price for this exact set, any condition (New or Used), in EUR.)';
+  }
+  if (id === 'bricklink-new') {
+    return ' (BrickLink: report the LOWEST current "Items for Sale" price for a NEW and factory-SEALED copy of this exact set, in EUR. If no New/Sealed listing exists, return price 0.)';
+  }
+  return '';
+}
+
 /**
  * Scrapes the product image for a single set via cheerio (Brickset first, then
  * lego.com's og:image), mirroring the image logic in /api/lego. Returns null
@@ -644,7 +661,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         prompt += `\nSet Number: ${setNumber}\nSources:\n`;
         expectedJsonFormat[setNumber] = {};
         for (const s of sources) {
-          prompt += `- "${s.id}": ${s.urlTemplate.replace('{setNumber}', setNumber)} (Expected currency: ${s.currency})\n`;
+          prompt += `- "${s.id}": ${s.urlTemplate.replace('{setNumber}', setNumber)} (Expected currency: ${s.currency})${sourceHint(s.id)}\n`;
           expectedJsonFormat[setNumber][s.id] = { price: 0, store: `string (name of the specific store)` };
         }
       }
@@ -731,6 +748,12 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       const sourceHtmlMap: any = {};
       await Promise.all(
         sources.map(async (s: any) => {
+          // BrickLink listing pages are JS-rendered; skip the local scrape and
+          // let the prompt route these straight to googleSearch.
+          if (BRICKLINK_SOURCE_IDS.includes(s.id)) {
+            sourceHtmlMap[s.id] = null;
+            return;
+          }
           const url = s.urlTemplate.replace('{setNumber}', setNumber);
           sourceHtmlMap[s.id] = await fetchHTML(url);
         })
@@ -740,7 +763,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       let needsGoogleSearch = false;
 
       for (const s of sources) {
-        prompt += `- "${s.id}": ${s.urlTemplate.replace('{setNumber}', setNumber)} (Expected currency: ${s.currency})\n`;
+        prompt += `- "${s.id}": ${s.urlTemplate.replace('{setNumber}', setNumber)} (Expected currency: ${s.currency})${sourceHint(s.id)}\n`;
         if (sourceHtmlMap[s.id]) {
           prompt += `  Extracted webpage text for ${s.id} (use this to find the price):\n  """${sourceHtmlMap[s.id]}"""\n\n`;
         } else {
