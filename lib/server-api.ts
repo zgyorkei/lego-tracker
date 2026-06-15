@@ -27,10 +27,9 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // capable, with preview models last.
 export const DEFAULT_GEMINI_MODELS = [
   'gemini-2.5-flash',
-  'gemini-2.5-pro',
+  'gemini-2.5-flash-lite',
   'gemini-2.0-flash',
-  'gemini-3.1-pro-preview',
-  'gemini-3-flash-preview',
+  'gemini-2.5-pro',
 ];
 
 // Hosts the image proxy is permitted to fetch from. Prevents the proxy from
@@ -81,7 +80,13 @@ function getGenAI(customKey?: string) {
       'GEMINI_API_KEY is missing. Please set it in AI Studio or provide a custom key.'
     );
   }
-  return new GoogleGenAI({ apiKey });
+  // Disable the SDK's built-in 429/5xx auto-retry (which backs off internally for
+  // up to ~60s). We want a rate-limited model to fail fast so callGeminiWithFallback
+  // can advance to the next model immediately; our loop owns retry/backoff.
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: { retryOptions: { attempts: 1 }, timeout: 20000 },
+  });
 }
 
 const getCustomKey = (req: Request): string | undefined =>
@@ -173,7 +178,7 @@ async function callGeminiWithFallback(opts: GeminiCallOptions): Promise<string> 
           await sleep(2000 * attempt); // backoff, retry same model
           continue;
         }
-        if (msg.includes('429')) {
+        if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
           const retryMatch = msg.match(/retry in ([\d.]+)s/);
           const waitSecs = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : 90;
           lastError = { isRateLimit: true, retryAfter: waitSecs, message: msg } as RateLimitError;
