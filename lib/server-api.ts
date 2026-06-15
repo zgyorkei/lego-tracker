@@ -199,6 +199,20 @@ const extractJson = (text: string): string | null => {
   return match ? match[0] : null;
 };
 
+// Accept predicate for JSON endpoints: only accept a model response we can
+// actually parse. An unparseable/prose reply then falls through to the next
+// model in callGeminiWithFallback instead of aborting the whole request.
+const isParseableJson = (text: string): boolean => {
+  const json = extractJson(text);
+  if (!json) return false;
+  try {
+    JSON.parse(json);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 // Permanent BrickLink price-source ids. Must match PERMANENT_SOURCE_IDS in
 // src/types.ts. Both ids point at the same BrickLink page, so the prompt hint
 // below is what tells Gemini them apart (cheapest vs New/Sealed).
@@ -391,6 +405,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
             config: { tools: [{ googleSearch: {} }], responseMimeType: 'application/json' },
             customKey: getCustomKey(req),
             logLabel: 'batch-images',
+            accept: isParseableJson,
           });
           const json = extractJson(text);
           if (json) {
@@ -612,6 +627,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
           config: { tools: [{ googleSearch: {} }] },
           customKey: getCustomKey(req),
           logLabel: 'lego-info',
+          accept: isParseableJson,
         });
 
         const json = extractJson(text);
@@ -679,6 +695,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         customKey: getCustomKey(req),
         timeoutMs: 25000, // Give it a bit more time for batch
         logLabel: 'prices-batch',
+        accept: isParseableJson,
       });
 
       const json = extractJson(text);
@@ -789,6 +806,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         config,
         customKey: getCustomKey(req),
         logLabel: 'prices',
+        accept: isParseableJson,
       });
 
       const json = extractJson(text);
