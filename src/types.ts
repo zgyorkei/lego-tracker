@@ -11,8 +11,8 @@ export interface PriceSource {
 
 export const DEFAULT_PRICE_SOURCES: PriceSource[] = [
   { id: 'amazon', name: 'Amazon EU', urlTemplate: 'https://www.amazon.de/s?k=lego+{setNumber}', currency: 'EUR', color: '#2563eb' },
-  { id: 'bricklink', name: 'BrickLink', urlTemplate: 'https://www.bricklink.com/v2/catalog/catalogitem.page?S={setNumber}-1#T=S&O={%22iconly%22:0}', currency: 'EUR', color: '#D4A017' },
-  { id: 'bricklink-new', name: 'BrickLink New', urlTemplate: 'https://www.bricklink.com/v2/catalog/catalogitem.page?S={setNumber}-1#T=S&O={%22iconly%22:0}', currency: 'EUR', color: '#0891B2' },
+  { id: 'bricklink', name: 'BrickLink', urlTemplate: 'https://www.bricklink.com/v2/catalog/catalogitem.page?S={setNumber}-1', currency: 'EUR', color: '#D4A017' },
+  { id: 'bricklink-new', name: 'BrickLink New', urlTemplate: 'https://www.bricklink.com/v2/catalog/catalogitem.page?S={setNumber}-1', currency: 'EUR', color: '#0891B2' },
   { id: 'arukereso', name: 'Arukereso', urlTemplate: 'https://www.arukereso.hu/CategorySearch.php?st={setNumber}', currency: 'HUF', color: '#10b981' }
 ];
 
