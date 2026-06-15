@@ -47,6 +47,10 @@ const ensureBrickLinkSources = (sources: PriceSource[]): PriceSource[] => {
         insertAt++;
       }
     } else {
+      // Permanent sources are locked, so keep them canonical (e.g. picks up
+      // URL-template changes) rather than leaving stale values from localStorage.
+      const def = DEFAULT_PRICE_SOURCES.find(s => s.id === id);
+      if (def) result[existingIdx] = { ...def };
       insertAt = existingIdx + 1;
     }
   }
