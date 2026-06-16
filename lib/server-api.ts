@@ -214,20 +214,95 @@ const isParseableJson = (text: string): boolean => {
 };
 
 // Permanent BrickLink price-source ids. Must match PERMANENT_SOURCE_IDS in
-// src/types.ts. Both ids point at the same BrickLink page, so the prompt hint
-// below is what tells Gemini them apart (cheapest vs New/Sealed).
+// src/types.ts. These are fetched by scraping BrickLink's server-rendered price
+// guide (the v2 catalog page is JS-rendered and has no prices), not via Gemini.
 const BRICKLINK_SOURCE_IDS = ['bricklink', 'bricklink-new'];
 
-// Per-source instruction appended to the price prompt. Lets the two BrickLink
-// sources (same URL) resolve to different prices.
-function sourceHint(id: string): string {
-  if (id === 'bricklink') {
-    return ' (BrickLink: report the SINGLE LOWEST current "Items for Sale" price for this exact set, any condition (New or Used), in EUR.)';
+type Rates = Record<string, number>;
+
+// Normalizes a BrickLink price-guide currency token (e.g. "HUF", "US $", "£")
+// to an ISO code we can look up in the EUR-based frankfurter rates.
+function normalizeBrickLinkCurrency(raw: string): string | null {
+  const t = raw.trim().toUpperCase();
+  if (!t) return null;
+  if (/^[A-Z]{3}$/.test(t)) return t; // HUF, EUR, GBP, USD, CHF, PLN, ...
+  if (t.includes('US') && t.includes('$')) return 'USD';
+  if (t.includes('CA') && t.includes('$')) return 'CAD';
+  if (t.includes('AU') && t.includes('$')) return 'AUD';
+  if (t.includes('NZ') && t.includes('$')) return 'NZD';
+  if (t.includes('HK') && t.includes('$')) return 'HKD';
+  if (t === '$') return 'USD';
+  if (t === '£') return 'GBP';
+  if (t === '€') return 'EUR';
+  return null;
+}
+
+// rates are units-of-currency per 1 EUR (frankfurter, from=EUR), incl. HUF.
+function convertToHuf(amount: number, cur: string, rates: Rates): number | null {
+  if (cur === 'HUF') return amount;
+  const rate = rates[cur];
+  if (!rate || !rates.HUF) return null;
+  return (amount / rate) * rates.HUF;
+}
+
+interface BrickLinkPrices {
+  cheapestHuf: number | null;
+  cheapestCondition: string | null; // 'New' | 'Used'
+  newHuf: number | null;
+}
+
+/**
+ * Scrapes BrickLink's server-rendered price guide (catalogPG.asp) for a set and
+ * returns the cheapest current listing (min of New/Used) and the cheapest New
+ * listing, converted to HUF. The page's currency is region-dependent, so it is
+ * read off the page rather than assumed. Returns null if nothing parseable.
+ */
+async function fetchBrickLinkPrices(setNumber: string, rates: Rates): Promise<BrickLinkPrices | null> {
+  try {
+    const r = await axios.get(`https://www.bricklink.com/catalogPG.asp?S=${setNumber}-1`, {
+      headers: getCommonHeaders(),
+      timeout: 7000,
+    });
+    const $ = cheerio.load(r.data);
+    $('script, style').remove();
+    const text = $('body').text().replace(/\s+/g, ' ');
+
+    // Each price block: "(Times Sold|Total Lots): N Total Qty: M Min Price:<min> Avg Price:...".
+    // "Total Lots" blocks are the Current Items for Sale sections, in order: New, then Used.
+    const blockRe =
+      /(Times Sold|Total Lots):\s*[\d,]+\s*Total Qty:\s*[\d,]+\s*Min Price:\s*(.*?)\s*Avg Price:/g;
+    const currentMins: (number | null)[] = []; // [New, Used] in HUF
+    let m: RegExpExecArray | null;
+    while ((m = blockRe.exec(text)) !== null) {
+      if (m[1] !== 'Total Lots') continue; // skip the "Last 6 Months Sales" blocks
+      const priceMatch = m[2].match(/([A-Za-z$£€ ]*?)([\d][\d.,]*)/);
+      if (!priceMatch) {
+        currentMins.push(null);
+        continue;
+      }
+      const cur = normalizeBrickLinkCurrency(priceMatch[1]);
+      const amount = parseFloat(priceMatch[2].replace(/,/g, ''));
+      if (!cur || !isFinite(amount) || amount <= 0) {
+        currentMins.push(null);
+        continue;
+      }
+      currentMins.push(convertToHuf(amount, cur, rates));
+    }
+
+    const newHuf = currentMins[0] ?? null;
+    const usedHuf = currentMins[1] ?? null;
+    const candidates = [
+      { huf: newHuf, cond: 'New' },
+      { huf: usedHuf, cond: 'Used' },
+    ].filter((c): c is { huf: number; cond: string } => typeof c.huf === 'number' && c.huf > 0);
+
+    if (candidates.length === 0) return null;
+    const cheapest = candidates.reduce((a, b) => (b.huf < a.huf ? b : a));
+    return { cheapestHuf: cheapest.huf, cheapestCondition: cheapest.cond, newHuf };
+  } catch (e: any) {
+    console.warn('BrickLink price-guide scrape failed:', e?.message || e);
+    return null;
   }
-  if (id === 'bricklink-new') {
-    return ' (BrickLink: report the LOWEST current "Items for Sale" price for a NEW and factory-SEALED copy of this exact set, in EUR. If no New/Sealed listing exists, return price 0.)';
-  }
-  return '';
 }
 
 /**
@@ -675,55 +750,88 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       const rates = Object.assign({}, exRateRes.data.rates, { EUR: 1 });
       const hufRate = rates.HUF;
 
-      const expectedJsonFormat: any = {};
-      let prompt = `Find the current lowest market prices for the following Lego sets across the listed sources.\n`;
+      const blSources = sources.filter((s: any) => BRICKLINK_SOURCE_IDS.includes(s.id));
+      const geminiSources = sources.filter((s: any) => !BRICKLINK_SOURCE_IDS.includes(s.id));
 
-      for (const setNumber of setNumbers) {
-        prompt += `\nSet Number: ${setNumber}\nSources:\n`;
-        expectedJsonFormat[setNumber] = {};
-        for (const s of sources) {
-          prompt += `- "${s.id}": ${s.urlTemplate.replace('{setNumber}', setNumber)} (Expected currency: ${s.currency})${sourceHint(s.id)}\n`;
-          expectedJsonFormat[setNumber][s.id] = { price: 0, store: `string (name of the specific store)` };
+      const result: any = {};
+      for (const setNumber of setNumbers) result[setNumber] = { exchangeRate: hufRate };
+
+      // 1. Non-BrickLink sources via a single batched Gemini call.
+      if (geminiSources.length > 0) {
+        const expectedJsonFormat: any = {};
+        let prompt = `Find the current lowest market prices for the following Lego sets across the listed sources.\n`;
+        for (const setNumber of setNumbers) {
+          prompt += `\nSet Number: ${setNumber}\nSources:\n`;
+          expectedJsonFormat[setNumber] = {};
+          for (const s of geminiSources) {
+            prompt += `- "${s.id}": ${s.urlTemplate.replace('{setNumber}', setNumber)} (Expected currency: ${s.currency})\n`;
+            expectedJsonFormat[setNumber][s.id] = { price: 0, store: `string (name of the specific store)` };
+          }
         }
-      }
+        prompt += `\nReturn ONLY a JSON object mapping each setNumber to its sources in this exact format:\n${JSON.stringify(expectedJsonFormat, null, 2)}`;
 
-      prompt += `\nReturn ONLY a JSON object mapping each setNumber to its sources in this exact format:\n${JSON.stringify(expectedJsonFormat, null, 2)}`;
+        const text = await callGeminiWithFallback({
+          prompt,
+          config: { tools: [{ googleSearch: {} }] },
+          customKey: getCustomKey(req),
+          timeoutMs: 25000, // Give it a bit more time for batch
+          logLabel: 'prices-batch',
+          accept: isParseableJson,
+        });
 
-      const text = await callGeminiWithFallback({
-        prompt,
-        config: { tools: [{ googleSearch: {} }] },
-        customKey: getCustomKey(req),
-        timeoutMs: 25000, // Give it a bit more time for batch
-        logLabel: 'prices-batch',
-        accept: isParseableJson,
-      });
-
-      const json = extractJson(text);
-      if (!json) {
-        throw new Error('Could not parse batch price data from Gemini');
-      }
-      const parsedBatch = JSON.parse(json);
-
-      // Calculate HUF and formatting per item
-      for (const setNumber of setNumbers) {
-        if (parsedBatch[setNumber]) {
+        const json = extractJson(text);
+        const parsedBatch = json ? JSON.parse(json) : {};
+        for (const setNumber of setNumbers) {
           const parsed = parsedBatch[setNumber];
-          parsed.exchangeRate = hufRate;
-          for (const s of sources) {
-            if (parsed[s.id]) {
-              const originalPrice = parsed[s.id].price;
-              if (originalPrice) {
-                const sourceRate = rates[s.currency] || 1;
-                const priceInEur = originalPrice / sourceRate;
-                parsed[s.id].priceHuf = Math.round(priceInEur * hufRate);
-                parsed[s.id].url = s.urlTemplate.replace('{setNumber}', setNumber);
-              }
+          if (!parsed) continue;
+          for (const s of geminiSources) {
+            const originalPrice = parsed[s.id]?.price;
+            if (originalPrice) {
+              const sourceRate = rates[s.currency] || 1;
+              const priceInEur = originalPrice / sourceRate;
+              result[setNumber][s.id] = {
+                price: originalPrice,
+                store: parsed[s.id].store,
+                priceHuf: Math.round(priceInEur * hufRate),
+                priceEur: priceInEur,
+                url: s.urlTemplate.replace('{setNumber}', setNumber),
+              };
             }
           }
         }
       }
 
-      res.json(parsedBatch);
+      // 2. BrickLink sources: scrape the price guide per set (in parallel).
+      if (blSources.length > 0) {
+        await Promise.all(
+          setNumbers.map(async (setNumber: string) => {
+            const bl = await fetchBrickLinkPrices(setNumber, rates);
+            if (!bl) return;
+            for (const s of blSources) {
+              const url = s.urlTemplate.replace('{setNumber}', setNumber);
+              if (s.id === 'bricklink' && bl.cheapestHuf != null) {
+                result[setNumber]['bricklink'] = {
+                  price: Math.round(bl.cheapestHuf / hufRate),
+                  priceHuf: bl.cheapestHuf,
+                  priceEur: bl.cheapestHuf / hufRate,
+                  store: bl.cheapestCondition || 'BrickLink',
+                  url,
+                };
+              } else if (s.id === 'bricklink-new' && bl.newHuf != null) {
+                result[setNumber]['bricklink-new'] = {
+                  price: Math.round(bl.newHuf / hufRate),
+                  priceHuf: bl.newHuf,
+                  priceEur: bl.newHuf / hufRate,
+                  store: 'New',
+                  url,
+                };
+              }
+            }
+          })
+        );
+      }
+
+      res.json(result);
     } catch (error: any) {
       console.error('Batch Price Error:', error);
       if (error?.isRateLimit) {
@@ -750,77 +858,71 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       const rates = Object.assign({}, exRateRes.data.rates, { EUR: 1 });
       const hufRate = rates.HUF;
 
-      const expectedJsonFormat = sources.reduce((acc: any, s: any) => {
-        acc[s.id] = { price: 0, store: `string (name of the specific store)` };
-        return acc;
-      }, {});
+      const blSources = sources.filter((s: any) => BRICKLINK_SOURCE_IDS.includes(s.id));
+      const geminiSources = sources.filter((s: any) => !BRICKLINK_SOURCE_IDS.includes(s.id));
 
-      // Use cheerio to fetch the content of each source URL directly if possible
-      const fetchHTML = async (url: string) => {
-        try {
-          const r = await axios.get(url, { headers: getCommonHeaders(), timeout: 6000 });
-          const $ = cheerio.load(r.data);
-          $('script, style, svg, noscript, header, footer').remove();
-          return $('body').text().replace(/\s+/g, ' ').substring(0, 30000);
-        } catch (e) {
-          return null;
-        }
-      };
+      const responseData: any = { exchangeRate: hufRate };
 
-      const sourceHtmlMap: any = {};
-      await Promise.all(
-        sources.map(async (s: any) => {
-          // BrickLink listing pages are JS-rendered; skip the local scrape and
-          // let the prompt route these straight to googleSearch.
-          if (BRICKLINK_SOURCE_IDS.includes(s.id)) {
-            sourceHtmlMap[s.id] = null;
-            return;
+      // 1. Non-BrickLink sources: scrape locally where possible, then Gemini.
+      if (geminiSources.length > 0) {
+        const expectedJsonFormat = geminiSources.reduce((acc: any, s: any) => {
+          acc[s.id] = { price: 0, store: `string (name of the specific store)` };
+          return acc;
+        }, {});
+
+        const fetchHTML = async (url: string) => {
+          try {
+            const r = await axios.get(url, { headers: getCommonHeaders(), timeout: 6000 });
+            const $ = cheerio.load(r.data);
+            $('script, style, svg, noscript, header, footer').remove();
+            return $('body').text().replace(/\s+/g, ' ').substring(0, 30000);
+          } catch (e) {
+            return null;
           }
-          const url = s.urlTemplate.replace('{setNumber}', setNumber);
-          sourceHtmlMap[s.id] = await fetchHTML(url);
-        })
-      );
+        };
 
-      let prompt = `Find the current lowest price for Lego set ${setNumber} on the following sources:\n`;
-      let needsGoogleSearch = false;
+        const sourceHtmlMap: any = {};
+        await Promise.all(
+          geminiSources.map(async (s: any) => {
+            const url = s.urlTemplate.replace('{setNumber}', setNumber);
+            sourceHtmlMap[s.id] = await fetchHTML(url);
+          })
+        );
 
-      for (const s of sources) {
-        prompt += `- "${s.id}": ${s.urlTemplate.replace('{setNumber}', setNumber)} (Expected currency: ${s.currency})${sourceHint(s.id)}\n`;
-        if (sourceHtmlMap[s.id]) {
-          prompt += `  Extracted webpage text for ${s.id} (use this to find the price):\n  """${sourceHtmlMap[s.id]}"""\n\n`;
-        } else {
-          prompt += `  (Could not fetch webpage locally. Use googleSearch to find the price for this source. Ensure you don't hallucinate prices.)\n\n`;
-          needsGoogleSearch = true;
+        let prompt = `Find the current lowest price for Lego set ${setNumber} on the following sources:\n`;
+        let needsGoogleSearch = false;
+        for (const s of geminiSources) {
+          prompt += `- "${s.id}": ${s.urlTemplate.replace('{setNumber}', setNumber)} (Expected currency: ${s.currency})\n`;
+          if (sourceHtmlMap[s.id]) {
+            prompt += `  Extracted webpage text for ${s.id} (use this to find the price):\n  """${sourceHtmlMap[s.id]}"""\n\n`;
+          } else {
+            prompt += `  (Could not fetch webpage locally. Use googleSearch to find the price for this source. Ensure you don't hallucinate prices.)\n\n`;
+            needsGoogleSearch = true;
+          }
         }
-      }
+        prompt += `Return ONLY a JSON object in this exact format:\n${JSON.stringify(expectedJsonFormat, null, 2)}`;
 
-      prompt += `Return ONLY a JSON object in this exact format:\n${JSON.stringify(expectedJsonFormat, null, 2)}`;
+        const config: any = {};
+        if (needsGoogleSearch) {
+          config.tools = [{ googleSearch: {} }];
+        }
 
-      const config: any = {};
-      if (needsGoogleSearch) {
-        config.tools = [{ googleSearch: {} }];
-      }
+        const text = await callGeminiWithFallback({
+          prompt,
+          config,
+          customKey: getCustomKey(req),
+          logLabel: 'prices',
+          accept: isParseableJson,
+        });
 
-      const text = await callGeminiWithFallback({
-        prompt,
-        config,
-        customKey: getCustomKey(req),
-        logLabel: 'prices',
-        accept: isParseableJson,
-      });
-
-      const json = extractJson(text);
-      if (json) {
-        const data = JSON.parse(json);
-        const responseData: any = { exchangeRate: hufRate };
-
-        for (const s of sources) {
+        const json = extractJson(text);
+        const data = json ? JSON.parse(json) : {};
+        for (const s of geminiSources) {
           if (data[s.id]) {
             const p = data[s.id].price;
             const sourceRate = rates[s.currency] || 1;
             const priceEur = p / sourceRate;
             const priceHuf = priceEur * hufRate;
-
             responseData[s.id] = {
               price: p,
               priceHuf,
@@ -830,11 +932,37 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
             };
           }
         }
-
-        res.json(responseData);
-      } else {
-        throw new Error('Failed to parse price data from Gemini');
       }
+
+      // 2. BrickLink sources: scrape the server-rendered price guide (one fetch
+      // shared by both bricklink + bricklink-new), bypassing Gemini.
+      if (blSources.length > 0) {
+        const bl = await fetchBrickLinkPrices(setNumber, rates);
+        if (bl) {
+          for (const s of blSources) {
+            const url = s.urlTemplate.replace('{setNumber}', setNumber);
+            if (s.id === 'bricklink' && bl.cheapestHuf != null) {
+              responseData['bricklink'] = {
+                price: Math.round(bl.cheapestHuf / hufRate),
+                priceHuf: bl.cheapestHuf,
+                priceEur: bl.cheapestHuf / hufRate,
+                store: bl.cheapestCondition || 'BrickLink',
+                url,
+              };
+            } else if (s.id === 'bricklink-new' && bl.newHuf != null) {
+              responseData['bricklink-new'] = {
+                price: Math.round(bl.newHuf / hufRate),
+                priceHuf: bl.newHuf,
+                priceEur: bl.newHuf / hufRate,
+                store: 'New',
+                url,
+              };
+            }
+          }
+        }
+      }
+
+      res.json(responseData);
     } catch (error: any) {
       console.error('Error fetching market prices:', error);
       if (error?.isRateLimit) {
