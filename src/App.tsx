@@ -31,11 +31,10 @@ import { GiftRegistryDialog } from './components/GiftRegistryDialog';
 import { Status, Priority, PriceSource, DEFAULT_PRICE_SOURCES, PERMANENT_SOURCE_IDS, LegoSet } from './types';
 import { DEMO_SETS } from './demoData';
 
-// Ensures the permanent BrickLink sources are always present (existing users may
-// have an older legoPriceSources in localStorage). Missing ones are inserted
-// right after the Amazon entry; idempotent.
+// Ensures the permanent BrickLink source is always present and bricklink-new is
+// removed (migration for existing users). Idempotent.
 const ensureBrickLinkSources = (sources: PriceSource[]): PriceSource[] => {
-  const result = [...sources];
+  const result = sources.filter(s => s.id !== 'bricklink-new');
   const amazonIdx = result.findIndex(s => s.id === 'amazon');
   let insertAt = amazonIdx >= 0 ? amazonIdx + 1 : 0;
   for (const id of PERMANENT_SOURCE_IDS) {

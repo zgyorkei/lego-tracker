@@ -216,7 +216,7 @@ const isParseableJson = (text: string): boolean => {
 // Permanent BrickLink price-source ids. Must match PERMANENT_SOURCE_IDS in
 // src/types.ts. These are fetched by scraping BrickLink's server-rendered price
 // guide (the v2 catalog page is JS-rendered and has no prices), not via Gemini.
-const BRICKLINK_SOURCE_IDS = ['bricklink', 'bricklink-new'];
+const BRICKLINK_SOURCE_IDS = ['bricklink'];
 
 type Rates = Record<string, number>;
 
