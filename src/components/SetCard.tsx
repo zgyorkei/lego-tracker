@@ -398,21 +398,24 @@ const SetCardComponent: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, get
       }`}
     >
       {isCollapsed ? (
-         <div 
-           className="p-4 flex justify-between items-center cursor-pointer bg-white" 
+         <button
+           type="button"
+           className="w-full text-left p-4 flex justify-between items-center cursor-pointer bg-white"
            onClick={() => setIsCollapsed(false)}
+           aria-label={`Expand ${set.name}`}
+           aria-expanded={false}
          >
            <h3 className="text-sm font-black text-gray-900 uppercase tracking-tight truncate pr-4">{set.name} ({set.setNumber})</h3>
            <ChevronDown size={20} className="text-gray-400 shrink-0" />
-         </div>
+         </button>
       ) : (
          <>
-         <button 
-           onClick={() => setIsCollapsed(true)} 
-           className="absolute top-2 right-2 z-[40] bg-white/90 p-1.5 rounded backdrop-blur-sm border border-gray-100 shadow-sm text-gray-400 hover:text-black transition-all hover:bg-gray-50 opacity-0 group-hover:opacity-100 focus:opacity-100"
-         >
-            <ChevronUp size={16} />
-         </button>
+      {/* The collapse control lives in the header button row rather than being
+          absolutely pinned to the card corner. Pinned at `top-2 right-2` it
+          landed on top of the refresh/delete buttons in the md:flex-row
+          layout, masking the delete icon and (because opacity-0 still accepts
+          pointer events) swallowing its clicks. It was also hover-only, so it
+          never appeared on touch devices at all. */}
       <AnimatePresence mode="wait">
         {!isFlipped ? (
           <motion.div 
@@ -490,12 +493,20 @@ const SetCardComponent: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, get
                 >
                   <RefreshCw size={18} className={loadingLegoInfo ? "animate-spin" : ""} />
                 </button>
-                <button 
+                <button
                   onClick={() => setShowDeleteConfirm(true)}
                   className="text-gray-400 hover:text-red-500 transition-colors p-1 disabled:opacity-50"
                   title="Remove Set" aria-label="Remove set"
                 >
                   <Trash2 size={18} />
+                </button>
+                <button
+                  onClick={() => setIsCollapsed(true)}
+                  className="text-gray-400 hover:text-black transition-colors p-1"
+                  title="Collapse" aria-label="Collapse card"
+                  aria-expanded={true}
+                >
+                  <ChevronUp size={18} />
                 </button>
               </div>
             </div>
