@@ -1,4 +1,3 @@
-import React from 'react';
 
 export const ClassicSpaceLogo = ({ className = '', size = 24 }: { className?: string; size?: number }) => {
   return (

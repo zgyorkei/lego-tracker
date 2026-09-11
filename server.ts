@@ -5,9 +5,19 @@ import { registerApiRoutes } from './lib/server-api.js';
 
 dotenv.config();
 
+// Surface async faults instead of letting Node exit silently or keep running
+// in a half-broken state.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+  process.exit(1);
+});
+
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // All /api routes (and the JSON body parser) live in the shared module so the
   // dev server and the Vercel serverless entry point (api/index.ts) stay in sync.
@@ -24,7 +34,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
@@ -34,4 +44,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+});

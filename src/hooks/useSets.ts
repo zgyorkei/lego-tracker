@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   collection, 
   query, 
@@ -13,7 +13,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
-import { LegoSet, PriceHistory, Status, Priority } from '../types';
+import { LegoSet, PriceHistory } from '../types';
 
 enum OperationType {
   CREATE = 'create',
@@ -24,24 +24,38 @@ enum OperationType {
   WRITE = 'write',
 }
 
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+/**
+ * Logs a Firestore failure and returns a plain-language message for the UI.
+ *
+ * Deliberately does NOT throw. The previous version threw a JSON blob, which
+ * (a) embedded the user's email and uid into an Error message that could reach
+ * any log sink, and (b) was thrown from inside an onSnapshot error callback,
+ * where nothing can catch it -- it became an unhandled rejection that the
+ * ErrorBoundary cannot intercept either, since boundaries only catch errors
+ * raised during render/lifecycle.
+ */
+function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): string {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error('Firestore error', { operationType, path, message });
+
+  const code = (error as { code?: string } | null)?.code;
+  if (code === 'permission-denied') {
+    return 'You do not have access to this data. Try signing out and back in.';
+  }
+  if (code === 'unavailable' || code === 'deadline-exceeded') {
+    return 'Cannot reach the database right now. Showing cached data if available.';
+  }
+  return `Something went wrong while trying to ${operationType} data. Please try again.`;
 }
 
 export function useSets() {
   const [sets, setSets] = useState<LegoSet[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState(auth.currentUser);
 
   useEffect(() => {
@@ -49,6 +63,7 @@ export function useSets() {
       setUser(u);
       if (!u) {
         setSets([]);
+        setError(null);
         setLoading(false);
       }
     });
@@ -69,27 +84,37 @@ export function useSets() {
         setsData.push({ id: doc.id, ...doc.data() } as LegoSet);
       });
       setSets(setsData);
+      setError(null);
       setLoading(false);
-    }, (error) => {
-      // Fallback to cached sets if fetch fails
+    }, (err) => {
+      // Fallback to cached sets if the live query fails.
       try {
         const cached = localStorage.getItem('cachedSets');
         if (cached) {
-            const parsed = JSON.parse(cached);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-                setSets(parsed);
-            }
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSets(parsed);
+          }
         }
-      } catch (e) {}
-      
+      } catch (e) {
+        console.warn('Could not restore cached sets', e);
+      }
+
       setLoading(false);
-      handleFirestoreError(error, OperationType.LIST, 'sets');
+      setError(handleFirestoreError(err, OperationType.LIST, 'sets'));
     });
 
     return () => unsubscribe();
   }, [user]);
 
-  const addSet = async (setData: Partial<LegoSet>) => {
+  // All CRUD wrappers are useCallback'd so they keep a stable identity across
+  // renders. Without this, memoising SetCard achieves nothing: every render of
+  // App would hand every card brand-new function props.
+  //
+  // They surface a message via setError and then re-throw, so an awaiting
+  // caller can branch on failure while the UI still gets something to display.
+
+  const addSet = useCallback(async (setData: Partial<LegoSet>) => {
     if (!user) return;
     try {
       await addDoc(collection(db, 'sets'), {
@@ -98,55 +123,82 @@ export function useSets() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'sets');
+      setError(null);
+    } catch (err) {
+      const message = handleFirestoreError(err, OperationType.CREATE, 'sets');
+      setError(message);
+      throw new Error(message);
     }
-  };
+  }, [user]);
 
-  const updateSet = async (id: string, updates: Partial<LegoSet>) => {
+  const updateSet = useCallback(async (id: string, updates: Partial<LegoSet>) => {
     try {
       const setRef = doc(db, 'sets', id);
       await updateDoc(setRef, {
         ...updates,
         updatedAt: serverTimestamp(),
       });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `sets/${id}`);
+      setError(null);
+    } catch (err) {
+      const message = handleFirestoreError(err, OperationType.UPDATE, `sets/${id}`);
+      setError(message);
+      throw new Error(message);
     }
-  };
+  }, []);
 
-  const deleteSet = async (id: string) => {
+  const deleteSet = useCallback(async (id: string) => {
     try {
       await deleteDoc(doc(db, 'sets', id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `sets/${id}`);
+      setError(null);
+    } catch (err) {
+      const message = handleFirestoreError(err, OperationType.DELETE, `sets/${id}`);
+      setError(message);
+      throw new Error(message);
     }
-  };
+  }, []);
 
-  const addPriceHistory = async (setId: string, history: PriceHistory) => {
+  const addPriceHistory = useCallback(async (setId: string, history: PriceHistory) => {
     try {
       await addDoc(collection(db, 'sets', setId, 'priceHistory'), {
         ...history,
         createdAt: serverTimestamp()
       });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, `sets/${setId}/priceHistory`);
+    } catch (err) {
+      const message = handleFirestoreError(
+        err,
+        OperationType.CREATE,
+        `sets/${setId}/priceHistory`
+      );
+      setError(message);
+      throw new Error(message);
     }
-  };
-  
-  const getPriceHistory = async (setId: string) => {
+  }, []);
+
+  const getPriceHistory = useCallback(async (setId: string): Promise<PriceHistory[]> => {
     try {
-       const q = query(
+      const q = query(
         collection(db, 'sets', setId, 'priceHistory'),
         orderBy('date', 'asc')
       );
       const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PriceHistory));
-    } catch (error) {
-       handleFirestoreError(error, OperationType.GET, `sets/${setId}/priceHistory`);
-       return [];
+      return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as PriceHistory));
+    } catch (err) {
+      // Read-only and non-critical: surface it but return empty rather than
+      // throwing, so a history-fetch failure cannot break the card.
+      setError(handleFirestoreError(err, OperationType.GET, `sets/${setId}/priceHistory`));
+      return [];
     }
-  }
+  }, []);
 
-  return { sets, loading, addSet, updateSet, deleteSet, addPriceHistory, getPriceHistory, user };
+  return {
+    sets,
+    loading,
+    error,
+    addSet,
+    updateSet,
+    deleteSet,
+    addPriceHistory,
+    getPriceHistory,
+    user,
+  };
 }

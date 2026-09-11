@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { db } from './lib/firebase';
 import { doc, getDoc, collection, onSnapshot, setDoc } from 'firebase/firestore';
 import { Registry, RegistryReservation, DEFAULT_PRICE_SOURCES } from './types';
+import { getLowestPrices } from './lib/prices';
 import { Gift, Check } from 'lucide-react';
 
 export default function RegistryView({ registryId }: { registryId: string }) {
@@ -10,6 +11,7 @@ export default function RegistryView({ registryId }: { registryId: string }) {
   const [reservations, setReservations] = useState<Record<string, RegistryReservation>>({});
   const [reservingSet, setReservingSet] = useState<string | null>(null);
   const [visitorName, setVisitorName] = useState('');
+  const [reserveError, setReserveError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchRegistry = async () => {
@@ -43,9 +45,10 @@ export default function RegistryView({ registryId }: { registryId: string }) {
 
   const handleReserve = async (setId: string) => {
     if (!visitorName.trim()) {
-      alert("Please enter your name to reserve this set.");
+      setReserveError('Please enter your name to reserve this set.');
       return;
     }
+    setReserveError(null);
     try {
       const resRef = doc(db, 'registries', registryId, 'reservations', setId);
       await setDoc(resRef, {
@@ -56,7 +59,9 @@ export default function RegistryView({ registryId }: { registryId: string }) {
       setReservingSet(null);
     } catch (e) {
       console.error(e);
-      alert("Failed to reserve. Maybe someone else just got it?");
+      // Reservations are first-write-wins in firestore.rules, so the common
+      // cause here is that someone else claimed it a moment earlier.
+      setReserveError('Could not reserve this set. Someone may have just claimed it.');
     }
   };
 
@@ -123,37 +128,14 @@ export default function RegistryView({ registryId }: { registryId: string }) {
                   )}
 
                   {(() => {
+                     // Registries created after the field projection landed
+                     // carry lowestPrices directly. The marketPrices fallback
+                     // is kept for docs written before that, and now shares
+                     // getLowestPrices with the dialog that writes them.
                      let displayPrices = set.lowestPrices;
                      if (!displayPrices || displayPrices.length === 0) {
-                       if (set.marketPrices) {
-                          const exRate = set.marketPrices.exchangeRate || 400;
-                          const available = Object.entries(set.marketPrices).map(([sid, pd]: [string, any]) => {
-                             if (sid === 'error' || sid === 'exchangeRate' || !pd) return null;
-                             const source = DEFAULT_PRICE_SOURCES.find(ps => ps.id === sid);
-                             if (!source) return null;
-                             
-                             const pVal = pd.priceHuf || (source.currency === 'EUR' ? pd.price * exRate : pd.price) || 0;
-                             if (pVal <= 0) return null;
-                             
-                             const formatted = new Intl.NumberFormat('hu-HU', {
-                               style: 'currency', currency: 'HUF', maximumFractionDigits: 0
-                             }).format(pVal);
-
-                             return {
-                                sourceName: source.name,
-                                url: pd.url || source.urlTemplate.replace('{setNumber}', set.setNumber).replace('{name}', encodeURIComponent(set.name)),
-                                priceText: formatted,
-                                costValueHuf: pVal
-                             };
-                          }).filter(Boolean) as any[];
-                          
-                          available.sort((a,b) => a.costValueHuf - b.costValueHuf);
-                          displayPrices = available.slice(0, 2).map(p => ({
-                             sourceName: p.sourceName,
-                             url: p.url,
-                             priceText: p.priceText
-                          }));
-                       }
+                       displayPrices = getLowestPrices(set, DEFAULT_PRICE_SOURCES, 'HUF', null)
+                         .map(({ sourceName, url, priceText }) => ({ sourceName, url, priceText }));
                      }
 
                      if (!displayPrices || displayPrices.length === 0) return null;
@@ -192,8 +174,8 @@ export default function RegistryView({ registryId }: { registryId: string }) {
                           onKeyDown={(e) => { if (e.key === 'Enter') handleReserve(set.id); }}
                         />
                         <div className="flex gap-2">
-                          <button 
-                            onClick={() => setReservingSet(null)}
+                          <button
+                            onClick={() => { setReservingSet(null); setReserveError(null); }}
                             className="flex-1 py-2 font-black uppercase text-xs border-2 border-black bg-gray-200 hover:bg-gray-300 transition-colors"
                           >
                             Cancel
@@ -205,6 +187,11 @@ export default function RegistryView({ registryId }: { registryId: string }) {
                             Confirm
                           </button>
                         </div>
+                        {reserveError && reservingSet === set.id && (
+                          <p role="alert" className="mt-2 text-xs font-bold text-red-600">
+                            {reserveError}
+                          </p>
+                        )}
                       </div>
                     ) : (
                       <button 

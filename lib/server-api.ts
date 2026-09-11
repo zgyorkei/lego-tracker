@@ -1,7 +1,8 @@
-import type { Express, Request } from 'express';
+import type { Express, Request, Response, NextFunction } from 'express';
 import express from 'express';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import dns from 'node:dns/promises';
 import { GoogleGenAI } from '@google/genai';
 
 // ---------------------------------------------------------------------------
@@ -13,12 +14,13 @@ import { GoogleGenAI } from '@google/genai';
 // ---------------------------------------------------------------------------
 
 export const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms)
-    ),
-  ]);
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms);
+  });
+  // clearTimeout in finally: without it the pending timer keeps the event loop
+  // alive for the full duration even when the wrapped promise settled early.
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -45,7 +47,7 @@ const ALLOWED_IMAGE_HOST_SUFFIXES = [
 // Reject IP literals that point at private/loopback/link-local ranges (incl. the
 // 169.254.169.254 cloud metadata endpoint). Hostname allowlisting already blocks
 // most SSRF, but bare-IP URLs would otherwise slip through.
-function isBlockedHost(hostname: string): boolean {
+export function isBlockedHost(hostname: string): boolean {
   const h = hostname.toLowerCase();
   if (h === 'localhost' || h.endsWith('.localhost')) return true;
   if (h === '[::1]' || h === '::1') return true;
@@ -62,7 +64,7 @@ function isBlockedHost(hostname: string): boolean {
   return false;
 }
 
-function isAllowedImageUrl(parsed: URL): boolean {
+export function isAllowedImageUrl(parsed: URL): boolean {
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
   if (isBlockedHost(parsed.hostname)) return false;
   const host = parsed.hostname.toLowerCase();
@@ -71,14 +73,151 @@ function isAllowedImageUrl(parsed: URL): boolean {
   );
 }
 
-// Lazily load genAI to avoid startup crashes if the API key is missing. A
-// per-request key (x-gemini-api-key header) takes precedence over the env var.
-function getGenAI(customKey?: string) {
-  const apiKey = customKey || process.env.GEMINI_API_KEY;
+// Same private-range test as isBlockedHost, but against a resolved IP literal
+// rather than a hostname. Needed because a public hostname can resolve to a
+// private address (DNS rebinding), which hostname checks alone cannot catch.
+export function isPrivateIp(addr: string, family: number): boolean {
+  if (family === 4) return isBlockedHost(addr);
+  const a = addr.toLowerCase();
+  if (a === '::1' || a === '::') return true;
+  if (a.startsWith('fc') || a.startsWith('fd')) return true; // unique-local
+  if (a.startsWith('fe80')) return true; // link-local
+  // IPv4-mapped (::ffff:10.0.0.1) -- test the embedded v4 address.
+  const mapped = a.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (mapped) return isBlockedHost(mapped[1]);
+  return false;
+}
+
+/**
+ * Validates a URL that the server is about to fetch on a caller's behalf.
+ *
+ * Price sources are user-configurable, so a host allowlist is not an option
+ * here the way it is for the image proxy. Instead we reject non-HTTP schemes,
+ * private/loopback/metadata hosts, and hostnames that *resolve* into a private
+ * range. Callers must also pass maxRedirects: 0, since this only validates the
+ * initial URL and a 302 would otherwise walk straight past it.
+ */
+export async function assertSafeOutboundUrl(rawUrl: string): Promise<URL> {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error(`Invalid URL: ${rawUrl}`);
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(`Blocked non-HTTP protocol: ${parsed.protocol}`);
+  }
+  if (isBlockedHost(parsed.hostname)) {
+    throw new Error(`Blocked host: ${parsed.hostname}`);
+  }
+  const resolved = await dns.lookup(parsed.hostname, { all: true });
+  for (const { address, family } of resolved) {
+    if (isPrivateIp(address, family)) {
+      throw new Error(`Blocked host ${parsed.hostname} (resolves to ${address})`);
+    }
+  }
+  return parsed;
+}
+
+// Caps on caller-supplied arrays. Without these, a single request body under
+// the 100kb JSON limit can fan out into thousands of concurrent outbound
+// sockets (self-DoS, plus amplification against the sites being scraped).
+const MAX_SET_NUMBERS = 50;
+const MAX_SOURCES = 15;
+const OUTBOUND_CONCURRENCY = 5;
+
+/** Runs an async mapper over items with a bounded number of in-flight calls. */
+export async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Rate limiting
+//
+// These routes are unauthenticated and several of them spend GEMINI_API_KEY
+// quota, so without a limiter anyone who finds the deployment can run up the
+// bill. This is a fixed-window in-memory limiter.
+//
+// IMPORTANT deployment caveat: on Vercel each serverless instance has its own
+// memory, so the effective limit is per-instance and resets on cold start.
+// That makes this best-effort mitigation, not a hard guarantee. Pair it with a
+// hard spend cap on the Google Cloud side. To make it authoritative, back the
+// counter with a shared store (Vercel KV / Upstash Redis).
+// ---------------------------------------------------------------------------
+
+interface RateBucket {
+  count: number;
+  resetAt: number;
+}
+
+const rateBuckets = new Map<string, RateBucket>();
+
+/** Behind Vercel's proxy req.ip is the proxy, so prefer the forwarded chain. */
+function clientKey(req: Request): string {
+  const fwd = req.headers['x-forwarded-for'];
+  const raw = Array.isArray(fwd) ? fwd[0] : fwd;
+  const first = raw?.split(',')[0]?.trim();
+  return first || req.socket?.remoteAddress || 'unknown';
+}
+
+function rateLimit(opts: { windowMs: number; max: number; name: string }) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const key = `${opts.name}:${clientKey(req)}`;
+    const now = Date.now();
+    const bucket = rateBuckets.get(key);
+
+    if (!bucket || now >= bucket.resetAt) {
+      rateBuckets.set(key, { count: 1, resetAt: now + opts.windowMs });
+      return next();
+    }
+    if (bucket.count >= opts.max) {
+      const retryAfter = Math.ceil((bucket.resetAt - now) / 1000);
+      res.setHeader('Retry-After', String(retryAfter));
+      return res.status(429).json({ error: 'Rate limit exceeded.', retryAfter });
+    }
+    bucket.count++;
+    next();
+  };
+}
+
+// Opportunistic sweep so the map cannot grow without bound on a long-lived
+// process (the dev server); serverless instances are recycled anyway.
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of rateBuckets) if (now >= v.resetAt) rateBuckets.delete(k);
+}, 60_000).unref?.();
+
+const SET_NUMBER_RE = /^[A-Za-z0-9][A-Za-z0-9-]{0,19}$/;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export const isValidSetNumber = (v: unknown): v is string =>
+  typeof v === 'string' && SET_NUMBER_RE.test(v);
+
+export const isValidIsoDate = (v: unknown): v is string =>
+  typeof v === 'string' && ISO_DATE_RE.test(v) && !Number.isNaN(Date.parse(v));
+
+// Lazily load genAI to avoid startup crashes if the API key is missing.
+// The key comes from the environment only: an earlier x-gemini-api-key header
+// path was removed, since no client ever sent it and it let a caller hand the
+// server an arbitrary credential to use.
+function getGenAI() {
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
-    throw new Error(
-      'GEMINI_API_KEY is missing. Please set it in AI Studio or provide a custom key.'
-    );
+    throw new Error('GEMINI_API_KEY is missing. Please set it in the server environment.');
   }
   // Disable the SDK's built-in 429/5xx auto-retry (which backs off internally for
   // up to ~60s). We want a rate-limited model to fail fast so callGeminiWithFallback
@@ -88,9 +227,6 @@ function getGenAI(customKey?: string) {
     httpOptions: { retryOptions: { attempts: 1 }, timeout: 20000 },
   });
 }
-
-const getCustomKey = (req: Request): string | undefined =>
-  (req.headers['x-gemini-api-key'] as string | undefined) || undefined;
 
 const userAgents = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
@@ -121,7 +257,6 @@ interface RateLimitError {
 interface GeminiCallOptions {
   prompt: string;
   config?: any;
-  customKey?: string;
   models?: string[];
   timeoutMs?: number;
   attemptsPerModel?: number;
@@ -161,7 +296,7 @@ async function callGeminiWithFallback(opts: GeminiCallOptions): Promise<string> 
       try {
         console.log(`[${label}] Trying model ${model} (attempt ${attempt})...`);
         const result: any = await withTimeout(
-          getGenAI(opts.customKey).models.generateContent({
+          getGenAI().models.generateContent({
             model,
             contents: opts.prompt,
             config: opts.config,
@@ -220,9 +355,39 @@ const BRICKLINK_SOURCE_IDS = ['bricklink'];
 
 type Rates = Record<string, number>;
 
+const FX_BASE_URL = 'https://api.frankfurter.app';
+const FX_TIMEOUT_MS = 5000;
+const FX_TTL_MS = 30 * 60 * 1000; // rates move once per business day
+
+// Exchange rates were previously re-fetched on every price request, with no
+// timeout on four of the five call sites. Cached per-date ('latest' included)
+// with a TTL. On serverless this is per-instance, which is still a large
+// reduction in outbound calls.
+const fxCache = new Map<string, { rates: Rates; at: number }>();
+
+/**
+ * Fetches EUR-based rates for a date ('latest' or YYYY-MM-DD), memoised for
+ * FX_TTL_MS. Historical dates are immutable, so those are cached indefinitely.
+ */
+async function getRates(date: string = 'latest'): Promise<Rates> {
+  const historical = date !== 'latest';
+  const hit = fxCache.get(date);
+  if (hit && (historical || Date.now() - hit.at < FX_TTL_MS)) return hit.rates;
+
+  const res = await axios.get(`${FX_BASE_URL}/${date}?from=EUR`, {
+    timeout: FX_TIMEOUT_MS,
+  });
+  const rates: Rates = Object.assign({}, res.data?.rates, { EUR: 1 });
+  if (typeof rates.HUF !== 'number' || !isFinite(rates.HUF) || rates.HUF <= 0) {
+    throw new Error('Exchange-rate response missing a usable HUF rate');
+  }
+  fxCache.set(date, { rates, at: Date.now() });
+  return rates;
+}
+
 // Normalizes a BrickLink price-guide currency token (e.g. "HUF", "US $", "£")
 // to an ISO code we can look up in the EUR-based frankfurter rates.
-function normalizeBrickLinkCurrency(raw: string): string | null {
+export function normalizeBrickLinkCurrency(raw: string): string | null {
   const t = raw.trim().toUpperCase();
   if (!t) return null;
   if (/^[A-Z]{3}$/.test(t)) return t; // HUF, EUR, GBP, USD, CHF, PLN, ...
@@ -238,7 +403,7 @@ function normalizeBrickLinkCurrency(raw: string): string | null {
 }
 
 // rates are units-of-currency per 1 EUR (frankfurter, from=EUR), incl. HUF.
-function convertToHuf(amount: number, cur: string, rates: Rates): number | null {
+export function convertToHuf(amount: number, cur: string, rates: Rates): number | null {
   if (cur === 'HUF') return amount;
   const rate = rates[cur];
   if (!rate || !rates.HUF) return null;
@@ -248,13 +413,11 @@ function convertToHuf(amount: number, cur: string, rates: Rates): number | null 
 interface BrickLinkPrices {
   cheapestHuf: number | null;
   cheapestCondition: string | null; // 'New' | 'Used'
-  newHuf: number | null;
 }
 
 /**
  * Scrapes BrickLink's server-rendered price guide (catalogPG.asp) for a set and
- * returns the cheapest current listing (min of New/Used) and the cheapest New
- * listing, converted to HUF. The page's currency is region-dependent, so it is
+ * returns the cheapest current listing (min of New/Used), converted to HUF. The page's currency is region-dependent, so it is
  * read off the page rather than assumed. Returns null if nothing parseable.
  */
 async function fetchBrickLinkPrices(setNumber: string, rates: Rates): Promise<BrickLinkPrices | null> {
@@ -298,7 +461,7 @@ async function fetchBrickLinkPrices(setNumber: string, rates: Rates): Promise<Br
 
     if (candidates.length === 0) return null;
     const cheapest = candidates.reduce((a, b) => (b.huf < a.huf ? b : a));
-    return { cheapestHuf: cheapest.huf, cheapestCondition: cheapest.cond, newHuf };
+    return { cheapestHuf: cheapest.huf, cheapestCondition: cheapest.cond };
   } catch (e: any) {
     console.warn('BrickLink price-guide scrape failed:', e?.message || e);
     return null;
@@ -345,11 +508,21 @@ async function scrapeSetImage(setNumber: string): Promise<string | null> {
 
 /** Registers all /api routes (plus the JSON body parser) onto an Express app. */
 export function registerApiRoutes(app: Express): void {
-  app.use(express.json());
+  app.use(express.json({ limit: '64kb' }));
+
+  // Baseline limit for every /api route, then a much tighter bucket on the
+  // handlers that can trigger a Gemini call or a burst of outbound scrapes.
+  const generalLimit = rateLimit({ windowMs: 60_000, max: 120, name: 'general' });
+  const expensiveLimit = rateLimit({ windowMs: 60_000, max: 12, name: 'expensive' });
+
+  app.use('/api', generalLimit);
 
   // API Route: Fetch Minifigure Series Items
-  app.get('/api/minifigures/:setNumber', async (req, res) => {
+  app.get('/api/minifigures/:setNumber', expensiveLimit, async (req, res) => {
     const { setNumber } = req.params;
+    if (!isValidSetNumber(setNumber)) {
+      return res.status(400).json({ error: 'setNumber must be alphanumeric, max 20 chars' });
+    }
     try {
       let results: any[] = [];
 
@@ -362,7 +535,7 @@ export function registerApiRoutes(app: Express): void {
         .catch(() => null);
       if (minResp && minResp.data) {
         const $m = cheerio.load(minResp.data);
-        $m('article.set').each((i, el) => {
+        $m('article.set').each((_i, el) => {
           const href = $m(el).find('h1 a').attr('href') || '';
           const img = $m(el).find('img').attr('src');
           const name = $m(el).find('h1 a').html();
@@ -384,7 +557,7 @@ export function registerApiRoutes(app: Express): void {
           timeout: 10000,
         });
         const $ = cheerio.load(response.data);
-        $('.set').each((i, el) => {
+        $('.set').each((_i, el) => {
           const heading = $(el).find('h1 a').clone().children().remove().end().text().trim();
           const url = $(el).find('h1 a').attr('href') || '';
           let image = $(el).find('img').attr('src');
@@ -411,14 +584,13 @@ export function registerApiRoutes(app: Express): void {
       }
 
       // 3. Fallback using Gemini if still empty
-      if (results.length === 0 && (getCustomKey(req) || process.env.GEMINI_API_KEY)) {
+      if (results.length === 0 && process.env.GEMINI_API_KEY) {
         console.log('Scraping minifigures failed, attempting Gemini Search fallback...');
         const prompt = `Find all the minifigures or characters included in Lego set ${setNumber}. Prioritize searching jaysbrickblog.com and brickfanatics.com, or other reputable lego news sites. Return a JSON object with this exact shape: { "figures": [{ "id": "string (create a short distinct id, e.g. fig1)", "name": "string", "image": "string (direct image url or null)" }] } Return ONLY the JSON object.`;
         try {
           const text = await callGeminiWithFallback({
             prompt,
             config: { tools: [{ googleSearch: {} }], responseMimeType: 'application/json' },
-            customKey: getCustomKey(req),
             logLabel: 'minifigures',
             accept: (t) => {
               try {
@@ -446,29 +618,32 @@ export function registerApiRoutes(app: Express): void {
   // API Route: Batch fetch product images. Tries cheerio scraping per set
   // first (cheap and reliable), and only falls back to Gemini/AI search for the
   // sets that could not be scraped.
-  app.post('/api/batch-images', async (req, res) => {
+  app.post('/api/batch-images', expensiveLimit, async (req, res) => {
     const { setNumbers } = req.body;
 
     if (!setNumbers || !Array.isArray(setNumbers) || setNumbers.length === 0) {
       return res.status(400).json({ error: 'No set numbers provided' });
     }
+    if (setNumbers.length > MAX_SET_NUMBERS) {
+      return res.status(400).json({ error: `At most ${MAX_SET_NUMBERS} set numbers per request` });
+    }
+    if (!setNumbers.every(isValidSetNumber)) {
+      return res.status(400).json({ error: 'setNumbers must be alphanumeric, max 20 chars' });
+    }
 
     const results: Record<string, string> = {};
 
     try {
-      // 1. Scrape each set's image with cheerio first.
+      // 1. Scrape each set's image with cheerio first, bounded concurrency.
       const missing: string[] = [];
-      await Promise.all(
-        setNumbers.map(async (n: unknown) => {
-          const setNumber = String(n);
-          const img = await scrapeSetImage(setNumber);
-          if (img) results[setNumber] = img;
-          else missing.push(setNumber);
-        })
-      );
+      await mapWithConcurrency(setNumbers as string[], OUTBOUND_CONCURRENCY, async (setNumber) => {
+        const img = await scrapeSetImage(setNumber);
+        if (img) results[setNumber] = img;
+        else missing.push(setNumber);
+      });
 
       // 2. Gemini fallback only for the sets scraping could not resolve.
-      if (missing.length > 0 && (getCustomKey(req) || process.env.GEMINI_API_KEY)) {
+      if (missing.length > 0 && process.env.GEMINI_API_KEY) {
         console.log(`Scraping found ${Object.keys(results).length}/${setNumbers.length} images; querying Gemini for ${missing.length} missing.`);
         const queryList = missing.map((n) => `"Lego ${n}"`).join(', ');
         const prompt = `Find the main high-quality product image URL for the following Lego sets: ${queryList}.
@@ -478,7 +653,6 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
           const text = await callGeminiWithFallback({
             prompt,
             config: { tools: [{ googleSearch: {} }], responseMimeType: 'application/json' },
-            customKey: getCustomKey(req),
             logLabel: 'batch-images',
             accept: isParseableJson,
           });
@@ -507,9 +681,12 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
   app.get('/api/proxy-image', async (req, res) => {
     const transparentPngBase64 =
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    // Failures get a short TTL: these were previously cached for a year, so a
+    // transient upstream blip pinned a blank image for every future visitor.
     const sendTransparent = () => {
       res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Cache-Control', 'public, max-age=31536000');
+      res.setHeader('Cache-Control', 'public, max-age=60');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
       return res.send(Buffer.from(transparentPngBase64, 'base64'));
     };
 
@@ -536,29 +713,85 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         return res.status(403).send('Host not allowed');
       }
 
-      const response = await fetch(imageUrl, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-          Referer: 'https://www.lego.com/',
-        },
-      });
+      // redirect: 'manual' because the allowlist above only validates the
+      // initial URL; with 'follow' an open redirect on an allowed host would
+      // walk straight past it. Any 3xx is re-validated before being followed.
+      const MAX_HOPS = 3;
+      let response: globalThis.Response | null = null;
+      let currentUrl = imageUrl;
 
-      if (!response.ok) {
-        console.error('Image proxy fetch error:', response.status, response.statusText, imageUrl);
+      for (let hop = 0; hop <= MAX_HOPS; hop++) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        try {
+          response = await fetch(currentUrl, {
+            redirect: 'manual',
+            signal: controller.signal,
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+              Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+              Referer: 'https://www.lego.com/',
+            },
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+
+        if (response.status < 300 || response.status >= 400) break;
+
+        const location = response.headers.get('location');
+        if (!location) break;
+        let nextUrl: URL;
+        try {
+          nextUrl = new URL(location, currentUrl);
+        } catch {
+          return res.status(400).send('Invalid redirect target');
+        }
+        if (!isAllowedImageUrl(nextUrl)) {
+          console.warn('Image proxy blocked redirect to disallowed host:', nextUrl.hostname);
+          return res.status(403).send('Host not allowed');
+        }
+        currentUrl = nextUrl.toString();
+        if (hop === MAX_HOPS) return res.status(508).send('Too many redirects');
+      }
+
+      if (!response || !response.ok) {
+        console.error(
+          'Image proxy fetch error:',
+          response?.status,
+          response?.statusText,
+          imageUrl
+        );
         return sendTransparent();
       }
 
       const contentType = response.headers.get('content-type');
-      if (contentType && !contentType.startsWith('image/')) {
-        console.warn('Image proxy blocked non-image content-type:', contentType, imageUrl);
-        return res.status(415).send('Not an image');
+      // SVG is scriptable and this is served same-origin, so an allowlisted
+      // host serving image/svg+xml would otherwise be a stored-XSS vector.
+      if (
+        !contentType ||
+        !contentType.startsWith('image/') ||
+        contentType.includes('svg')
+      ) {
+        console.warn('Image proxy blocked content-type:', contentType, imageUrl);
+        return res.status(415).send('Not a supported image type');
       }
-      res.setHeader('Content-Type', contentType || 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=31536000');
+
+      const declaredLength = Number(response.headers.get('content-length') || 0);
+      const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+      if (declaredLength > MAX_IMAGE_BYTES) {
+        return res.status(413).send('Image too large');
+      }
 
       const arrayBuffer = await response.arrayBuffer();
+      if (arrayBuffer.byteLength > MAX_IMAGE_BYTES) {
+        return res.status(413).send('Image too large');
+      }
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
       res.send(Buffer.from(arrayBuffer));
     } catch (error) {
       console.error('Image proxy error:', error);
@@ -567,9 +800,13 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
   });
 
   // API Route: Fetch Lego Set Info
-  app.get('/api/lego/:setNumber', async (req, res) => {
+  app.get('/api/lego/:setNumber', expensiveLimit, async (req, res) => {
     const { setNumber } = req.params;
     const skipImage = req.query.skipImage === 'true';
+
+    if (!isValidSetNumber(setNumber)) {
+      return res.status(400).json({ error: 'setNumber must be alphanumeric, max 20 chars' });
+    }
 
     const legoUrlHuf = `https://www.lego.com/hu-hu/product/${setNumber}`;
     const legoUrlEn = `https://www.lego.com/en-us/product/${setNumber}`;
@@ -612,13 +849,16 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         let priceHuf = 0;
         if (priceEur > 0) {
           try {
-            const ratesRes = await axios.get(`https://api.frankfurter.app/latest?from=EUR`, {
-              timeout: 5000,
-            });
-            const eurToHuf = ratesRes.data.rates.HUF;
-            if (eurToHuf) priceHuf = Math.round(priceEur * eurToHuf);
-          } catch (e) {
-            priceHuf = Math.round(priceEur * 395);
+            const rates = await getRates();
+            priceHuf = Math.round(priceEur * rates.HUF);
+          } catch (e: any) {
+            // Previously fell back to a hardcoded 395 HUF/EUR silently, so a
+            // broken rate source looked identical to a working one. Leave
+            // priceHuf at 0 and let the caller see priceEur only.
+            console.warn(
+              `Exchange-rate lookup failed for ${setNumber}, leaving priceHuf unset:`,
+              e?.message || e
+            );
           }
         }
 
@@ -700,7 +940,6 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         const text = await callGeminiWithFallback({
           prompt,
           config: { tools: [{ googleSearch: {} }] },
-          customKey: getCustomKey(req),
           logLabel: 'lego-info',
           accept: isParseableJson,
         });
@@ -735,7 +974,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
   });
 
   // API Route: Fetch prices dynamically based on sources for MULTIPLE SETS
-  app.post('/api/prices-batch', async (req, res) => {
+  app.post('/api/prices-batch', expensiveLimit, async (req, res) => {
     const { setNumbers, sources } = req.body;
 
     if (!sources || !Array.isArray(sources) || sources.length === 0) {
@@ -744,10 +983,18 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
     if (!setNumbers || !Array.isArray(setNumbers) || setNumbers.length === 0) {
       return res.status(400).json({ error: 'No set numbers provided' });
     }
+    if (sources.length > MAX_SOURCES) {
+      return res.status(400).json({ error: `At most ${MAX_SOURCES} sources per request` });
+    }
+    if (setNumbers.length > MAX_SET_NUMBERS) {
+      return res.status(400).json({ error: `At most ${MAX_SET_NUMBERS} set numbers per request` });
+    }
+    if (!setNumbers.every(isValidSetNumber)) {
+      return res.status(400).json({ error: 'setNumbers must be alphanumeric, max 20 chars' });
+    }
 
     try {
-      const exRateRes = await axios.get('https://api.frankfurter.app/latest?from=EUR');
-      const rates = Object.assign({}, exRateRes.data.rates, { EUR: 1 });
+      const rates = await getRates();
       const hufRate = rates.HUF;
 
       const blSources = sources.filter((s: any) => BRICKLINK_SOURCE_IDS.includes(s.id));
@@ -773,7 +1020,6 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         const text = await callGeminiWithFallback({
           prompt,
           config: { tools: [{ googleSearch: {} }] },
-          customKey: getCustomKey(req),
           timeoutMs: 25000, // Give it a bit more time for batch
           logLabel: 'prices-batch',
           accept: isParseableJson,
@@ -801,10 +1047,13 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         }
       }
 
-      // 2. BrickLink sources: scrape the price guide per set (in parallel).
+      // 2. BrickLink sources: scrape the price guide per set, with bounded
+      // concurrency so a large batch cannot open one socket per set at once.
       if (blSources.length > 0) {
-        await Promise.all(
-          setNumbers.map(async (setNumber: string) => {
+        await mapWithConcurrency(
+          setNumbers as string[],
+          OUTBOUND_CONCURRENCY,
+          async (setNumber) => {
             const bl = await fetchBrickLinkPrices(setNumber, rates);
             if (!bl) return;
             for (const s of blSources) {
@@ -817,17 +1066,9 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
                   store: bl.cheapestCondition || 'BrickLink',
                   url,
                 };
-              } else if (s.id === 'bricklink-new' && bl.newHuf != null) {
-                result[setNumber]['bricklink-new'] = {
-                  price: Math.round(bl.newHuf / hufRate),
-                  priceHuf: bl.newHuf,
-                  priceEur: bl.newHuf / hufRate,
-                  store: 'New',
-                  url,
-                };
               }
             }
-          })
+          }
         );
       }
 
@@ -845,17 +1086,22 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
   });
 
   // API Route: Fetch prices dynamically based on sources
-  app.post('/api/prices/:setNumber', async (req, res) => {
+  app.post('/api/prices/:setNumber', expensiveLimit, async (req, res) => {
     const { setNumber } = req.params;
     const { sources } = req.body;
 
     if (!sources || !Array.isArray(sources) || sources.length === 0) {
       return res.status(400).json({ error: 'No price sources provided' });
     }
+    if (sources.length > MAX_SOURCES) {
+      return res.status(400).json({ error: `At most ${MAX_SOURCES} sources per request` });
+    }
+    if (!isValidSetNumber(setNumber)) {
+      return res.status(400).json({ error: 'setNumber must be alphanumeric, max 20 chars' });
+    }
 
     try {
-      const exRateRes = await axios.get('https://api.frankfurter.app/latest?from=EUR');
-      const rates = Object.assign({}, exRateRes.data.rates, { EUR: 1 });
+      const rates = await getRates();
       const hufRate = rates.HUF;
 
       const blSources = sources.filter((s: any) => BRICKLINK_SOURCE_IDS.includes(s.id));
@@ -870,24 +1116,35 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
           return acc;
         }, {});
 
+        // Price sources are user-configurable, so this URL is caller-controlled
+        // and must be treated as hostile: validate scheme/host (incl. resolved
+        // IP) before fetching, refuse redirects so a 302 cannot walk past that
+        // check, and cap the body so cheerio is not handed an arbitrary blob.
         const fetchHTML = async (url: string) => {
           try {
-            const r = await axios.get(url, { headers: getCommonHeaders(), timeout: 6000 });
+            await assertSafeOutboundUrl(url);
+            const r = await axios.get(url, {
+              headers: getCommonHeaders(),
+              timeout: 6000,
+              maxRedirects: 0,
+              maxContentLength: 5 * 1024 * 1024,
+              maxBodyLength: 5 * 1024 * 1024,
+              validateStatus: (s) => s >= 200 && s < 300,
+            });
             const $ = cheerio.load(r.data);
             $('script, style, svg, noscript, header, footer').remove();
             return $('body').text().replace(/\s+/g, ' ').substring(0, 30000);
-          } catch (e) {
+          } catch (e: any) {
+            console.warn(`Price-source fetch skipped for ${url}:`, e?.message || e);
             return null;
           }
         };
 
         const sourceHtmlMap: any = {};
-        await Promise.all(
-          geminiSources.map(async (s: any) => {
-            const url = s.urlTemplate.replace('{setNumber}', setNumber);
-            sourceHtmlMap[s.id] = await fetchHTML(url);
-          })
-        );
+        await mapWithConcurrency(geminiSources as any[], OUTBOUND_CONCURRENCY, async (s) => {
+          const url = s.urlTemplate.replace('{setNumber}', setNumber);
+          sourceHtmlMap[s.id] = await fetchHTML(url);
+        });
 
         let prompt = `Find the current lowest price for Lego set ${setNumber} on the following sources:\n`;
         let needsGoogleSearch = false;
@@ -910,7 +1167,6 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         const text = await callGeminiWithFallback({
           prompt,
           config,
-          customKey: getCustomKey(req),
           logLabel: 'prices',
           accept: isParseableJson,
         });
@@ -934,8 +1190,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         }
       }
 
-      // 2. BrickLink sources: scrape the server-rendered price guide (one fetch
-      // shared by both bricklink + bricklink-new), bypassing Gemini.
+      // 2. BrickLink: scrape the server-rendered price guide, bypassing Gemini.
       if (blSources.length > 0) {
         const bl = await fetchBrickLinkPrices(setNumber, rates);
         if (bl) {
@@ -947,14 +1202,6 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
                 priceHuf: bl.cheapestHuf,
                 priceEur: bl.cheapestHuf / hufRate,
                 store: bl.cheapestCondition || 'BrickLink',
-                url,
-              };
-            } else if (s.id === 'bricklink-new' && bl.newHuf != null) {
-              responseData['bricklink-new'] = {
-                price: Math.round(bl.newHuf / hufRate),
-                priceHuf: bl.newHuf,
-                priceEur: bl.newHuf / hufRate,
-                store: 'New',
                 url,
               };
             }
@@ -976,10 +1223,10 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
   });
 
   // API Route: Fetch latest exchange rates
-  app.get('/api/exchange-rates', async (req, res) => {
+  app.get('/api/exchange-rates', async (_req, res) => {
     try {
-      const response = await axios.get(`https://api.frankfurter.app/latest?from=EUR`);
-      res.json({ rates: response.data.rates });
+      const rates = await getRates();
+      res.json({ rates });
     } catch (error) {
       console.error('Error fetching exchange rates:', error);
       res.status(500).json({ error: 'Failed to fetch exchange rates' });
@@ -989,12 +1236,31 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
   // API Route: Fetch historical exchange rate
   app.get('/api/exchange-rate/:date', async (req, res) => {
     const { date } = req.params;
+    if (!isValidIsoDate(date)) {
+      return res.status(400).json({ error: 'date must be a valid YYYY-MM-DD value' });
+    }
     try {
-      const response = await axios.get(`https://api.frankfurter.app/${date}?from=EUR`);
-      res.json({ rates: response.data.rates });
+      const rates = await getRates(date);
+      res.json({ rates });
     } catch (error) {
       console.error('Error fetching historical exchange rate:', error);
       res.status(500).json({ error: 'Failed to fetch historical exchange rate' });
     }
+  });
+
+  // Unknown /api/* paths should be JSON 404s, not the SPA HTML fallback.
+  app.use('/api', (_req, res) => {
+    res.status(404).json({ error: 'Not found' });
+  });
+
+  // Terminal error handler. Without this, malformed JSON bodies render
+  // Express's default HTML error page, which includes a stack trace whenever
+  // NODE_ENV is not 'production'.
+  app.use('/api', (err: any, _req: Request, res: Response, _next: NextFunction) => {
+    console.error('Unhandled API error:', err);
+    const status = err?.status || err?.statusCode || 500;
+    res.status(status >= 400 && status < 600 ? status : 500).json({
+      error: status === 400 ? 'Malformed request' : 'Internal server error',
+    });
   });
 }

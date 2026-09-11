@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
 import { X, Check, Share2, ClipboardList, Link as LinkIcon, Plus, Edit2, Trash2, Gift } from 'lucide-react';
 import { LegoSet, Registry, PriceSource } from '../types';
 import { collection, doc, setDoc, query, where, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
+import { getLowestPrices } from '../lib/prices';
+import { Modal } from './Modal';
 
 interface GiftRegistryDialogProps {
   onClose: () => void;
@@ -23,6 +25,7 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
   const [generating, setGenerating] = useState(false);
   const [createdLink, setCreatedLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -85,7 +88,7 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
   const saveRegistry = async () => {
     if (selectedSetIds.size === 0) return;
     if (!auth.currentUser) {
-       alert("You must be signed in to create a registry.");
+       setSaveError("You must be signed in to create a registry.");
        return;
     }
     setGenerating(true);
@@ -111,46 +114,25 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
         token = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
       }
       
-      const formatPrice = (priceVal: number, curr: string) => {
-        return new Intl.NumberFormat('hu-HU', {
-          style: 'currency',
-          currency: curr,
-          maximumFractionDigits: curr === 'HUF' ? 0 : 2
-        }).format(priceVal);
-      };
-
       const setsData = selectedSets.map(s => {
-         let lowestPrices: { sourceName: string, url: string, priceText: string }[] = [];
-         
-         if (s.marketPrices) {
-            const availablePrices = Object.entries(s.marketPrices).map(([sourceId, priceData]) => {
-               if (sourceId === 'error' || sourceId === 'exchangeRate' || !priceData) return null;
-               const source = priceSources.find(ps => ps.id === sourceId);
-               if (!source) return null;
-               
-               const costValueHuf = priceData.priceHuf || (exchangeRates && source.currency === 'EUR' && priceData.price ? priceData.price * exchangeRates.EUR : priceData.price) || 0;
-               
-               if (costValueHuf <= 0) return null;
-               
-               return {
-                  sourceName: source.name,
-                  url: priceData.url || source.urlTemplate.replace('{setNumber}', s.setNumber).replace('{name}', encodeURIComponent(s.name)),
-                  priceText: formatPrice(costValueHuf, 'HUF'),
-                  costValueHuf
-               }
-            }).filter(Boolean) as { sourceName: string, url: string, priceText: string, costValueHuf: number }[];
-            
-            availablePrices.sort((a, b) => a.costValueHuf - b.costValueHuf);
-            lowestPrices = availablePrices.slice(0, 2).map(p => ({
-               sourceName: p.sourceName,
-               url: p.url,
-               priceText: p.priceText
-            }));
-         }
-         
+         // Prices are baked into the shared doc at creation time, rendered in
+         // the owner's chosen display currency.
+         const lowestPrices = getLowestPrices(s, priceSources, displayCurrency, exchangeRates)
+           .map(({ sourceName, url, priceText }) => ({ sourceName, url, priceText }));
+
+
+         // Registry docs are world-readable by design (that is the share
+         // link), so project an explicit whitelist instead of spreading the
+         // whole set. Spreading leaked the owner's uid and their purchase
+         // history (orderedPriceHuf / orderedDate / orderedCurrency) to every
+         // recipient. These are exactly the fields RegistryView renders.
          return {
-           ...s,
-           productImage: newImageMap[s.setNumber] || s.productImage,
+           id: s.id,
+           setNumber: s.setNumber,
+           name: s.name,
+           productImage: newImageMap[s.setNumber] || s.productImage || null,
+           minifigures: s.minifigures || [],
+           minifiguresStatus: s.minifiguresStatus || {},
            lowestPrices
          };
       });
@@ -165,7 +147,7 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
       setCreatedLink(`https://lego.gykovacszoltan.hu/registry/${token}`);
     } catch (e) {
       console.error(e);
-      alert('Failed to save registry.');
+      setSaveError('Could not save the registry. Please try again.');
     } finally {
       setGenerating(false);
     }
@@ -178,15 +160,21 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 overflow-y-auto">
-      <motion.div 
+    <Modal onClose={onClose} label="Gift registries" className="w-full max-w-4xl">
+      <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-4xl relative min-h-[300px]"
+        className="bg-white rounded-xl shadow-2xl p-6 w-full relative min-h-[300px]"
       >
-        <button 
+        {saveError && (
+          <div role="alert" className="mb-4 bg-red-50 border-2 border-red-200 text-red-600 font-bold text-sm rounded-lg px-4 py-3">
+            {saveError}
+          </div>
+        )}
+        <button
           onClick={onClose}
+          aria-label="Close"
           className="absolute top-4 right-4 text-gray-400 hover:text-gray-900 z-10"
         >
           <X size={24} />
@@ -284,9 +272,10 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
               <Gift /> {view === 'create' ? 'Create' : 'Edit'} Registry
             </h2>
             <div className="mb-4">
-               <label className="block text-xs font-black uppercase text-gray-500 mb-1">Registry Title</label>
-               <input 
-                 type="text" 
+               <label htmlFor="registry-title" className="block text-xs font-black uppercase text-gray-500 mb-1">Registry Title</label>
+               <input
+                 id="registry-title"
+                 type="text"
                  value={registryTitle}
                  onChange={(e) => setRegistryTitle(e.target.value)}
                  className="w-full border-2 border-black p-2 font-bold focus:outline-none focus:border-lego-blue"
@@ -302,12 +291,24 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
                 {availableSets.map(set => {
                    const isSelected = selectedSetIds.has(set.id);
                    return (
-                     <div 
-                       key={set.id} 
+                     // A real checkbox role rather than a styled div, so this
+                     // is reachable by keyboard and announces its state.
+                     <div
+                       key={set.id}
+                       role="checkbox"
+                       aria-checked={isSelected}
+                       aria-label={`${set.name} (${set.setNumber})`}
+                       tabIndex={0}
                        onClick={() => toggleSet(set.id)}
-                       className={`border-4 rounded-lg p-3 cursor-pointer transition-all flex gap-3 items-center ${isSelected ? 'border-lego-blue bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}
+                       onKeyDown={(e) => {
+                         if (e.key === 'Enter' || e.key === ' ') {
+                           e.preventDefault();
+                           toggleSet(set.id);
+                         }
+                       }}
+                       className={`border-4 rounded-lg p-3 cursor-pointer transition-all flex gap-3 items-center focus:outline-none focus:ring-4 focus:ring-lego-yellow ${isSelected ? 'border-lego-blue bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}
                      >
-                       <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 ${isSelected ? 'bg-lego-blue border-lego-blue text-white' : 'border-gray-300'}`}>
+                       <div aria-hidden="true" className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 ${isSelected ? 'bg-lego-blue border-lego-blue text-white' : 'border-gray-300'}`}>
                          {isSelected && <Check size={16} />}
                        </div>
                        <div className="w-16 h-16 bg-white rounded shadow-sm border border-gray-100 flex items-center justify-center shrink-0 overflow-hidden">
@@ -384,6 +385,6 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
           </div>
         )}
       </motion.div>
-    </div>
+    </Modal>
   );
 }

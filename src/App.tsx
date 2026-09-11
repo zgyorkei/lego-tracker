@@ -1,23 +1,16 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Plus, 
-  LogIn, 
-  LogOut, 
-  Filter, 
-  Package, 
-  ShoppingBag, 
-  ChevronDown, 
-  Search,
-  Wallet,
-  PiggyBank,
-  TrendingDown,
+import {
+  Plus,
+  LogIn,
+  Package,
+  ShoppingBag,
   RefreshCcw,
   RefreshCw,
   Loader2,
-  Key,
   X,
   Eye,
+  AlertTriangle,
   LogOut as LogOutIcon,
   Palette,
   Gift
@@ -28,8 +21,42 @@ import { formatPrice as formatPriceUtil } from './lib/currency';
 import { ClassicSpaceLogo } from './components/ClassicSpaceLogo';
 import { SetCard } from './components/SetCard';
 import { GiftRegistryDialog } from './components/GiftRegistryDialog';
-import { Status, Priority, PriceSource, DEFAULT_PRICE_SOURCES, PERMANENT_SOURCE_IDS, LegoSet } from './types';
+import { Modal } from './components/Modal';
+import { Status, Priority, PriceSource, DEFAULT_PRICE_SOURCES, PERMANENT_SOURCE_IDS, LegoSet, PriceHistory, SUPPORTED_CURRENCIES, isSupportedCurrency, isPriceQuote } from './types';
 import { DEMO_SETS } from './demoData';
+
+// localStorage throws in private-browsing / storage-blocked contexts, and
+// JSON.parse throws on a corrupt value. These were previously called bare
+// inside useState initializers, so a single bad entry threw during the first
+// render and pinned the app on the ErrorBoundary screen with no way back.
+const readStoredString = (key: string, fallback: string): string => {
+  try {
+    return localStorage.getItem(key) ?? fallback;
+  } catch (e) {
+    console.warn(`Could not read ${key} from localStorage`, e);
+    return fallback;
+  }
+};
+
+const readStoredJson = <T,>(key: string, fallback: T): T => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch (e) {
+    console.warn(`Could not parse ${key} from localStorage`, e);
+    return fallback;
+  }
+};
+
+const writeStored = (key: string, value: unknown): void => {
+  try {
+    localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+  } catch (e) {
+    // Quota exceeded or storage unavailable; persistence is best-effort.
+    console.warn(`Could not persist ${key} to localStorage`, e);
+  }
+};
 
 // Ensures the permanent BrickLink source is always present and bricklink-new is
 // removed (migration for existing users). Idempotent.
@@ -58,16 +85,9 @@ const ensureBrickLinkSources = (sources: PriceSource[]): PriceSource[] => {
 
 const getMockSets = (): LegoSet[] => {
   let sourceSets = DEMO_SETS;
-  try {
-    const cached = localStorage.getItem('cachedSets');
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        sourceSets = parsed;
-      }
-    }
-  } catch (e) {
-    console.error("Failed to parse cached sets", e);
+  const parsed = readStoredJson<LegoSet[] | null>('cachedSets', null);
+  if (Array.isArray(parsed) && parsed.length > 0) {
+    sourceSets = parsed;
   }
 
   // selection: one from each priority, one minifigures series and at least one purchased
@@ -112,14 +132,14 @@ const AVAILABLE_THEMES = [
 ];
 
 export default function App() {
-  const { sets, loading, addSet, updateSet, deleteSet, addPriceHistory, getPriceHistory, user } = useSets();
+  const { sets, loading, error: setsError, addSet, updateSet, deleteSet, addPriceHistory, getPriceHistory, user } = useSets();
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [mockSets, setMockSets] = useState<LegoSet[]>(() => getMockSets());
 
   // Cache sets whenever they change
   useEffect(() => {
     if (sets && sets.length > 0) {
-      localStorage.setItem('cachedSets', JSON.stringify(sets));
+      writeStored('cachedSets', sets);
     }
   }, [sets]);
   const [filter, setFilter] = useState<Status | 'all'>('all');
@@ -128,14 +148,15 @@ export default function App() {
   const [newSetNumber, setNewSetNumber] = useState('');
   const [newPriority, setNewPriority] = useState<Priority>('medium');
   const [searchingLego, setSearchingLego] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [activeOperation, setActiveOperation] = useState<{setId: string, message: string} | null>(null);
   const [isBatchRefreshing, setIsBatchRefreshing] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{current: number, total: number} | null>(null);
   const [showPriceSourcesSetting, setShowPriceSourcesSetting] = useState(false);
-  const [currentTheme, setCurrentTheme] = useState(() => localStorage.getItem('brickTrackerTheme') || 'classic');
+  const [currentTheme, setCurrentTheme] = useState(() => readStoredString('brickTrackerTheme', 'classic'));
   const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [showGiftRegistry, setShowGiftRegistry] = useState(false);
-  const [displayCurrency, setDisplayCurrency] = useState<string>(() => localStorage.getItem('legoDisplayCurrency') || 'HUF');
+  const [displayCurrency, setDisplayCurrency] = useState<string>(() => readStoredString('legoDisplayCurrency', 'HUF'));
   const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null);
 
   useEffect(() => {
@@ -144,7 +165,7 @@ export default function App() {
     } else {
       document.documentElement.setAttribute('data-theme', currentTheme);
     }
-    localStorage.setItem('brickTrackerTheme', currentTheme);
+    writeStored('brickTrackerTheme', currentTheme);
   }, [currentTheme]);
 
   const activeSets = isDemoMode ? mockSets : sets;
@@ -161,20 +182,19 @@ export default function App() {
   }, []);
 
   const [priceSources, setPriceSources] = useState<PriceSource[]>(() => {
-    const saved = localStorage.getItem('legoPriceSources');
-    const base = saved ? JSON.parse(saved) : DEFAULT_PRICE_SOURCES;
+    const base = readStoredJson<PriceSource[]>('legoPriceSources', DEFAULT_PRICE_SOURCES);
     return ensureBrickLinkSources(base);
   });
 
   // Persist any permanent sources injected at load time (one-time on mount).
   useEffect(() => {
-    localStorage.setItem('legoPriceSources', JSON.stringify(priceSources));
+    writeStored('legoPriceSources', priceSources);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const savePriceSources = (newSources: PriceSource[]) => {
      setPriceSources(newSources);
-     localStorage.setItem('legoPriceSources', JSON.stringify(newSources));
+     writeStored('legoPriceSources', newSources);
   };
 
   const filteredSets = useMemo(() => {
@@ -270,7 +290,7 @@ export default function App() {
 
               const legoRes = await fetch(`/api/lego/${set.setNumber}`, { headers });
               if (legoRes.status === 429) {
-                  alert("Rate limit exceeded while fetching Lego Info. Please check your Gemini API Key quota or wait.");
+                  setActionError("Rate limit reached while fetching set info. Please wait a minute and try again.");
                   break; // stop lego info updates
               }
               if (legoRes.ok) {
@@ -327,12 +347,12 @@ export default function App() {
               });
               if (imgRes.ok) {
                   const imageMap: Record<string, string> = await imgRes.json();
-                  for (const s of setsMissingImage) {
-                      const img = imageMap[s.setNumber];
-                      if (img) {
-                          await updateSet(s.id, { productImage: img });
-                      }
-                  }
+                  // Parallel rather than one sequential write per set.
+                  await Promise.allSettled(
+                      setsMissingImage
+                          .filter(s => imageMap[s.setNumber])
+                          .map(s => updateSet(s.id, { productImage: imageMap[s.setNumber] }))
+                  );
               }
           } catch (e) {
               console.error('Batch image gap-fill failed', e);
@@ -351,36 +371,59 @@ export default function App() {
             body: JSON.stringify({ setNumbers, sources: priceSources })
         });
         if (marketRes.status === 429) {
-            alert("Rate limit exceeded while fetching Market Prices. Please check your Gemini API Key quota or wait.");
+            setActionError("Rate limit reached while fetching market prices. Please wait a minute and try again.");
         } else if (marketRes.ok) {
             const batchPrices = await marketRes.json();
             const today = new Date().toISOString().split('T')[0];
 
+            // Collected and flushed in parallel below. Previously this awaited
+            // updateSet then addPriceHistory one set at a time, so 50 sets meant
+            // 100 sequential Firestore round-trips.
+            const setUpdates: Promise<void>[] = [];
+            const historyEntries: { setId: string; entry: PriceHistory }[] = [];
+
             for (const set of filteredSets) {
                 const marketPrices = batchPrices[set.setNumber];
                 if (marketPrices) {
-                    await updateSet(set.id, {
+                    setUpdates.push(updateSet(set.id, {
                         marketPrices,
                         lastPricesRefreshTime: Date.now()
-                    });
-                    
-                    const historyEntry: any = {
+                    }));
+
+                    const historyEntry: PriceHistory = {
                         date: today,
-                        exchangeRate: marketPrices.exchangeRate
+                        exchangeRate: marketPrices.exchangeRate ?? 0
                     };
-                    
+
                     priceSources.forEach(s => {
-                        if (marketPrices[s.id]) {
-                            historyEntry[`${s.id}Price`] = marketPrices[s.id].price;
+                        const quote = marketPrices[s.id];
+                        if (isPriceQuote(quote)) {
+                            historyEntry[`${s.id}Price`] = quote.price;
+                            // Also store the HUF-normalised value: '...Price' is
+                            // in the source's own currency, so it cannot be
+                            // compared across sources or charted on one axis.
+                            historyEntry[`${s.id}PriceHuf`] = quote.priceHuf;
                         }
                     });
-                    
-                    await addPriceHistory(set.id, historyEntry);
+
+                    historyEntries.push({ setId: set.id, entry: historyEntry });
                 }
+            }
+
+            // allSettled so one rejected write cannot abandon the rest.
+            const results = await Promise.allSettled([
+                ...setUpdates,
+                ...historyEntries.map(h => addPriceHistory(h.setId, h.entry)),
+            ]);
+            const failed = results.filter(r => r.status === 'rejected').length;
+            if (failed > 0) {
+                console.error(`${failed} of ${results.length} price writes failed`);
+                setActionError(`Saved prices for some sets, but ${failed} write(s) failed.`);
             }
         }
     } catch(e) {
         console.error('Batch market prices failed', e);
+        setActionError('Could not refresh market prices. Please try again.');
     }
     
     setIsBatchRefreshing(false);
@@ -388,25 +431,48 @@ export default function App() {
     setActiveOperation(null);
   };
 
+  // Always points at the current handleBatchRefresh, so the scheduler below
+  // can call it without listing it as a dependency. Previously the interval
+  // closed over the first render's copy and refreshed a stale set list.
+  const batchRefreshRef = useRef(handleBatchRefresh);
+  useEffect(() => {
+    batchRefreshRef.current = handleBatchRefresh;
+  });
+
   // Daily refresh logic (Gemini API quota resets at midnight PT / 8-9am UTC)
   useEffect(() => {
-    const checkSchedule = () => {
+    let running = false;
+
+    const checkSchedule = async () => {
+      if (running) return;
       const now = new Date();
       // Define a "quota day" that starts at 9:00 AM UTC (safely after midnight PT)
       // By subtracting 9 hours, any time before 9 AM UTC falls into the previous calendar day
       const quotaDay = new Date(now.getTime() - 9 * 60 * 60 * 1000).toISOString().split('T')[0];
-      
-      const lastRefresh = localStorage.getItem('brickTrackerLastDailyRefresh');
-      if (lastRefresh !== quotaDay) {
-        handleBatchRefresh(true); // skip lego info, only market prices
-        localStorage.setItem('brickTrackerLastDailyRefresh', quotaDay);
+
+      const lastRefresh = readStoredString('brickTrackerLastDailyRefresh', '');
+      if (lastRefresh === quotaDay) return;
+
+      running = true;
+      try {
+        await batchRefreshRef.current(true); // skip lego info, only market prices
+        // Marked only after the refresh actually finishes. Writing it up front
+        // meant a reload mid-refresh silently skipped the whole day.
+        writeStored('brickTrackerLastDailyRefresh', quotaDay);
+      } catch (e) {
+        console.error('Daily refresh failed; will retry on the next tick', e);
+      } finally {
+        running = false;
       }
     };
-    
-    checkSchedule();
-    const interval = setInterval(checkSchedule, 60 * 1000); // Check every minute
+
+    void checkSchedule();
+    const interval = setInterval(() => void checkSchedule(), 60 * 1000);
     return () => clearInterval(interval);
-  }, [filteredSets.length, priceSources, isBatchRefreshing]);
+    // Deliberately depends only on whether there is anything to refresh.
+    // isBatchRefreshing was previously a dependency, which tore down and
+    // re-ran the scheduler every time a batch started and finished.
+  }, [filteredSets.length]);
 
   const formatPrice = (priceHuf: number) => formatPriceUtil(priceHuf, displayCurrency, exchangeRates);
 
@@ -426,25 +492,47 @@ export default function App() {
     return { plannedTotal, orderedLegoRetail, orderedTotal, savings };
   }, [activeSets]);
 
+  // Hoisted out of the SetCard JSX: as an inline arrow it was a fresh function
+  // on every render, which defeated memoising SetCard entirely.
+  const handleDeleteSet = useCallback((id: string) => {
+    if (isDemoMode) {
+      setMockSets(prev => prev.filter(s => s.id !== id));
+      return;
+    }
+    deleteSet(id).catch(() => {
+      /* useSets surfaces the message via setsError */
+    });
+  }, [isDemoMode, deleteSet]);
+
   const handleAddSet = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSetNumber) return;
-    
-    await addSet({
-      setNumber: newSetNumber,
-      name: `Lego Set ${newSetNumber}`,
-      legoPriceHuf: 0,
-      productImage: null,
-      legoUrl: null,
-      status: 'planned',
-      priority: newPriority,
-      isTemporary: false,
-      releaseDate: null,
-      hasFetchedLegoInfo: false,
-    });
-    
-    setNewSetNumber('');
-    setIsAdding(false);
+    if (!newSetNumber || searchingLego) return;
+
+    // The busy state drives the spinner, the disabled inputs and the
+    // "Fetching..." label in the add-set form. It was previously never set, so
+    // all of that UI was unreachable and a slow addSet looked like a no-op.
+    setSearchingLego(true);
+    try {
+      await addSet({
+        setNumber: newSetNumber,
+        name: `Lego Set ${newSetNumber}`,
+        legoPriceHuf: 0,
+        productImage: null,
+        legoUrl: null,
+        status: 'planned',
+        priority: newPriority,
+        isTemporary: false,
+        releaseDate: null,
+        hasFetchedLegoInfo: false,
+      });
+      setNewSetNumber('');
+      setIsAdding(false);
+    } catch (err) {
+      console.error('Failed to add set', err);
+      setActionError('Could not add that set. Please try again.');
+    } finally {
+      setSearchingLego(false);
+    }
   };
 
   if (!user && !isDemoMode) {
@@ -507,27 +595,19 @@ export default function App() {
 
           <div className="flex items-center gap-2 sm:gap-4">
             <div className="flex items-center gap-2">
+               <label htmlFor="display-currency" className="sr-only">Display currency</label>
                <select
+                 id="display-currency"
                  value={displayCurrency}
                  onChange={(e) => {
                    setDisplayCurrency(e.target.value);
-                   localStorage.setItem('legoDisplayCurrency', e.target.value);
+                   writeStored('legoDisplayCurrency', e.target.value);
                  }}
                  className="px-2 py-1.5 bg-gray-100 border-2 border-black rounded font-black text-[10px] uppercase cursor-pointer outline-none hover:bg-gray-200 transition-colors"
                >
-                 <option value="HUF">HUF</option>
-                 <option value="EUR">EUR</option>
-                 <option value="USD">USD</option>
-                 <option value="GBP">GBP</option>
-                 <option value="CHF">CHF</option>
-                 <option value="PLN">PLN</option>
-                 <option value="CZK">CZK</option>
-                 <option value="DKK">DKK</option>
-                 <option value="SEK">SEK</option>
-                 <option value="NOK">NOK</option>
-                 <option value="RON">RON</option>
-                 <option value="BGN">BGN</option>
-                 <option value="ISK">ISK</option>
+                 {SUPPORTED_CURRENCIES.map(c => (
+                   <option key={c} value={c}>{c}</option>
+                 ))}
                </select>
             </div>
             <button 
@@ -582,6 +662,7 @@ export default function App() {
             </div>
             
             <select
+               aria-label="Sort sets by"
                value={sortBy}
                onChange={(e) => setSortBy(e.target.value)}
                className="px-3 py-2 text-xs font-black uppercase rounded-lg border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-white cursor-pointer hover:bg-gray-50 focus:outline-none"
@@ -602,7 +683,7 @@ export default function App() {
               <button
                 onClick={() => setShowGiftRegistry(true)}
                 className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white border-2 border-black px-4 py-1.5 rounded-lg font-black uppercase text-xs shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
-                title="Gift Registry"
+                title="Gift Registry" aria-label="Gift Registry"
               >
                 <Gift size={14} /> <span>Gift Registry</span>
               </button>
@@ -677,10 +758,10 @@ export default function App() {
             <AnimatePresence mode="popLayout">
               {filteredSets.map(set => (
                 <div key={set.id} className="break-inside-avoid mb-6">
-                  <SetCard 
-                    set={set} 
-                    onUpdate={updateSet} 
-                    onDelete={(id) => isDemoMode ? setMockSets(mockSets.filter(s => s.id !== id)) : deleteSet(id)}
+                  <SetCard
+                    set={set}
+                    onUpdate={updateSet}
+                    onDelete={handleDeleteSet}
                     getPriceHistory={getPriceHistory}
                     onAddPriceHistory={addPriceHistory}
                     priceSources={priceSources}
@@ -695,7 +776,23 @@ export default function App() {
           </div>
         )}
 
-        {!loading && filteredSets.length === 0 && (
+        {/* A load failure used to fall through to the empty state below, so a
+            permissions or connectivity problem was indistinguishable from
+            genuinely having no sets. */}
+        {!loading && setsError && filteredSets.length === 0 && (
+          <div
+            role="alert"
+            className="flex flex-col items-center justify-center py-20 bg-red-50 border-4 border-dashed border-red-200 rounded-2xl"
+          >
+            <AlertTriangle size={48} className="text-red-400 mb-4" />
+            <p className="text-red-500 font-black uppercase tracking-widest text-center px-4">
+              Could not load your sets
+            </p>
+            <p className="text-red-400 font-bold text-sm mt-2 text-center px-4">{setsError}</p>
+          </div>
+        )}
+
+        {!loading && !setsError && filteredSets.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 bg-gray-50 border-4 border-dashed border-gray-200 rounded-2xl">
              <ShoppingBag size={48} className="text-gray-300 mb-4" />
              <p className="text-gray-400 font-black uppercase tracking-widest">No sets found in this category</p>
@@ -703,9 +800,33 @@ export default function App() {
         )}
       </main>
 
+      {/* Replaces the blocking window.alert() calls that previously served as
+          the error UI: non-modal, announced to screen readers, dismissible. */}
+      <AnimatePresence>
+         {actionError && (
+            <motion.div
+               role="alert"
+               initial={{ opacity: 0, y: 50, scale: 0.9 }}
+               animate={{ opacity: 1, y: 0, scale: 1 }}
+               exit={{ opacity: 0, y: 50, scale: 0.9 }}
+               className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-red-600 text-white px-6 py-4 rounded-xl shadow-2xl z-50 flex items-center gap-4 min-w-[320px] max-w-[90vw]"
+            >
+               <AlertTriangle className="shrink-0" size={24} />
+               <p className="flex-1 font-bold text-sm leading-tight">{actionError}</p>
+               <button
+                  onClick={() => setActionError(null)}
+                  aria-label="Dismiss error"
+                  className="shrink-0 hover:bg-red-700 rounded p-1 transition-colors"
+               >
+                  <X size={18} />
+               </button>
+            </motion.div>
+         )}
+      </AnimatePresence>
+
       <AnimatePresence>
          {activeOperation && (
-            <motion.div 
+            <motion.div
                initial={{ opacity: 0, y: 50, scale: 0.9 }}
                animate={{ opacity: 1, y: 0, scale: 1 }}
                exit={{ opacity: 0, y: 50, scale: 0.9 }}
@@ -727,22 +848,15 @@ export default function App() {
       <button 
         onClick={() => setIsAdding(true)}
         className="fixed bottom-6 right-6 z-50 w-12 h-12 bg-lego-red text-white border-2 border-black rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:bg-red-600 hover:-translate-y-1 hover:shadow-[4px_6px_0px_0px_rgba(0,0,0,1)] active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] transition-all"
-        title="Add New Set"
+        title="Add New Set" aria-label="Add New Set"
       >
         <Plus size={24} />
       </button>
 
       <AnimatePresence>
         {showPriceSourcesSetting && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowPriceSourcesSetting(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            />
-            <motion.div 
+          <Modal onClose={() => setShowPriceSourcesSetting(false)} label="Price sources">
+            <motion.div
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -761,7 +875,10 @@ export default function App() {
                   const isPermanent = PERMANENT_SOURCE_IDS.includes(source.id);
                   const lockEdit = isDemoMode || isPermanent;
                   return (
-                  <div key={index} className="bg-gray-50 border-2 border-black p-4 rounded-lg relative group">
+                  // Keyed by id, not index: deleting a source mid-list used to
+                  // re-key the survivors, so React reused the wrong DOM nodes
+                  // and input state jumped to the neighbouring row.
+                  <div key={source.id} className="bg-gray-50 border-2 border-black p-4 rounded-lg relative group">
                     {isPermanent && (
                       <span className="absolute top-2 right-2 text-[9px] font-black uppercase tracking-wider text-gray-400 pointer-events-none">Permanent</span>
                     )}
@@ -779,87 +896,85 @@ export default function App() {
                     )}
                     <div className="grid grid-cols-2 gap-2 mb-2">
                       <div>
-                        <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">ID (Short name)</label>
+                        <label htmlFor={`src-${source.id}-id`} className="block text-[10px] font-black uppercase text-gray-500 mb-1">ID (Short name)</label>
                         <input 
+                          id={`src-${source.id}-id`}
                           type="text"
                           disabled={lockEdit}
                           value={source.id}
                           onChange={(e) => {
-                             const newSources = [...priceSources];
-                             newSources[index].id = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-                             savePriceSources(newSources);
+                             const value = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                             savePriceSources(priceSources.map((s, i) => i === index ? { ...s, id: value } : s));
                           }}
                           className="w-full bg-white border border-black p-2 rounded text-sm font-bold disabled:bg-gray-100 disabled:text-gray-500"
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Display Name</label>
-                        <input 
+                        <label htmlFor={`src-${source.id}-name`} className="block text-[10px] font-black uppercase text-gray-500 mb-1">Display Name</label>
+                        <input
+                          id={`src-${source.id}-name`}
                           type="text"
                           disabled={lockEdit}
                           value={source.name}
                           onChange={(e) => {
-                             const newSources = [...priceSources];
-                             newSources[index].name = e.target.value;
-                             savePriceSources(newSources);
+                             const value = e.target.value;
+                             savePriceSources(priceSources.map((s, i) => i === index ? { ...s, name: value } : s));
                           }}
                           className="w-full bg-white border border-black p-2 rounded text-sm font-bold disabled:bg-gray-100 disabled:text-gray-500"
                         />
                       </div>
                     </div>
                     <div className="mb-2">
-                      <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">URL Template</label>
-                      <input 
+                      <label htmlFor={`src-${source.id}-url`} className="block text-[10px] font-black uppercase text-gray-500 mb-1">URL Template</label>
+                      <input
+                        id={`src-${source.id}-url`}
                         type="text"
                         disabled={lockEdit}
                         value={source.urlTemplate}
                         onChange={(e) => {
-                           const newSources = [...priceSources];
-                           newSources[index].urlTemplate = e.target.value;
-                           savePriceSources(newSources);
+                           const urlTemplate = e.target.value;
+                           savePriceSources(priceSources.map((s, i) => i === index ? { ...s, urlTemplate } : s));
                         }}
                         className="w-full bg-white border border-black p-2 rounded text-sm font-mono disabled:bg-gray-100 disabled:text-gray-500"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                         <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Currency</label>
-                         <select 
+                         <label htmlFor={`src-${source.id}-currency`} className="block text-[10px] font-black uppercase text-gray-500 mb-1">Currency</label>
+                         <select
+                           id={`src-${source.id}-currency`}
                            value={source.currency}
                            disabled={lockEdit}
                            onChange={(e) => {
-                              const newSources = [...priceSources];
-                              newSources[index].currency = e.target.value;
-                              savePriceSources(newSources);
+                              if (!isSupportedCurrency(e.target.value)) return;
+                              const currency = e.target.value;
+                              // Replace the entry rather than mutating it: the
+                              // array spread is shallow, so assigning through
+                              // it edited the object still held in state.
+                              savePriceSources(
+                                priceSources.map((s, i) =>
+                                  i === index ? { ...s, currency } : s
+                                )
+                              );
                            }}
                            className="w-full bg-white border border-black p-2 rounded text-sm font-bold disabled:bg-gray-100 disabled:text-gray-500"
                          >
-                           <option value="HUF">HUF</option>
-                           <option value="EUR">EUR</option>
-                           <option value="USD">USD</option>
-                           <option value="GBP">GBP</option>
-                           <option value="CHF">CHF</option>
-                           <option value="PLN">PLN</option>
-                           <option value="CZK">CZK</option>
-                           <option value="DKK">DKK</option>
-                           <option value="SEK">SEK</option>
-                           <option value="NOK">NOK</option>
-                           <option value="RON">RON</option>
-                           <option value="BGN">BGN</option>
-                           <option value="ISK">ISK</option>
+                           {SUPPORTED_CURRENCIES.map(c => (
+                             <option key={c} value={c}>{c}</option>
+                           ))}
                          </select>
                       </div>
                       <div>
-                         <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Chart Color</label>
+                         <label htmlFor={`src-${source.id}-color`} className="block text-[10px] font-black uppercase text-gray-500 mb-1">Chart Color</label>
                          <div className="flex gap-2">
-                            <input 
+                            <input
+                              id={`src-${source.id}-color`}
                               type="color"
                               disabled={lockEdit}
                               value={source.color}
                               onChange={(e) => {
-                                 const newSources = [...priceSources];
-                                 newSources[index].color = e.target.value;
-                                 savePriceSources(newSources);
+                                 const color = e.target.value;
+                                 savePriceSources(priceSources.map((s, i) => i === index ? { ...s, color } : s));
                               }}
                               className="h-9 w-12 cursor-pointer border border-black rounded disabled:opacity-50"
                             />
@@ -906,7 +1021,7 @@ export default function App() {
                 </button>
               </div>
             </motion.div>
-          </div>
+          </Modal>
         )}
       </AnimatePresence>
 
@@ -924,15 +1039,14 @@ export default function App() {
 
       <AnimatePresence>
         {isAdding && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => !searchingLego && setIsAdding(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            />
-            <motion.div 
+          // Backdrop dismissal is suppressed mid-submit so an accidental click
+          // cannot close the form while the set is being created.
+          <Modal
+            onClose={() => !searchingLego && setIsAdding(false)}
+            label="Add a new set"
+            closeOnBackdrop={!searchingLego}
+          >
+            <motion.div
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -945,10 +1059,11 @@ export default function App() {
               
               <form onSubmit={handleAddSet} className="space-y-6">
                 <div>
-                  <label className="block text-[10px] font-black uppercase text-gray-500 mb-1 ml-1 tracking-widest">Set Number</label>
+                  <label htmlFor="new-set-number" className="block text-[10px] font-black uppercase text-gray-500 mb-1 ml-1 tracking-widest">Set Number</label>
                   <div className="relative">
-                    <input 
-                      type="text" 
+                    <input
+                      id="new-set-number"
+                      type="text"
                       required
                       placeholder="e.g. 10305"
                       disabled={searchingLego}
@@ -969,7 +1084,7 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-black uppercase text-gray-500 mb-1 ml-1 tracking-widest">Priority</label>
+                  <span className="block text-[10px] font-black uppercase text-gray-500 mb-1 ml-1 tracking-widest">Priority</span>
                   <div className="grid grid-cols-3 gap-2">
                     {(['low', 'medium', 'high'] as Priority[]).map(p => (
                       <button 
@@ -1010,7 +1125,7 @@ export default function App() {
                 </div>
               </form>
             </motion.div>
-          </div>
+          </Modal>
         )}
       </AnimatePresence>
       <AnimatePresence>
@@ -1023,7 +1138,7 @@ export default function App() {
           >
             <div className="flex justify-between items-center mb-2 border-b-2 border-gray-100 pb-2">
               <span className="font-black uppercase text-sm">Select Theme</span>
-              <button onClick={() => setShowThemeSelector(false)} className="text-gray-400 hover:text-gray-900"><X size={16} /></button>
+              <button onClick={() => setShowThemeSelector(false)} aria-label="Close theme selector" className="text-gray-400 hover:text-gray-900"><X size={16} /></button>
             </div>
             {AVAILABLE_THEMES.map(theme => (
               <button
@@ -1044,7 +1159,7 @@ export default function App() {
       <button 
         onClick={() => setShowThemeSelector(!showThemeSelector)}
         className="fixed bottom-24 right-6 bg-white text-lego-blue w-12 h-12 flex items-center justify-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] border-2 border-black transition-transform hover:scale-110 hover:-rotate-12 z-40 rounded-full"
-        title="Change Theme"
+        title="Change Theme" aria-label="Change Theme"
       >
         <Palette size={24} className="animate-pulse" />
       </button>

@@ -26,6 +26,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Test
+        run: npm test
+
       # NOTE: `npm run format:check` is intentionally not gated yet. Enable it
       # after a one-time `npm run format` pass formats the legacy files, so this
       # workflow doesn't fail on pre-existing formatting.
