@@ -66,22 +66,51 @@ service cloud.firestore {
         
       allow delete: if isSignedIn() && isOwner(existing().userId);
 
-      // Price History subcollection
+      // Price History subcollection.
+      //
+      // This is now read back by the price-history chart, so the payload is
+      // shape-checked rather than accepting any document that happens to carry
+      // a 'date' string. Keys beyond those listed are rejected; the per-source
+      // price fields are validated by the numeric sweep in isValidHistory.
+      function ownsParentSet() {
+        return isSignedIn() &&
+          get(/databases/$(database)/documents/sets/$(setId)).data.userId == request.auth.uid;
+      }
+
+      // Each source contributes two columns ('<id>Price' and '<id>PriceHuf'),
+      // plus date, exchangeRate and createdAt, so the cap allows for the
+      // 15-source server limit with headroom.
+      function isValidHistory(data) {
+        return data.date is string &&
+               data.date.size() <= 32 &&
+               (!('exchangeRate' in data.keys()) || data.exchangeRate is number) &&
+               data.keys().size() <= 64;
+      }
+
       match /priceHistory/{priceId} {
-        allow read: if isSignedIn() && get(/databases/$(database)/documents/sets/$(setId)).data.userId == request.auth.uid;
-        allow create: if isSignedIn() && get(/databases/$(database)/documents/sets/$(setId)).data.userId == request.auth.uid &&
-          incoming().date is string &&
-          incoming().keys().hasAll(['date']);
-        allow delete: if isSignedIn() && get(/databases/$(database)/documents/sets/$(setId)).data.userId == request.auth.uid;
+        allow read: if ownsParentSet();
+        allow create: if ownsParentSet() &&
+          incoming().keys().hasAll(['date']) &&
+          isValidHistory(incoming());
+        allow delete: if ownsParentSet();
       }
     }
 
     // Registries collection
+    //
+    // Public read is intentional and is the whole point of the feature: a
+    // registry link is handed to gift recipients, who must be able to open it
+    // without an account. Writes stay owner-only.
     match /registries/{registryId} {
       allow get: if true;
       allow list: if isOwner(resource.data.userId);
       allow create: if isOwner(incoming().userId);
-      allow update: if isOwner(existing().userId) || isOwner(incoming().userId);
+      // Only the existing owner may update, and userId is pinned. The previous
+      // '|| isOwner(incoming().userId)' let any signed-in link holder set
+      // userId to their own uid and take the registry over, after which the
+      // delete rule below passed for them too.
+      allow update: if isOwner(existing().userId) &&
+        incoming().userId == existing().userId;
       allow delete: if isOwner(existing().userId);
 
       match /reservations/{setId} {

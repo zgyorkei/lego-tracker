@@ -18,6 +18,20 @@ export function convertFromHuf(
   return priceEur * targetRate;
 }
 
+// One locale for the whole app. GiftRegistryDialog and RegistryView each used
+// to inline their own Intl.NumberFormat with 'hu-HU' while this helper used
+// 'en-US', so the same amount rendered differently depending on the screen.
+const LOCALE = 'en-US';
+
+/** Formats an amount that is already in `currency` (no conversion). */
+export function formatAmount(amount: number, currency: string): string {
+  return new Intl.NumberFormat(LOCALE, {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: currency === 'HUF' ? 0 : 2,
+  }).format(amount);
+}
+
 /** Formats a HUF amount as a localized string in the chosen display currency. */
 export function formatPrice(
   priceHuf: number,
@@ -25,12 +39,7 @@ export function formatPrice(
   exchangeRates: ExchangeRates
 ): string {
   if (displayCurrency === 'HUF' || !exchangeRates) {
-    return `${priceHuf.toLocaleString()} HUF`;
+    return `${Math.round(priceHuf).toLocaleString(LOCALE)} HUF`;
   }
-  const finalPrice = convertFromHuf(priceHuf, displayCurrency, exchangeRates);
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: displayCurrency,
-    maximumFractionDigits: displayCurrency === 'HUF' ? 0 : 2,
-  }).format(finalPrice);
+  return formatAmount(convertFromHuf(priceHuf, displayCurrency, exchangeRates), displayCurrency);
 }

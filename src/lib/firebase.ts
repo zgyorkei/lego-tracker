@@ -38,4 +38,16 @@ export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
 export const signInWithGoogle = () => signInWithPopup(auth, googleProvider);
-export const signOut = () => auth.signOut();
+
+// Clear the local set cache on the way out. 'cachedSets' holds the signed-in
+// user's real sets (including what they paid), and Demo Mode on the login
+// screen seeds itself from that same key -- so without this, the next person
+// to use this browser profile sees the previous user's collection pre-login.
+export const signOut = async () => {
+  try {
+    localStorage.removeItem('cachedSets');
+  } catch {
+    // Storage can be unavailable (private mode, blocked cookies); sign out anyway.
+  }
+  await auth.signOut();
+};
