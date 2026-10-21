@@ -13,14 +13,17 @@ import {
   AlertTriangle,
   LogOut as LogOutIcon,
   Palette,
-  Gift
+  Gift,
+  Webhook
 } from 'lucide-react';
 import { useSets } from './hooks/useSets';
+import { usePlannedList } from './hooks/usePlannedList';
 import { signInWithGoogle, signOut } from './lib/firebase';
 import { formatPrice as formatPriceUtil } from './lib/currency';
 import { ClassicSpaceLogo } from './components/ClassicSpaceLogo';
 import { SetCard } from './components/SetCard';
 import { GiftRegistryDialog } from './components/GiftRegistryDialog';
+import { PlannedListDialog } from './components/PlannedListDialog';
 import { Modal } from './components/Modal';
 import { Status, Priority, PriceSource, DEFAULT_PRICE_SOURCES, PERMANENT_SOURCE_IDS, LegoSet, PriceHistory, SUPPORTED_CURRENCIES, isSupportedCurrency, isPriceQuote } from './types';
 import { DEMO_SETS } from './demoData';
@@ -156,6 +159,7 @@ export default function App() {
   const [currentTheme, setCurrentTheme] = useState(() => readStoredString('brickTrackerTheme', 'classic'));
   const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [showGiftRegistry, setShowGiftRegistry] = useState(false);
+  const [showPlannedList, setShowPlannedList] = useState(false);
   const [displayCurrency, setDisplayCurrency] = useState<string>(() => readStoredString('legoDisplayCurrency', 'HUF'));
   const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null);
 
@@ -196,6 +200,16 @@ export default function App() {
      setPriceSources(newSources);
      writeStored('legoPriceSources', newSources);
   };
+
+  // Lives here rather than in its dialog so the published list keeps syncing
+  // whenever the app is open, not only while the dialog is showing. Held back
+  // while sets are loading or failed, so an empty/cached array is never synced.
+  const plannedList = usePlannedList(
+    isDemoMode ? null : user,
+    sets,
+    priceSources,
+    !isDemoMode && !loading && !setsError
+  );
 
   const filteredSets = useMemo(() => {
     let result = activeSets;
@@ -688,6 +702,15 @@ export default function App() {
                 <Gift size={14} /> <span>Gift Registry</span>
               </button>
             )}
+            {filter === 'planned' && !isDemoMode && (
+              <button
+                onClick={() => setShowPlannedList(true)}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white border-2 border-black px-4 py-1.5 rounded-lg font-black uppercase text-xs shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
+                title="Planned Sets API" aria-label="Planned Sets API"
+              >
+                <Webhook size={14} /> <span>API</span>
+              </button>
+            )}
             {filter !== 'ordered' && filteredSets.length > 0 && (
               <div className="flex-1 sm:flex-none flex items-center w-full sm:w-auto">
               {isBatchRefreshing && batchProgress ? (
@@ -1034,6 +1057,12 @@ export default function App() {
             exchangeRates={exchangeRates}
             displayCurrency={displayCurrency}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showPlannedList && (
+          <PlannedListDialog onClose={() => setShowPlannedList(false)} state={plannedList} />
         )}
       </AnimatePresence>
 

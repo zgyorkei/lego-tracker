@@ -9,7 +9,60 @@ import {
   isValidIsoDate,
   normalizeBrickLinkCurrency,
   convertToHuf,
+  decodeFirestoreFields,
+  isValidPlannedListToken,
 } from './server-api.js';
+
+describe('isValidPlannedListToken', () => {
+  it('accepts a generated 24-char hex token', () => {
+    expect(isValidPlannedListToken('0123456789abcdef01234567')).toBe(true);
+  });
+
+  it.each(['', 'short', '../../sets/abc0123456789', 'a'.repeat(129), 'abc%2F0123456789abcd'])(
+    'rejects %s',
+    (token) => {
+      expect(isValidPlannedListToken(token)).toBe(false);
+    }
+  );
+});
+
+describe('decodeFirestoreFields', () => {
+  it('decodes nested REST values into plain JSON', () => {
+    const decoded = decodeFirestoreFields({
+      title: { stringValue: 'Planned sets' },
+      sets: {
+        arrayValue: {
+          values: [
+            {
+              mapValue: {
+                fields: {
+                  setNumber: { stringValue: '10305' },
+                  quantity: { integerValue: '2' },
+                  legoPriceHuf: { doubleValue: 129990.5 },
+                  releaseDate: { nullValue: null },
+                  prices: { arrayValue: {} },
+                },
+              },
+            },
+          ],
+        },
+      },
+      flag: { booleanValue: true },
+    });
+
+    expect(decoded).toEqual({
+      title: 'Planned sets',
+      sets: [
+        { setNumber: '10305', quantity: 2, legoPriceHuf: 129990.5, releaseDate: null, prices: [] },
+      ],
+      flag: true,
+    });
+  });
+
+  it('returns an empty object for missing fields', () => {
+    expect(decodeFirestoreFields(undefined)).toEqual({});
+  });
+});
 
 describe('isBlockedHost', () => {
   it.each([

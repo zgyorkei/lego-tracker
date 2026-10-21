@@ -3,6 +3,8 @@ import express from 'express';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import dns from 'node:dns/promises';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { GoogleGenAI } from '@google/genai';
 
 // ---------------------------------------------------------------------------
@@ -209,6 +211,62 @@ export const isValidSetNumber = (v: unknown): v is string =>
 
 export const isValidIsoDate = (v: unknown): v is string =>
   typeof v === 'string' && ISO_DATE_RE.test(v) && !Number.isNaN(Date.parse(v));
+
+// Matches isValidId in firestore.rules, with a floor so a short guessable
+// path segment is rejected before any outbound request is made.
+const PLANNED_LIST_TOKEN_RE = /^[A-Za-z0-9_-]{16,128}$/;
+
+export const isValidPlannedListToken = (v: unknown): v is string =>
+  typeof v === 'string' && PLANNED_LIST_TOKEN_RE.test(v);
+
+/**
+ * Converts one Firestore REST "Value" (`{ stringValue: 'x' }`,
+ * `{ mapValue: { fields } }`, ...) into plain JSON. The REST API is the only
+ * way the server can read Firestore: there is no Admin SDK here by design.
+ */
+export function decodeFirestoreValue(v: any): unknown {
+  if (!v || typeof v !== 'object') return null;
+  if ('stringValue' in v) return v.stringValue;
+  if ('integerValue' in v) return Number(v.integerValue);
+  if ('doubleValue' in v) return Number(v.doubleValue);
+  if ('booleanValue' in v) return v.booleanValue;
+  if ('timestampValue' in v) return v.timestampValue;
+  if ('nullValue' in v) return null;
+  if ('arrayValue' in v) return (v.arrayValue?.values ?? []).map(decodeFirestoreValue);
+  if ('mapValue' in v) return decodeFirestoreFields(v.mapValue?.fields);
+  // referenceValue, geoPointValue, bytesValue: never written by this app.
+  return null;
+}
+
+export function decodeFirestoreFields(fields: any): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!fields || typeof fields !== 'object') return out;
+  for (const [k, v] of Object.entries(fields)) out[k] = decodeFirestoreValue(v);
+  return out;
+}
+
+/**
+ * Project/database ids for the Firestore REST API. Same sources as the client
+ * config in src/lib/firebase.ts: VITE_FIREBASE_* env vars (present at runtime
+ * on Vercel too), else the gitignored firebase-applet-config.json.
+ */
+function getFirestoreTarget(): { projectId: string; databaseId: string } | null {
+  if (process.env.VITE_FIREBASE_PROJECT_ID) {
+    return {
+      projectId: process.env.VITE_FIREBASE_PROJECT_ID,
+      databaseId: process.env.VITE_FIREBASE_DATABASE_ID || '(default)',
+    };
+  }
+  try {
+    const cfg = JSON.parse(readFileSync(join(process.cwd(), 'firebase-applet-config.json'), 'utf8'));
+    if (typeof cfg.projectId === 'string' && cfg.projectId) {
+      return { projectId: cfg.projectId, databaseId: cfg.firestoreDatabaseId || '(default)' };
+    }
+  } catch {
+    // Missing or unreadable file: fall through to "not configured".
+  }
+  return null;
+}
 
 // Lazily load genAI to avoid startup crashes if the API key is missing.
 // The key comes from the environment only: an earlier x-gemini-api-key header
@@ -1245,6 +1303,59 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
     } catch (error) {
       console.error('Error fetching historical exchange rate:', error);
       res.status(500).json({ error: 'Failed to fetch historical exchange rate' });
+    }
+  });
+
+  // API Route: Published planned sets, for other applications to fetch.
+  //
+  // The token is the access control, exactly like a registry link. The doc is
+  // written by the owner's client (usePlannedList) and is world-readable per
+  // firestore.rules, so this reads it unauthenticated over the Firestore REST
+  // API and strips userId before responding. CORS is open so a browser-based
+  // consumer can call it too; there are no cookies or credentials to leak.
+  app.get('/api/planned-sets/:token', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    const { token } = req.params;
+    if (!isValidPlannedListToken(token)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const target = getFirestoreTarget();
+    if (!target) {
+      return res.status(503).json({ error: 'Firebase project is not configured on the server' });
+    }
+
+    const url =
+      `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(target.projectId)}` +
+      `/databases/${encodeURIComponent(target.databaseId)}/documents/plannedLists/${token}`;
+
+    try {
+      const response = await axios.get(url, {
+        timeout: 8000,
+        maxRedirects: 0,
+        validateStatus: () => true,
+      });
+      if (response.status === 404) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+      if (response.status !== 200) {
+        // 403 here almost always means the plannedLists rule has not been
+        // synced to the Firebase store yet.
+        console.error('Planned list read failed:', response.status, response.data?.error?.message);
+        return res.status(502).json({ error: 'Could not read the planned list' });
+      }
+
+      const data = decodeFirestoreFields(response.data?.fields);
+      const sets = Array.isArray(data.sets) ? data.sets : [];
+      res.setHeader('Cache-Control', 'public, max-age=60');
+      res.json({
+        title: typeof data.title === 'string' ? data.title : 'Planned sets',
+        updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : null,
+        count: sets.length,
+        sets,
+      });
+    } catch (error) {
+      console.error('Error fetching planned list:', error);
+      res.status(502).json({ error: 'Could not read the planned list' });
     }
   });
 

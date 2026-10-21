@@ -86,6 +86,40 @@ export interface Registry {
   createdAt: string;
 }
 
+// One set as published in a planned list. This is the public, world-readable
+// shape served by GET /api/planned-sets/:token, so it is an explicit field
+// whitelist: nothing about purchases, and no userId.
+export interface PlannedListPrice {
+  sourceId: string;
+  sourceName: string;
+  price: number;
+  currency: string;
+  priceHuf: number;
+  url: string | null;
+}
+
+export interface PlannedListSet {
+  id: string;
+  setNumber: string;
+  name: string;
+  priority: Priority;
+  quantity: number;
+  legoPriceHuf: number | null;
+  legoUrl: string | null;
+  productImage: string | null;
+  releaseDate: string | null;
+  prices: PlannedListPrice[];
+}
+
+export interface PlannedList {
+  id: string; // the token, also the last path segment of the API URL
+  userId: string;
+  title: string;
+  sets: PlannedListSet[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface RegistryReservation {
   id: string; // combination of registryId and setId, or just setId
   setId: string;
