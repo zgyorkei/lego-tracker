@@ -70,6 +70,14 @@ exclusive.
   link is the feature. `GiftRegistryDialog` therefore writes an explicit field
   whitelist, not `{...set}`. Never spread a whole `LegoSet` into a registry doc:
   it leaks `userId` and the owner's purchase prices.
+- **Planned lists (`plannedLists/{token}`) are world-readable too**, and are
+  how `GET /api/planned-sets/:token` gets data without an Admin SDK: the
+  client (`usePlannedList`) writes a snapshot via `buildPlannedListSets` (an
+  explicit whitelist, same rule as registries), and the server reads it
+  unauthenticated over the Firestore REST API. Sync is driven only by local
+  payload changes, never by the list doc's own snapshot, or two devices with
+  different price sources would rewrite each other in a loop. Keep the hook's
+  `ready` gate: syncing before sets load publishes an empty list.
 - **Firebase config and rules deployment live in their own Firebase store**,
   not in this repo. The absence of `firebase.json` / `.firebaserc` here is
   deliberate, so do not add one or try to wire up `firebase deploy`. The

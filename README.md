@@ -16,6 +16,7 @@ Brick Tracker is a comprehensive web application designed for Lego enthusiasts t
 - **Minifigure Checklists**: For sets that contain them, access a flip-card interface showing a minifigure checklist. Mark which ones you want and which ones you've acquired.
 - **Price History**: Each card can expand a chart of the lowest tracked market price over time, built from the price-history recorded on every refresh.
 - **Gift Registry**: Build a shareable wishlist and send the link to friends and family. Recipients do not need an account: they can view the sets, see the best current prices, and reserve a gift so nobody buys the same thing twice.
+- **Planned Sets API**: Publish every planned set as JSON for another application to fetch. On the Planned filter, click **API**, then **Create API Link**. The published list re-syncs automatically whenever your planned sets change while the app is open. See [Planned Sets API](#planned-sets-api).
 - **Themes**: Switch between multiple aesthetic themes inspired by iconic Lego variants (Classic Space, Star Wars, Ninjago, Hidden Side, Bionicle, etc.). Access them easily from the bottom right!
 - **Demo Mode**: Give users a test drive of the application features without having to sign in with their Google account. This mode works purely on the client-side with mock data and enforces read-only operations across the app.
 - **Secure Authentication**: Log in seamlessly with Google Authentication using Firebase. All user data is secured via Firebase Firestore Rules.
@@ -69,6 +70,50 @@ Firebase configuration and rules deployment are managed in their own Firebase
 store, outside this repo (there is no `firebase.json` here by design). The
 `firestore.rules` in this repo is the readable source of record for what the
 rules should say; when it changes, sync it to the Firebase store.
+
+### Planned Sets API
+
+```
+GET /api/planned-sets/:token
+```
+
+No auth headers are needed: the random token in the URL is the credential, like
+a registry link. Delete the link in the dialog to revoke it, then create a new
+one. CORS is open (`Access-Control-Allow-Origin: *`) and responses are cached
+for 60 seconds.
+
+```json
+{
+  "title": "Planned sets",
+  "updatedAt": "2026-10-21T09:30:00.000Z",
+  "count": 1,
+  "sets": [
+    {
+      "id": "abc123",
+      "setNumber": "10305",
+      "name": "Lion Knights' Castle",
+      "priority": "high",
+      "quantity": 1,
+      "legoPriceHuf": 149990,
+      "legoUrl": "https://www.lego.com/...",
+      "productImage": "https://...",
+      "releaseDate": null,
+      "prices": [
+        { "sourceId": "arukereso", "sourceName": "Arukereso", "price": 129990, "currency": "HUF", "priceHuf": 129990, "url": null }
+      ]
+    }
+  ]
+}
+```
+
+`prices` is sorted cheapest first. `price` is in the source's own `currency`,
+and `priceHuf` is the comparable figure. Errors: `404` for an unknown token,
+`502` if Firestore refuses the read (usually the `plannedLists` rule has not
+been synced), and `503` if the server has no `VITE_FIREBASE_PROJECT_ID`.
+
+The data is a snapshot written by the owner's browser, because the server has
+no Firestore credentials. It is current as of the last time the app was open
+after a change. `updatedAt` tells a consumer how fresh it is.
 
 ### Architecture
 * **Frontend**: React 19, Vite 6, Tailwind CSS v4, Recharts for the price-history chart, motion/react for transitions.

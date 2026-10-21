@@ -7,6 +7,8 @@
 4. Priority must be 'low', 'medium', or 'high'.
 5. Once a set is marked as 'ordered', its `orderedDate` and `orderedPriceHuf` should be set and immutable if possible (or at least strictly validated).
 
+6. A planned list (`plannedLists/{token}`) is publicly readable by id only. Only its owner may list, create, update or delete it, `userId` and `createdAt` are pinned on update, and only the keys `userId`, `title`, `sets`, `createdAt` and `updatedAt` are allowed. Per-set contents are a client-side whitelist that never includes `userId` or purchase fields.
+
 ## The "Dirty Dozen" Payloads (Rejected Cases)
 1. Creating a set for another user (`userId` mismatch).
 2. Updating a set's `userId` to steal it.
