@@ -30,6 +30,9 @@ if not exist "%APPDATA%\Brick Tracker\oauth-client.json" (
   echo See desktop\README.md in the repository.
 )
 
+rem Terminals inside VS Code export ELECTRON_RUN_AS_NODE=1, which would make
+rem the app run as plain Node and exit at once.
+set "ELECTRON_RUN_AS_NODE="
 start "" "%DEST%\Brick Tracker.exe" --install
 echo Done. Brick Tracker is starting.
 endlocal

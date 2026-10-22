@@ -7,8 +7,9 @@ import { registerApiRoutes, type PriceScraper } from '../../lib/server-api';
  * Serves the built web app and the shared API on loopback.
  *
  * The same registerApiRoutes as server.ts and api/index.ts, so routes cannot
- * drift between the three; the only difference is the injected scraper, which
- * makes the price routes read pages with Playwright instead of asking Gemini.
+ * drift between the three; the differences are the injected scraper, which
+ * makes the price and set-details routes read pages with Playwright instead of
+ * asking Gemini, and the absence of rate limits.
  *
  * Bound to 127.0.0.1 only: the API is unauthenticated, so it must never be
  * reachable from the network. The port is fixed because the page origin
@@ -17,7 +18,9 @@ import { registerApiRoutes, type PriceScraper } from '../../lib/server-api';
  */
 export function startLocalServer(opts: { port: number; distDir: string; scraper: PriceScraper }): Promise<http.Server> {
   const app = express();
-  registerApiRoutes(app, { scraper: opts.scraper });
+  // No rate limits on loopback: they exist to protect the public deployment's
+  // Gemini quota, and here they would stop "Update all" after 12 sets.
+  registerApiRoutes(app, { scraper: opts.scraper, rateLimit: false });
   app.use(express.static(opts.distDir, { index: false }));
   // SPA fallback (registry links etc.); /api/* already ended in a JSON 404.
   app.get('*', (_req, res) => res.sendFile(path.join(opts.distDir, 'index.html')));

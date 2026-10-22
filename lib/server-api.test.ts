@@ -30,12 +30,24 @@ describe('page parsers', () => {
     });
   });
 
+  it('treats Brickset\'s "{?}" placeholder as no name', () => {
+    expect(parseBricksetSetPage('<h1>30750 {?}</h1>').name).toBe('');
+  });
+
   it('reads a LEGO.com price from the price span, then meta, then JSON-LD', () => {
     expect(parseLegoProductPage('<h1>Farkas</h1><span data-test="product-price">14 999 Ft</span>').priceHuf).toBe(14999);
     expect(parseLegoProductPage('<meta property="product:price:amount" content="15999">').priceHuf).toBe(15999);
     const ld = `<h1 data-test="product-overview-name">Grey Wolf</h1><meta property="og:image" content="https://x/img.png">
       <script type="application/ld+json">{"@type":"Product","offers":{"@type":"Offer","price":"16999","priceCurrency":"HUF"}}</script>`;
-    expect(parseLegoProductPage(ld)).toEqual({ name: 'Grey Wolf', priceHuf: 16999, image: 'https://x/img.png' });
+    expect(parseLegoProductPage(ld)).toEqual({ name: 'Grey Wolf', priceHuf: 16999, image: 'https://x/img.png', isProduct: true });
+  });
+
+  it('does not take LEGO.com\'s not-found page for a product', () => {
+    // Leaked and unannounced sets land on this page; its h1 is not a set name.
+    const notFound = '<h1>OH BRICKS!</h1><meta property="og:image" content="https://x/404.png">';
+    expect(parseLegoProductPage(notFound)).toEqual({ name: '', priceHuf: 0, image: null, isProduct: false });
+    const listedNoPrice = '<link rel="canonical" href="https://www.lego.com/hu-hu/product/retired-set-12345"><h1>Retired Set</h1>';
+    expect(parseLegoProductPage(listedNoPrice)).toMatchObject({ name: 'Retired Set', priceHuf: 0, isProduct: true });
   });
 
   it('reads Brickset minifigure lists', () => {
