@@ -6,6 +6,8 @@ import dns from 'node:dns/promises';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { GoogleGenAI } from '@google/genai';
+import type { RecipeTestResult, ScrapeRecipe } from './scrapeRecipe.js';
+import { MAX_TEACH_SAMPLES, teachSource } from './teachSource.js';
 
 // ---------------------------------------------------------------------------
 // Shared backend logic for both the local dev server (server.ts) and the
@@ -470,58 +472,113 @@ export function convertToHuf(amount: number, cur: string, rates: Rates): number 
 
 interface BrickLinkPrices {
   cheapestHuf: number | null;
-  cheapestCondition: string | null; // 'New' | 'Used'
+  cheapestCondition: string | null; // 'New (sealed)' | 'New (complete)'
+}
+
+/** One lot from BrickLink's catalogifs.ajax listing endpoint (fields we use). */
+export interface BrickLinkLot {
+  codeNew?: string; // 'N' | 'U'
+  codeComplete?: string; // 'S' sealed | 'C' complete | 'B' incomplete | 'X' not stated
+  strDesc?: string;
+  mDisplaySalePrice?: string; // e.g. "HUF 2,031.27", "US $12.34", "EUR 5.57"
+}
+
+// Sellers regularly list a partial set as "Complete", so the completeness code
+// alone is not enough: the cheapest "C" lot for 75437 was "No Minifigures ONLY
+// speeder". These match the phrasings seen on real listings; deliberately
+// narrow, so "no box" or "only opened for inventory" still count as complete.
+const INCOMPLETE_LOT_RE = new RegExp(
+  [
+    String.raw`\b(?:no|without|w\/o|missing|minus|excl(?:\.|uding)?|ohne|sans|senza)\s+(?:the\s+|any\s+)?(?:mini\s?-?fig(?:ure)?s?|minifiguren|figures?|figs?|figurines?)`,
+    String.raw`\b(?:incomplete|unvollst[aä]ndig|not complete|parts? missing|missing (?:parts?|pieces?))\b`,
+    String.raw`\b(?:only|nur)\s+(?:the\s+)?(?:set|speeder|vehicle|ship|parts|bricks|build|model|car|bike|figures?|mini\s?figs?|minifigures?|instructions?|box)\b`,
+    String.raw`\b(?:speeder|vehicle|ship|parts|bricks|build|model|car|bike|figures?|mini\s?figs?|minifigures?|instructions?|box)\s+only\b`,
+  ].join('|'),
+  'i'
+);
+
+export const isIncompleteLotDescription = (desc: string): boolean => INCOMPLETE_LOT_RE.test(desc);
+
+/**
+ * Picks the cheapest New lot that is sealed or complete. Incomplete ('B') and
+ * unstated ('X') lots are excluded, as are lots whose description says parts
+ * or minifigures are missing. Prices are compared in HUF because the display
+ * currency follows the visitor's region, not the seller's.
+ */
+export function pickCheapestNewLot(
+  lots: BrickLinkLot[],
+  rates: Rates
+): { huf: number; completeness: 'S' | 'C' } | null {
+  let best: { huf: number; completeness: 'S' | 'C' } | null = null;
+  for (const lot of lots) {
+    if (lot.codeNew !== 'N') continue;
+    if (lot.codeComplete !== 'S' && lot.codeComplete !== 'C') continue;
+    if (lot.strDesc && isIncompleteLotDescription(lot.strDesc)) continue;
+
+    const m = (lot.mDisplaySalePrice || '').match(/^(.*?)\s*([\d,]+(?:\.\d+)?)\s*$/);
+    if (!m) continue;
+    const cur = normalizeBrickLinkCurrency(m[1]);
+    const amount = parseFloat(m[2].replace(/,/g, ''));
+    if (!cur || !isFinite(amount) || amount <= 0) continue;
+    const huf = convertToHuf(amount, cur, rates);
+    if (huf == null) continue;
+
+    if (!best || huf < best.huf) best = { huf, completeness: lot.codeComplete };
+  }
+  return best;
+}
+
+// BrickLink's internal item id never changes for a set number, so it is cached
+// for the life of the process to save a page load per set on every refresh.
+const brickLinkItemIds = new Map<string, number>();
+
+async function getBrickLinkItemId(setNumber: string): Promise<number | null> {
+  const cached = brickLinkItemIds.get(setNumber);
+  if (cached) return cached;
+  const r = await axios.get(`https://www.bricklink.com/v2/catalog/catalogitem.page?S=${setNumber}-1`, {
+    headers: getCommonHeaders(),
+    timeout: 8000,
+  });
+  const m = String(r.data).match(/idItem:\s*(\d+)/);
+  if (!m) return null;
+  const id = Number(m[1]);
+  brickLinkItemIds.set(setNumber, id);
+  return id;
 }
 
 /**
- * Scrapes BrickLink's server-rendered price guide (catalogPG.asp) for a set and
- * returns the cheapest current listing (min of New/Used), converted to HUF. The page's currency is region-dependent, so it is
- * read off the page rather than assumed. Returns null if nothing parseable.
+ * Returns the cheapest New, non-incomplete BrickLink listing for a set, in HUF.
+ *
+ * Previously this read the price guide's aggregate "Min Price", which mixes in
+ * incomplete lots (75437 showed 5 EUR for "Speeder only") and also considered
+ * Used. The listing endpoint exposes per-lot completeness, so lots are filtered
+ * individually instead. Returns null if nothing qualifies.
  */
 async function fetchBrickLinkPrices(setNumber: string, rates: Rates): Promise<BrickLinkPrices | null> {
   try {
-    const r = await axios.get(`https://www.bricklink.com/catalogPG.asp?S=${setNumber}-1`, {
-      headers: getCommonHeaders(),
-      timeout: 7000,
+    const itemId = await getBrickLinkItemId(setNumber);
+    if (!itemId) return null;
+    // rpp=500 covers every set seen so far in one page (75437 has 145 New
+    // lots); the list comes back cheapest first, so a truncated tail would
+    // only ever hold more expensive lots.
+    const r = await axios.get('https://www.bricklink.com/ajax/clone/catalogifs.ajax', {
+      params: { itemid: itemId, cond: 'N', rpp: 500, pi: 1, iconly: 0 },
+      headers: {
+        ...getCommonHeaders(),
+        'X-Requested-With': 'XMLHttpRequest',
+        Referer: `https://www.bricklink.com/v2/catalog/catalogitem.page?S=${setNumber}-1`,
+      },
+      timeout: 8000,
     });
-    const $ = cheerio.load(r.data);
-    $('script, style').remove();
-    const text = $('body').text().replace(/\s+/g, ' ');
-
-    // Each price block: "(Times Sold|Total Lots): N Total Qty: M Min Price:<min> Avg Price:...".
-    // "Total Lots" blocks are the Current Items for Sale sections, in order: New, then Used.
-    const blockRe =
-      /(Times Sold|Total Lots):\s*[\d,]+\s*Total Qty:\s*[\d,]+\s*Min Price:\s*(.*?)\s*Avg Price:/g;
-    const currentMins: (number | null)[] = []; // [New, Used] in HUF
-    let m: RegExpExecArray | null;
-    while ((m = blockRe.exec(text)) !== null) {
-      if (m[1] !== 'Total Lots') continue; // skip the "Last 6 Months Sales" blocks
-      const priceMatch = m[2].match(/([A-Za-z$£€ ]*?)([\d][\d.,]*)/);
-      if (!priceMatch) {
-        currentMins.push(null);
-        continue;
-      }
-      const cur = normalizeBrickLinkCurrency(priceMatch[1]);
-      const amount = parseFloat(priceMatch[2].replace(/,/g, ''));
-      if (!cur || !isFinite(amount) || amount <= 0) {
-        currentMins.push(null);
-        continue;
-      }
-      currentMins.push(convertToHuf(amount, cur, rates));
-    }
-
-    const newHuf = currentMins[0] ?? null;
-    const usedHuf = currentMins[1] ?? null;
-    const candidates = [
-      { huf: newHuf, cond: 'New' },
-      { huf: usedHuf, cond: 'Used' },
-    ].filter((c): c is { huf: number; cond: string } => typeof c.huf === 'number' && c.huf > 0);
-
-    if (candidates.length === 0) return null;
-    const cheapest = candidates.reduce((a, b) => (b.huf < a.huf ? b : a));
-    return { cheapestHuf: cheapest.huf, cheapestCondition: cheapest.cond };
+    const lots: BrickLinkLot[] = Array.isArray(r.data?.list) ? r.data.list : [];
+    const best = pickCheapestNewLot(lots, rates);
+    if (!best) return null;
+    return {
+      cheapestHuf: best.huf,
+      cheapestCondition: best.completeness === 'S' ? 'New (sealed)' : 'New (complete)',
+    };
   } catch (e: any) {
-    console.warn('BrickLink price-guide scrape failed:', e?.message || e);
+    console.warn('BrickLink listing fetch failed:', e?.message || e);
     return null;
   }
 }
@@ -564,8 +621,81 @@ async function scrapeSetImage(setNumber: string): Promise<string | null> {
   return null;
 }
 
+/**
+ * Reads prices through a real browser. Implemented by the desktop app
+ * (Playwright); the web deployment never supplies one and uses Gemini.
+ * Implementations must serialise their own page loads.
+ */
+export interface PriceScraper {
+  /** Price in the source's own currency, or null when the page has none. */
+  scrapePrice(
+    source: { id: string; urlTemplate: string; scraper?: unknown },
+    setNumber: string
+  ): Promise<{ price: number; url: string | null } | null>;
+  /** For teaching: a compact HTML excerpt of a page, centred on `focus`. */
+  capturePage?(url: string, focus: string): Promise<PageCapture | null>;
+  /** For teaching: runs a candidate recipe on a live page. */
+  testRecipe?(url: string, setNumber: string, recipe: ScrapeRecipe): Promise<RecipeTestResult>;
+}
+
+export interface PageCapture {
+  html: string;
+  title: string;
+  finalUrl: string;
+}
+
+export interface ApiOptions {
+  scraper?: PriceScraper;
+}
+
+/**
+ * Prices every (set, source) pair with the browser scraper, one at a time so a
+ * shop sees a person-paced stream of page loads rather than a burst. Shapes the
+ * result exactly like the Gemini path, so the client cannot tell them apart.
+ */
+async function scrapeSourcesWithBrowser(
+  scraper: PriceScraper,
+  setNumbers: string[],
+  sources: any[],
+  rates: Rates
+): Promise<Record<string, Record<string, unknown>>> {
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const setNumber of setNumbers) {
+    out[setNumber] = {};
+    for (const s of sources) {
+      if (typeof s?.urlTemplate !== 'string' || typeof s?.id !== 'string') continue;
+      const url = s.urlTemplate.replace('{setNumber}', setNumber);
+      // Same guard as the web fetch path. The browser follows redirects, so
+      // this only vets the first hop; acceptable because the desktop scraper
+      // runs on the owner's own machine against their own configured sources.
+      try {
+        await assertSafeOutboundUrl(url);
+      } catch (e: any) {
+        console.warn(`Skipping source ${s.id}:`, e?.message || e);
+        continue;
+      }
+      const r = await scraper
+        .scrapePrice({ id: s.id, urlTemplate: s.urlTemplate, scraper: s.scraper }, setNumber)
+        .catch((e) => {
+          console.warn(`Browser scrape failed for ${s.id} / ${setNumber}:`, e?.message || e);
+          return null;
+        });
+      if (!r) continue;
+      const priceEur = r.price / (rates[s.currency] || 1);
+      out[setNumber][s.id] = {
+        price: r.price,
+        priceHuf: Math.round(priceEur * rates.HUF),
+        priceEur,
+        store: typeof s.name === 'string' ? s.name : s.id,
+        url: r.url || url,
+      };
+    }
+  }
+  return out;
+}
+
 /** Registers all /api routes (plus the JSON body parser) onto an Express app. */
-export function registerApiRoutes(app: Express): void {
+export function registerApiRoutes(app: Express, options: ApiOptions = {}): void {
   app.use(express.json({ limit: '64kb' }));
 
   // Baseline limit for every /api route, then a much tighter bucket on the
@@ -1061,8 +1191,14 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       const result: any = {};
       for (const setNumber of setNumbers) result[setNumber] = { exchangeRate: hufRate };
 
-      // 1. Non-BrickLink sources via a single batched Gemini call.
-      if (geminiSources.length > 0) {
+      // 1a. Desktop app: a local browser reads each source page instead of Gemini.
+      if (geminiSources.length > 0 && options.scraper) {
+        const scraped = await scrapeSourcesWithBrowser(options.scraper, setNumbers, geminiSources, rates);
+        for (const setNumber of setNumbers) Object.assign(result[setNumber], scraped[setNumber]);
+      }
+
+      // 1b. Web: non-BrickLink sources via a single batched Gemini call.
+      if (geminiSources.length > 0 && !options.scraper) {
         const expectedJsonFormat: any = {};
         let prompt = `Find the current lowest market prices for the following Lego sets across the listed sources.\n`;
         for (const setNumber of setNumbers) {
@@ -1118,7 +1254,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
               const url = s.urlTemplate.replace('{setNumber}', setNumber);
               if (s.id === 'bricklink' && bl.cheapestHuf != null) {
                 result[setNumber]['bricklink'] = {
-                  price: Math.round(bl.cheapestHuf / hufRate),
+                  price: Math.round((bl.cheapestHuf / hufRate) * 100) / 100,
                   priceHuf: bl.cheapestHuf,
                   priceEur: bl.cheapestHuf / hufRate,
                   store: bl.cheapestCondition || 'BrickLink',
@@ -1167,8 +1303,14 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
 
       const responseData: any = { exchangeRate: hufRate };
 
-      // 1. Non-BrickLink sources: scrape locally where possible, then Gemini.
-      if (geminiSources.length > 0) {
+      // 1a. Desktop app: a local browser reads each source page instead of Gemini.
+      if (geminiSources.length > 0 && options.scraper) {
+        const scraped = await scrapeSourcesWithBrowser(options.scraper, [setNumber], geminiSources, rates);
+        Object.assign(responseData, scraped[setNumber]);
+      }
+
+      // 1b. Web: non-BrickLink sources, scraped locally where possible, then Gemini.
+      if (geminiSources.length > 0 && !options.scraper) {
         const expectedJsonFormat = geminiSources.reduce((acc: any, s: any) => {
           acc[s.id] = { price: 0, store: `string (name of the specific store)` };
           return acc;
@@ -1256,7 +1398,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
             const url = s.urlTemplate.replace('{setNumber}', setNumber);
             if (s.id === 'bricklink' && bl.cheapestHuf != null) {
               responseData['bricklink'] = {
-                price: Math.round(bl.cheapestHuf / hufRate),
+                price: Math.round((bl.cheapestHuf / hufRate) * 100) / 100,
                 priceHuf: bl.cheapestHuf,
                 priceEur: bl.cheapestHuf / hufRate,
                 store: bl.cheapestCondition || 'BrickLink',
@@ -1303,6 +1445,71 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
     } catch (error) {
       console.error('Error fetching historical exchange rate:', error);
       res.status(500).json({ error: 'Failed to fetch historical exchange rate' });
+    }
+  });
+
+  // API Route: Teach a price source (desktop app only).
+  //
+  // Captures the source's search page for a few sample sets with the local
+  // browser, asks Gemini for a declarative recipe, and test-runs it on the
+  // same pages. Nothing is saved here: the client shows the test results and
+  // stores the recipe on the source only if the user accepts it. The web
+  // deployment has no browser, so the route answers 404 there.
+  app.post('/api/teach-source', expensiveLimit, async (req, res) => {
+    const scraper = options.scraper;
+    if (!scraper?.capturePage || !scraper.testRecipe) {
+      return res.status(404).json({ error: 'Teaching sources is available in the desktop app only' });
+    }
+    const { source, setNumbers } = req.body ?? {};
+    if (
+      !source ||
+      typeof source.name !== 'string' ||
+      typeof source.currency !== 'string' ||
+      typeof source.urlTemplate !== 'string' ||
+      !source.urlTemplate.includes('{setNumber}') ||
+      source.urlTemplate.length > 500
+    ) {
+      return res.status(400).json({ error: 'source needs a name, a currency and a URL template containing {setNumber}' });
+    }
+    if (
+      !Array.isArray(setNumbers) ||
+      setNumbers.length === 0 ||
+      setNumbers.length > MAX_TEACH_SAMPLES ||
+      !setNumbers.every(isValidSetNumber)
+    ) {
+      return res.status(400).json({ error: `setNumbers must be 1-${MAX_TEACH_SAMPLES} valid set numbers` });
+    }
+    try {
+      await assertSafeOutboundUrl(source.urlTemplate.replace('{setNumber}', setNumbers[0]));
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message || 'Invalid URL template' });
+    }
+
+    try {
+      const result = await teachSource(
+        { name: source.name.slice(0, 100), urlTemplate: source.urlTemplate, currency: source.currency.slice(0, 3) },
+        setNumbers,
+        {
+          capture: (url, setNumber) => scraper.capturePage!(url, setNumber),
+          test: (url, setNumber, recipe) => scraper.testRecipe!(url, setNumber, recipe),
+          ask: (prompt) =>
+            callGeminiWithFallback({
+              prompt,
+              config: { responseMimeType: 'application/json' },
+              timeoutMs: 60_000,
+              overallBudgetMs: 150_000,
+              logLabel: 'teach-source',
+              accept: isParseableJson,
+            }),
+        }
+      );
+      res.json(result);
+    } catch (error: any) {
+      console.error('Teaching source failed:', error);
+      if (error?.isRateLimit) {
+        return res.status(429).json({ error: 'Gemini rate limit reached. Try again in a minute.', retryAfter: error.retryAfter });
+      }
+      res.status(500).json({ error: 'Teaching failed. Check that GEMINI_API_KEY is set in desktop/.env.' });
     }
   });
 

@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithCredential, signInWithPopup } from 'firebase/auth';
+import './platform';
 import { getFirestore } from 'firebase/firestore';
 
 // In our AI Studio environment, we load from a generated JSON config.
@@ -37,7 +38,17 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(defa
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-export const signInWithGoogle = () => signInWithPopup(auth, googleProvider);
+// Google blocks its sign-in page inside embedded browsers, so the desktop app
+// runs the OAuth flow in the system browser and hands back an ID token, which
+// is exchanged for a Firebase session here. The web keeps the popup.
+export const signInWithGoogle = async () => {
+  const desktop = window.legoTrackerDesktop;
+  if (desktop) {
+    const idToken = await desktop.signInWithGoogle();
+    return signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
+  }
+  return signInWithPopup(auth, googleProvider);
+};
 
 // Clear the local set cache on the way out. 'cachedSets' holds the signed-in
 // user's real sets (including what they paid), and Demo Mode on the login

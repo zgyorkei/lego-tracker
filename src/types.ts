@@ -1,3 +1,5 @@
+import type { ScrapeRecipe } from '../lib/scrapeRecipe';
+
 export type Priority = 'low' | 'medium' | 'high';
 export type Status = 'planned' | 'ordered';
 export type MinifigureStatus = 'wanted' | 'got' | 'none';
@@ -28,6 +30,8 @@ export interface PriceSource {
   urlTemplate: string; // e.g., https://amazon.de/s?k={setNumber}
   currency: Currency;
   color: string; // hex color for charts
+  /** How the desktop app reads this shop, written when the source is taught. */
+  scraper?: ScrapeRecipe;
 }
 
 export const DEFAULT_PRICE_SOURCES: PriceSource[] = [

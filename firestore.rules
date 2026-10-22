@@ -39,6 +39,25 @@ service cloud.firestore {
         incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt']);
     }
 
+    // Per-user settings (currently the price-source list).
+    //
+    // Private to the owner. Rules cannot iterate a list, so the sources are
+    // validated as a container (type and a cap matching the server's
+    // MAX_SOURCES) rather than per entry; the server re-validates every source
+    // it is asked to fetch. Because the shape check is generic, adding or
+    // editing a source never needs a rules change.
+    match /userSettings/{userId} {
+      function isValidSettings(data) {
+        return data.keys().hasOnly(['priceSources', 'updatedAt']) &&
+               data.priceSources is list && data.priceSources.size() <= 15 &&
+               data.updatedAt is string && data.updatedAt.size() <= 40;
+      }
+
+      allow get: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidSettings(incoming());
+      allow delete: if isOwner(userId);
+    }
+
     // Sets collection
     match /sets/{setId} {
       function isValidSet(data) {

@@ -9,6 +9,8 @@
 
 6. A planned list (`plannedLists/{token}`) is publicly readable by id only. Only its owner may list, create, update or delete it, `userId` and `createdAt` are pinned on update, and only the keys `userId`, `title`, `sets`, `createdAt` and `updatedAt` are allowed. Per-set contents are a client-side whitelist that never includes `userId` or purchase fields.
 
+7. User settings (`userSettings/{uid}`) are readable and writable only by that user. Only `priceSources` (a list of at most 15) and `updatedAt` are allowed.
+
 ## The "Dirty Dozen" Payloads (Rejected Cases)
 1. Creating a set for another user (`userId` mismatch).
 2. Updating a set's `userId` to steal it.

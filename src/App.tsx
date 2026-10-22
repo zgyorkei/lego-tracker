@@ -24,67 +24,18 @@ import { ClassicSpaceLogo } from './components/ClassicSpaceLogo';
 import { SetCard } from './components/SetCard';
 import { GiftRegistryDialog } from './components/GiftRegistryDialog';
 import { PlannedListDialog } from './components/PlannedListDialog';
+import { TeachSourcePanel } from './components/TeachSourcePanel';
+import { withUrlTemplate } from './lib/priceSources';
 import { Modal } from './components/Modal';
-import { Status, Priority, PriceSource, DEFAULT_PRICE_SOURCES, PERMANENT_SOURCE_IDS, LegoSet, PriceHistory, SUPPORTED_CURRENCIES, isSupportedCurrency, isPriceQuote } from './types';
+import { Status, Priority, DEFAULT_PRICE_SOURCES, PERMANENT_SOURCE_IDS, LegoSet, PriceHistory, SUPPORTED_CURRENCIES, isSupportedCurrency, isPriceQuote } from './types';
 import { DEMO_SETS } from './demoData';
+import { readStoredString, readStoredJson, writeStored } from './lib/storage';
+import { usePriceSources } from './hooks/usePriceSources';
+import { isDesktopApp } from './lib/platform';
 
-// localStorage throws in private-browsing / storage-blocked contexts, and
-// JSON.parse throws on a corrupt value. These were previously called bare
-// inside useState initializers, so a single bad entry threw during the first
-// render and pinned the app on the ErrorBoundary screen with no way back.
-const readStoredString = (key: string, fallback: string): string => {
-  try {
-    return localStorage.getItem(key) ?? fallback;
-  } catch (e) {
-    console.warn(`Could not read ${key} from localStorage`, e);
-    return fallback;
-  }
-};
-
-const readStoredJson = <T,>(key: string, fallback: T): T => {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch (e) {
-    console.warn(`Could not parse ${key} from localStorage`, e);
-    return fallback;
-  }
-};
-
-const writeStored = (key: string, value: unknown): void => {
-  try {
-    localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
-  } catch (e) {
-    // Quota exceeded or storage unavailable; persistence is best-effort.
-    console.warn(`Could not persist ${key} to localStorage`, e);
-  }
-};
-
-// Ensures the permanent BrickLink source is always present and bricklink-new is
-// removed (migration for existing users). Idempotent.
-const ensureBrickLinkSources = (sources: PriceSource[]): PriceSource[] => {
-  const result = sources.filter(s => s.id !== 'bricklink-new');
-  const amazonIdx = result.findIndex(s => s.id === 'amazon');
-  let insertAt = amazonIdx >= 0 ? amazonIdx + 1 : 0;
-  for (const id of PERMANENT_SOURCE_IDS) {
-    const existingIdx = result.findIndex(s => s.id === id);
-    if (existingIdx === -1) {
-      const def = DEFAULT_PRICE_SOURCES.find(s => s.id === id);
-      if (def) {
-        result.splice(insertAt, 0, def);
-        insertAt++;
-      }
-    } else {
-      // Permanent sources are locked, so keep them canonical (e.g. picks up
-      // URL-template changes) rather than leaving stale values from localStorage.
-      const def = DEFAULT_PRICE_SOURCES.find(s => s.id === id);
-      if (def) result[existingIdx] = { ...def };
-      insertAt = existingIdx + 1;
-    }
-  }
-  return result;
-};
+// Same rule as isValidSetNumber on the server; /api/teach-source rejects the
+// whole request if any sample fails it.
+const isValidTeachSet = (n: string) => /^[A-Za-z0-9][A-Za-z0-9-]{0,19}$/.test(n);
 
 const getMockSets = (): LegoSet[] => {
   let sourceSets = DEMO_SETS;
@@ -185,21 +136,16 @@ export default function App() {
        .catch(err => console.error("Could not fetch exchange rates:", err));
   }, []);
 
-  const [priceSources, setPriceSources] = useState<PriceSource[]>(() => {
-    const base = readStoredJson<PriceSource[]>('legoPriceSources', DEFAULT_PRICE_SOURCES);
-    return ensureBrickLinkSources(base);
-  });
+  const { priceSources, savePriceSources, error: priceSourcesError } = usePriceSources(user, isDemoMode);
 
-  // Persist any permanent sources injected at load time (one-time on mount).
-  useEffect(() => {
-    writeStored('legoPriceSources', priceSources);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const savePriceSources = (newSources: PriceSource[]) => {
-     setPriceSources(newSources);
-     writeStored('legoPriceSources', newSources);
-  };
+  // Sets a new source is taught with: planned sets that some shop already
+  // prices first (likely to be stocked), then any other planned set.
+  const teachSamples = useMemo(() => {
+    const planned = sets.filter(s => s.status === 'planned' && isValidTeachSet(s.setNumber));
+    const priced = planned.filter(s => Object.values(s.marketPrices ?? {}).some(isPriceQuote));
+    const ordered = [...priced, ...planned.filter(s => !priced.includes(s))].map(s => s.setNumber);
+    return [...new Set(ordered)].slice(0, 3);
+  }, [sets]);
 
   // Lives here rather than in its dialog so the published list keeps syncing
   // whenever the app is open, not only while the dialog is showing. Held back
@@ -453,16 +399,23 @@ export default function App() {
     batchRefreshRef.current = handleBatchRefresh;
   });
 
-  // Daily refresh logic (Gemini API quota resets at midnight PT / 8-9am UTC)
+  // Daily refresh at 04:00 local time.
+  //
+  // Desktop app only. Automatic refreshes moved there because it scrapes with a
+  // local browser instead of spending Gemini quota; on the web this would burn
+  // credits on every open tab, so the web app refreshes only on request.
   useEffect(() => {
+    if (!isDesktopApp) return;
     let running = false;
 
     const checkSchedule = async () => {
       if (running) return;
-      const now = new Date();
-      // Define a "quota day" that starts at 9:00 AM UTC (safely after midnight PT)
-      // By subtracting 9 hours, any time before 9 AM UTC falls into the previous calendar day
-      const quotaDay = new Date(now.getTime() - 9 * 60 * 60 * 1000).toISOString().split('T')[0];
+      // A "refresh day" starts at 04:00 local: shifting the clock back four
+      // hours makes 00:00-03:59 count as the previous day. The run therefore
+      // fires at 4AM, or on the first check after it if the PC was off then.
+      const shifted = new Date(Date.now() - 4 * 60 * 60 * 1000);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const quotaDay = `${shifted.getFullYear()}-${pad(shifted.getMonth() + 1)}-${pad(shifted.getDate())}`;
 
       const lastRefresh = readStoredString('brickTrackerLastDailyRefresh', '');
       if (lastRefresh === quotaDay) return;
@@ -890,8 +843,16 @@ export default function App() {
                 Price Sources
               </h2>
               <p className="text-sm font-bold text-gray-600 mb-6">
-                Configure websites to search for market prices. Use <code>{'{setNumber}'}</code> in the URL template where the Lego set number should go. Gemini will scrape these URLs.
+                Configure websites to search for market prices. Use <code>{'{setNumber}'}</code> in the URL template where the Lego set number should go.{' '}
+                {isDesktopApp
+                  ? 'The desktop app reads these pages with its own browser. Teach a new shop once, and it is remembered on every device.'
+                  : 'Gemini will scrape these URLs.'}
               </p>
+              {priceSourcesError && (
+                <div role="alert" className="mb-4 bg-red-50 border-2 border-red-200 text-red-600 font-bold text-sm rounded-lg px-4 py-3">
+                  {priceSourcesError}
+                </div>
+              )}
               
               <div className="overflow-y-auto space-y-4 mb-4 pr-2">
                 {priceSources.map((source, index) => {
@@ -956,7 +917,7 @@ export default function App() {
                         value={source.urlTemplate}
                         onChange={(e) => {
                            const urlTemplate = e.target.value;
-                           savePriceSources(priceSources.map((s, i) => i === index ? { ...s, urlTemplate } : s));
+                           savePriceSources(priceSources.map((s, i) => i === index ? withUrlTemplate(s, urlTemplate) : s));
                         }}
                         className="w-full bg-white border border-black p-2 rounded text-sm font-mono disabled:bg-gray-100 disabled:text-gray-500"
                       />
@@ -1001,7 +962,7 @@ export default function App() {
                               }}
                               className="h-9 w-12 cursor-pointer border border-black rounded disabled:opacity-50"
                             />
-                            <input 
+                            <input
                               type="text"
                               value={source.color}
                               readOnly
@@ -1010,12 +971,22 @@ export default function App() {
                          </div>
                       </div>
                     </div>
+                    {isDesktopApp && !isPermanent && (
+                      <TeachSourcePanel
+                        source={source}
+                        sampleSetNumbers={teachSamples}
+                        onSave={(recipe) =>
+                          savePriceSources(priceSources.map((s) => (s.id === source.id ? { ...s, scraper: recipe } : s)))
+                        }
+                      />
+                    )}
                   </div>
                   );
                 })}
               </div>
               
-              {!isDemoMode && (
+              {/* 15 matches MAX_SOURCES on the server and the userSettings rule. */}
+              {!isDemoMode && priceSources.length < 15 && (
                 <button
                   onClick={() => {
                      const newId = `source-${Date.now()}`;

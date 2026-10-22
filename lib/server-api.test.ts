@@ -11,7 +11,67 @@ import {
   convertToHuf,
   decodeFirestoreFields,
   isValidPlannedListToken,
+  isIncompleteLotDescription,
+  pickCheapestNewLot,
 } from './server-api.js';
+
+describe('isIncompleteLotDescription', () => {
+  // Real descriptions from 75437's New listings.
+  it.each([
+    'no minifigures or their accessories',
+    'Speeder only.',
+    'Great condition (no box)\nNo Minifigures ONLY speeder',
+    'Without minifigs',
+    'Ohne Minifiguren',
+    'Incomplete, 3 parts missing',
+  ])('flags %j', (desc) => {
+    expect(isIncompleteLotDescription(desc)).toBe(true);
+  });
+
+  it.each(['', 'Sealed, box has minor dents', 'Only opened for inventory', 'no box, bags sealed', 'New, complete with instructions'])(
+    'keeps %j',
+    (desc) => {
+      expect(isIncompleteLotDescription(desc)).toBe(false);
+    }
+  );
+});
+
+describe('pickCheapestNewLot', () => {
+  // HUF per EUR and USD per EUR, in the frankfurter from=EUR shape.
+  const rates = { HUF: 400, USD: 1.1, EUR: 1 };
+
+  it('skips incomplete, unstated, used and mislabelled lots', () => {
+    const best = pickCheapestNewLot(
+      [
+        { codeNew: 'N', codeComplete: 'B', strDesc: 'no minifigures', mDisplaySalePrice: 'HUF 2,031.27' },
+        { codeNew: 'N', codeComplete: 'C', strDesc: 'No Minifigures ONLY speeder', mDisplaySalePrice: 'HUF 2,566.22' },
+        { codeNew: 'N', codeComplete: 'X', strDesc: '', mDisplaySalePrice: 'HUF 2,600.00' },
+        { codeNew: 'U', codeComplete: 'C', strDesc: '', mDisplaySalePrice: 'HUF 2,700.00' },
+        { codeNew: 'N', codeComplete: 'S', strDesc: '', mDisplaySalePrice: 'HUF 6,802.56' },
+        { codeNew: 'N', codeComplete: 'C', strDesc: 'no box', mDisplaySalePrice: 'HUF 7,100.00' },
+      ],
+      rates
+    );
+    expect(best).toEqual({ huf: 6802.56, completeness: 'S' });
+  });
+
+  it('compares across display currencies in HUF', () => {
+    const best = pickCheapestNewLot(
+      [
+        { codeNew: 'N', codeComplete: 'S', mDisplaySalePrice: 'EUR 20.00' }, // 8000 HUF
+        { codeNew: 'N', codeComplete: 'C', mDisplaySalePrice: 'US $11.00' }, // 4000 HUF
+      ],
+      rates
+    );
+    expect(best?.completeness).toBe('C');
+    expect(best?.huf).toBeCloseTo(4000);
+  });
+
+  it('returns null when nothing qualifies', () => {
+    expect(pickCheapestNewLot([{ codeNew: 'N', codeComplete: 'B', mDisplaySalePrice: 'HUF 1.00' }], rates)).toBeNull();
+    expect(pickCheapestNewLot([], rates)).toBeNull();
+  });
+});
 
 describe('isValidPlannedListToken', () => {
   it('accepts a generated 24-char hex token', () => {
