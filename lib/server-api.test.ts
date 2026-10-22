@@ -13,7 +13,42 @@ import {
   isValidPlannedListToken,
   isIncompleteLotDescription,
   pickCheapestNewLot,
+  parseBricksetSetPage,
+  parseLegoProductPage,
+  parseBricksetMinifigs,
+  parseBricksetSeriesSearch,
 } from './server-api.js';
+
+describe('page parsers', () => {
+  it('reads a Brickset set page', () => {
+    const html = `<h1>31393 Grey Wolf</h1><a class="highslide"><img src="https://images.brickset.com/sets/images/31393-1.jpg"></a>
+      <dl><dt>RRP</dt><dd>$49.99, €44.99</dd></dl>`;
+    expect(parseBricksetSetPage(html)).toEqual({
+      name: 'Grey Wolf',
+      image: 'https://images.brickset.com/sets/images/31393-1.jpg',
+      priceEur: 44.99,
+    });
+  });
+
+  it('reads a LEGO.com price from the price span, then meta, then JSON-LD', () => {
+    expect(parseLegoProductPage('<h1>Farkas</h1><span data-test="product-price">14 999 Ft</span>').priceHuf).toBe(14999);
+    expect(parseLegoProductPage('<meta property="product:price:amount" content="15999">').priceHuf).toBe(15999);
+    const ld = `<h1 data-test="product-overview-name">Grey Wolf</h1><meta property="og:image" content="https://x/img.png">
+      <script type="application/ld+json">{"@type":"Product","offers":{"@type":"Offer","price":"16999","priceCurrency":"HUF"}}</script>`;
+    expect(parseLegoProductPage(ld)).toEqual({ name: 'Grey Wolf', priceHuf: 16999, image: 'https://x/img.png' });
+  });
+
+  it('reads Brickset minifigure lists', () => {
+    const inSet = `<article class="set"><h1><a href="/minifigs/sw1234/cobb-vanth">Cobb <b>Vanth</b></a></h1><img src="https://img/fig.jpg"></article>`;
+    expect(parseBricksetMinifigs(inSet)).toEqual([{ id: 'sw1234', name: 'Cobb Vanth', image: 'https://img/fig.jpg' }]);
+
+    const series = `<div class="set"><h1><a href="/sets/71055-2/Bat"><span>71055-2:</span>71055: Bat Costume Fan</a></h1><img src="https://img/small/a.jpg"></div>
+      <div class="set"><h1><a href="/sets/71055-0/Box">71055: Sealed Box</a></h1></div>`;
+    expect(parseBricksetSeriesSearch(series, '71055')).toEqual([
+      { id: '71055-2', name: 'Bat Costume Fan', image: 'https://img/images/a.jpg' },
+    ]);
+  });
+});
 
 describe('isIncompleteLotDescription', () => {
   // Real descriptions from 75437's New listings.

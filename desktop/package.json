@@ -1,15 +1,20 @@
 {
   "name": "lego-tracker-desktop",
+  "productName": "Brick Tracker",
   "private": true,
   "version": "0.1.0",
   "description": "Electron shell for Brick Tracker: scrapes prices with a local browser and refreshes daily.",
+  "author": "zgyorkei",
   "main": "dist/main.cjs",
   "scripts": {
     "build": "node build.mjs",
     "start": "npm run build && node run.mjs",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist": "npm run build && npm --prefix .. run build && node scripts/prepare-chromium.mjs && node scripts/package.mjs"
   },
   "devDependencies": {
+    "@electron/asar": "^4.3.1",
+    "@electron/packager": "^20.3.0",
     "electron": "^45.0.0",
     "esbuild": "^0.28.2"
   },

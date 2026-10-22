@@ -102,8 +102,48 @@ npx tsx desktop/scripts/try-scrape.ts <profileDir> amazon 31393 11383
 
 Set `SCRAPER_DEBUG=1` to print the cards the engine read.
 
+## Set details without AI
+
+Looking up a set (name, LEGO price, image, minifigures) tries Brickset and
+LEGO.com with plain requests first. On desktop, anything that fails is
+retried through the local browser and parsed by the same code, instead of
+asking Gemini. If only a name is found, the set is added marked provisional.
+Try it with `npx tsx desktop/scripts/try-details.ts <profileDir> 75437`.
+
+## Packaging
+
+```bash
+cd desktop
+npm run dist
+```
+
+This builds the desktop bundle and the web app, stages Playwright's Chromium
+(copied from the local Playwright cache, or downloaded), and packages with
+`@electron/packager` into `release/`:
+
+- `Brick Tracker-win32-x64/`: the app, with Chromium in `resources/ms-playwright`
+  and the web app in `resources/web`;
+- `install.cmd`;
+- `Brick-Tracker-<version>-win-x64.zip`: both of the above (about 350 MB).
+
+There is no NSIS or Squirrel installer on purpose: both need 7-Zip, which is
+blocked on this machine. `install.cmd` (no admin rights) copies the app to
+`%LOCALAPPDATA%\Programs\Brick Tracker` and starts it once with `--install`,
+which adds a Start menu shortcut and the start-with-Windows entry. The tray
+menu's "Start with Windows" toggle turns that entry off or on again. To
+update, quit from the tray and run the new `install.cmd`.
+
+**Secrets are never packaged**, and `package.mjs` fails the build if either
+file or the key value appears in `app.asar`. The installed app reads them from
+its data folder instead:
+
+```
+%APPDATA%\Brick Tracker\oauth-client.json   (sign-in)
+%APPDATA%\Brick Tracker\.env                (GEMINI_API_KEY, teaching only)
+```
+
+The exe is not code-signed, so Windows SmartScreen may warn on first start.
+
 ## Not done yet
 
-- Replacing the Gemini fallbacks for LEGO.com set details and images on
-  desktop (with the key present they work, but spend a few calls per new set).
-- Packaging (installer, bundled Chromium, auto-update).
+- Auto-update (re-run `install.cmd` with a new build for now).

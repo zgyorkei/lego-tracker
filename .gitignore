@@ -13,4 +13,5 @@ firebase-applet-config.json
 desktop/oauth-client.json
 desktop/.env
 desktop/release/
+desktop/build-resources/
 firebase-blueprint.json
