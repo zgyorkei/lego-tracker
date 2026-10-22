@@ -5,7 +5,7 @@ Brick Tracker is a comprehensive web application designed for Lego enthusiasts t
 ## Features
 
 - **Dashboard View**: View your collection categorized by status (Planned, Purchased, or All).
-- **Price Tracking**: Automatically fetch current market prices using custom URL templates for various global online stores.
+- **Price Tracking**: Fetch current market prices using custom URL templates for various global online stores. Price sources are saved to your account, so every device uses the same list. BrickLink always reports the cheapest New listing that is sealed or complete, never incomplete lots. Prices refresh when you ask; automatic daily refreshes are reserved for the upcoming desktop app.
 - **Official LEGO Data**: Retrieves the official price and image of Lego sets by their set number. Contains logic to bypass images or cache errors.
 - **Purchase Tracking and Analytics**: Track how much you spent on Lego sets manually. If purchased in a different currency, the app fetches the historical exchange rate on the date of purchase.
 - **Sorting Options**: 

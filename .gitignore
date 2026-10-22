@@ -7,4 +7,10 @@ coverage/
 .env*
 !.env.example
 firebase-applet-config.json
+# Desktop app secrets (see desktop/README.md). Never commit these. desktop/.env
+# is already covered by .env* above; listed again so it cannot be lost if that
+# pattern changes.
+desktop/oauth-client.json
+desktop/.env
+desktop/release/
 firebase-blueprint.json

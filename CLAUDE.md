@@ -78,6 +78,30 @@ exclusive.
   payload changes, never by the list doc's own snapshot, or two devices with
   different price sources would rewrite each other in a loop. Keep the hook's
   `ready` gate: syncing before sets load publishes an empty list.
+- **Price sources live in `userSettings/{uid}`** (one doc, `priceSources`
+  list), via `usePriceSources`. localStorage `legoPriceSources` is only a
+  first-render cache and the one-time migration source. Rules validate the list
+  as a container, so adding a source never needs a rules change; keep the
+  15-entry cap in step with `MAX_SOURCES`.
+- **Automatic refresh is desktop-only**, daily at 04:00 local. The scheduler
+  in `App.tsx` is gated on `isDesktopApp` (`src/lib/platform.ts`, set by the
+  Electron preload). The web app refreshes only when asked, so it does not
+  spend Gemini quota per open tab.
+- **The desktop app (`desktop/`) is its own npm package**, so Electron and
+  Playwright never reach the Vercel install. It reuses `registerApiRoutes`,
+  passing `{ scraper }` to swap Gemini for Playwright in the price routes; do
+  not fork the routes. Scraper launch settings (bundled Chromium, headed
+  off-screen, `locale: 'en-US'`) each fix a real block; see
+  `desktop/README.md` before changing them. Recipes are declarative data
+  (`lib/scrapeRecipe.ts`), never code; `/api/teach-source` has Gemini write
+  one and test-runs it, and it 404s on the web (no browser there).
+- **Desktop secrets** (`desktop/.env` with `GEMINI_API_KEY`,
+  `desktop/oauth-client.json`) are gitignored and must never be committed.
+- **BrickLink price = cheapest New lot that is sealed or complete.** It reads
+  per-lot listings (`catalogifs.ajax`), not the price guide's aggregate Min,
+  and also drops lots whose description admits missing parts or minifigures
+  (`isIncompleteLotDescription`), because sellers mislabel partial sets as
+  Complete.
 - **Firebase config and rules deployment live in their own Firebase store**,
   not in this repo. The absence of `firebase.json` / `.firebaserc` here is
   deliberate, so do not add one or try to wire up `firebase deploy`. The

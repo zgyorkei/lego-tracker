@@ -7,7 +7,7 @@ import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   // Build output, deps, and relocated one-off debug scripts are not linted.
-  { ignores: ['dist', 'build', 'coverage', 'node_modules', 'scripts'] },
+  { ignores: ['dist', 'build', 'coverage', 'node_modules', 'scripts', 'desktop/dist', 'desktop/release'] },
 
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -34,7 +34,7 @@ export default tseslint.config(
 
   // Backend (Node)
   {
-    files: ['server.ts', 'lib/**/*.ts', 'api/**/*.ts', 'vite.config.ts'],
+    files: ['server.ts', 'lib/**/*.ts', 'api/**/*.ts', 'vite.config.ts', 'desktop/**/*.{ts,mjs}'],
     languageOptions: {
       globals: globals.node,
     },
