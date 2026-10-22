@@ -295,7 +295,8 @@ export default function App() {
       }
 
       // Gap-fill: any sets still without an image get one via a single batched
-      // call (cheerio-first, Gemini only for the misses).
+      // call (cheerio-first; misses go to Gemini on the web, the local browser
+      // on desktop).
       const setsMissingImage = filteredSets.filter(s => !imagesResolved.has(s.setNumber));
       if (setsMissingImage.length > 0) {
           try {
@@ -323,7 +324,14 @@ export default function App() {
     // Batch market prices
     try {
         setBatchProgress(null);
-        setActiveOperation({ setId: 'Bulk', message: 'Fetching Market Prices via Gemini...' });
+        setActiveOperation({
+          setId: 'Bulk',
+          // The desktop app reads every shop page in its own browser, one at a
+          // time, so a full refresh takes minutes rather than seconds.
+          message: isDesktopApp
+            ? `Reading market prices in the local browser for ${filteredSets.length} sets. This takes a few minutes...`
+            : 'Fetching Market Prices via Gemini...',
+        });
         const setNumbers = filteredSets.map(s => s.setNumber);
         const marketRes = await fetch(`/api/prices-batch`, { 
             method: 'POST',

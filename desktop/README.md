@@ -104,11 +104,14 @@ Set `SCRAPER_DEBUG=1` to print the cards the engine read.
 
 ## Set details without AI
 
-Looking up a set (name, LEGO price, image, minifigures) tries Brickset and
-LEGO.com with plain requests first. On desktop, anything that fails is
-retried through the local browser and parsed by the same code, instead of
-asking Gemini. If only a name is found, the set is added marked provisional.
-Try it with `npx tsx desktop/scripts/try-details.ts <profileDir> 75437`.
+Looking up a set on desktop reads LEGO.com in the local browser first: the
+hu-hu page gives the official HUF price and the product image, the en-us page
+LEGO's English name. Brickset fills only the gaps, and covers sets LEGO.com
+does not list (leaked, unannounced, retired; LEGO's not-found page is
+recognised and ignored, as is Brickset's "{?}" placeholder title). Images and
+minifigures retry failed requests through the browser the same way. None of
+this asks Gemini. Try it with
+`npx tsx desktop/scripts/try-details.ts <profileDir> 11390`.
 
 ## Packaging
 

@@ -28,9 +28,15 @@ if (!existsSync(chromiumStage)) throw new Error('Stage Chromium first (node scri
 rmSync(webStage, { recursive: true, force: true });
 cpSync(path.join(desktop, '..', 'dist'), webStage, { recursive: true });
 
+// Each build gets its own folder. Overwriting the previous one in place fails
+// whenever anything (antivirus, a lingering Chromium) still holds one of its
+// files open; old builds are cleaned up best-effort at the end instead.
+const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+const buildDir = path.join(release, `${pkg.version}-${stamp}`);
+
 const [appDir] = await packager({
   dir: desktop,
-  out: release,
+  out: buildDir,
   overwrite: true,
   platform: 'win32',
   arch: 'x64',
@@ -71,22 +77,30 @@ if (leaked.length || secretValues.some((v) => asarBytes.includes(v))) {
   throw new Error(`Secrets found in the package (${leaked.join(', ') || 'secret value in app.asar'}); build discarded.`);
 }
 
-copyFileSync(path.join(here, 'install.cmd'), path.join(release, 'install.cmd'));
+const installCmd = path.join(buildDir, 'install.cmd');
+copyFileSync(path.join(here, 'install.cmd'), installCmd);
 
-const zip = path.join(release, `Brick-Tracker-${pkg.version}-win-x64.zip`);
-rmSync(zip, { force: true });
+const zip = path.join(buildDir, `Brick-Tracker-${pkg.version}-win-x64.zip`);
 console.log('Zipping (Compress-Archive)...');
+const ps = (p) => `'${p.replace(/'/g, "''")}'`;
 execFileSync(
   'powershell.exe',
-  [
-    '-NoProfile',
-    '-Command',
-    `Compress-Archive -Path '${appDir.replace(/'/g, "''")}', '${path.join(release, 'install.cmd').replace(/'/g, "''")}' -DestinationPath '${zip.replace(/'/g, "''")}' -CompressionLevel Optimal`,
-  ],
+  ['-NoProfile', '-Command', `Compress-Archive -Path ${ps(appDir)}, ${ps(installCmd)} -DestinationPath ${ps(zip)} -CompressionLevel Optimal`],
   { stdio: 'inherit' }
 );
 
+// Best-effort removal of earlier builds; a locked one is left for later.
+for (const entry of readdirSync(release)) {
+  const p = path.join(release, entry);
+  if (p === buildDir) continue;
+  try {
+    rmSync(p, { recursive: true, force: true });
+  } catch {
+    console.warn(`Could not remove old build ${entry} (a file is still in use); delete it later.`);
+  }
+}
+
 const sizeMb = (p) => Math.round(statSync(p).size / 1024 / 1024);
 console.log(`\nPackaged: ${appDir}`);
+console.log(`Install:  ${installCmd}`);
 console.log(`Zip:      ${zip} (${sizeMb(zip)} MB)`);
-console.log(`Contents: ${readdirSync(release).join(', ')}`);

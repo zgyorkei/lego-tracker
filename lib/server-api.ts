@@ -589,14 +589,21 @@ async function fetchBrickLinkPrices(setNumber: string, rates: Rates): Promise<Br
  * when nothing could be scraped. Used so batch image fetching tries cheap,
  * reliable scraping before falling back to Gemini/AI search.
  */
-async function scrapeSetImage(setNumber: string, fetchHtml: HtmlFetcher = axiosHtml): Promise<string | null> {
-  // 1. Brickset
-  const bs = await fetchHtml(`https://brickset.com/sets/${setNumber}-1`);
-  const bsImage = bs ? parseBricksetSetPage(bs).image : null;
-  if (bsImage) return bsImage;
-  // 2. lego.com (HU) og:image
-  const hu = await fetchHtml(`https://www.lego.com/hu-hu/product/${setNumber}`);
-  return hu ? parseLegoProductPage(hu).image : null;
+async function scrapeSetImage(
+  setNumber: string,
+  fetchHtml: HtmlFetcher = axiosHtml,
+  legoFirst = false
+): Promise<string | null> {
+  const fromBrickset = async () => {
+    const bs = await fetchHtml(`https://brickset.com/sets/${setNumber}-1`);
+    return bs ? parseBricksetSetPage(bs).image : null;
+  };
+  const fromLego = async () => {
+    const hu = await fetchHtml(`https://www.lego.com/hu-hu/product/${setNumber}`);
+    return hu ? parseLegoProductPage(hu).image : null;
+  };
+  // The browser (desktop) can read LEGO.com's own, larger product image.
+  return legoFirst ? (await fromLego()) ?? (await fromBrickset()) : (await fromBrickset()) ?? (await fromLego());
 }
 
 // ---------------------------------------------------------------------------
@@ -637,7 +644,10 @@ export interface MinifigureInfo {
 export function parseBricksetSetPage(html: string): { name: string; image: string | null; priceEur: number } {
   const $ = cheerio.load(html);
   const title = $('h1').first().text().trim();
-  const name = title ? title.replace(/^\d+\s/, '') : '';
+  // Brickset titles leaked and unannounced sets "{?}" until the name is
+  // known; that placeholder is how sets ended up named "{?}" in the app.
+  const stripped = title ? title.replace(/^\d+\s/, '') : '';
+  const name = /^\{\?\}$/.test(stripped.trim()) ? '' : stripped;
   const image =
     $('a.highslide img').attr('src') || $('img[src*="images.brickset.com/sets/images"]').attr('src') || null;
   const rrpText = $('dt:contains("RRP")').next('dd').text();
@@ -647,35 +657,43 @@ export function parseBricksetSetPage(html: string): { name: string; image: strin
   return { name, image, priceEur: Number.isFinite(priceEur) ? priceEur : 0 };
 }
 
-/** A LEGO.com product page: displayed name, price in the page's currency (HUF on hu-hu), image. */
-export function parseLegoProductPage(html: string): { name: string; priceHuf: number; image: string | null } {
+/**
+ * A LEGO.com product page: displayed name, price in the page's currency (HUF
+ * on hu-hu), image. `isProduct` is false for LEGO's not-found page, whose h1
+ * ("OH BRICKS!" / "A kockába!") must never be taken for a set name; leaked
+ * and unannounced sets land there.
+ */
+export function parseLegoProductPage(html: string): { name: string; priceHuf: number; image: string | null; isProduct: boolean } {
   const $ = cheerio.load(html);
+  const canonical = $('link[rel="canonical"]').attr('href') || '';
+  let hasProductLd = false;
   const priceText = $('span[data-test="product-price"]').first().text().trim();
   let priceHuf = parseInt(priceText.replace(/[^0-9]/g, ''), 10) || 0;
   if (!priceHuf) priceHuf = parseInt($('meta[property="product:price:amount"]').attr('content') || '0', 10) || 0;
-  if (!priceHuf) {
-    // The rendered page (what the desktop browser returns) also carries
-    // schema.org Product data, which survives markup changes better.
-    $('script[type="application/ld+json"]').each((_i, el) => {
-      if (priceHuf) return;
-      try {
-        const data = JSON.parse($(el).text());
-        for (const node of [data, ...(Array.isArray(data?.['@graph']) ? data['@graph'] : [])]) {
-          const offers = [].concat(node?.offers ?? []) as any[];
-          const p = Math.round(Number(offers[0]?.price ?? offers[0]?.lowPrice));
-          if (p > 0) {
-            priceHuf = p;
-            break;
-          }
-        }
-      } catch {
-        /* not JSON */
+  // The rendered page (what the desktop browser returns) also carries
+  // schema.org Product data, which survives markup changes better.
+  $('script[type="application/ld+json"]').each((_i, el) => {
+    try {
+      const data = JSON.parse($(el).text());
+      for (const node of [data, ...(Array.isArray(data?.['@graph']) ? data['@graph'] : [])]) {
+        if (!/Product/i.test(String(node?.['@type'] ?? ''))) continue;
+        hasProductLd = true;
+        const offers = [].concat(node?.offers ?? []) as any[];
+        const p = Math.round(Number(offers[0]?.price ?? offers[0]?.lowPrice));
+        if (!priceHuf && p > 0) priceHuf = p;
       }
-    });
-  }
-  const image = $('meta[property="og:image"]').attr('content') || $('img[class*="ProductImage"]').first().attr('src') || null;
-  const name = $('h1[data-test="product-overview-name"]').first().text().trim() || $('h1').first().text().trim();
-  return { name, priceHuf, image };
+    } catch {
+      /* not JSON */
+    }
+  });
+  const isProduct = priceHuf > 0 || hasProductLd || /\/product\//.test(canonical);
+  const image = isProduct
+    ? $('meta[property="og:image"]').attr('content') || $('img[class*="ProductImage"]').first().attr('src') || null
+    : null;
+  const name = isProduct
+    ? $('h1[data-test="product-overview-name"]').first().text().trim() || $('h1').first().text().trim()
+    : '';
+  return { name, priceHuf, image, isProduct };
 }
 
 /** Brickset's "minifigs in set" page. */
@@ -732,6 +750,59 @@ interface LegoInfo {
   url: string;
   isTemporary?: boolean;
   releaseDate?: string | null;
+}
+
+/**
+ * Desktop set details, LEGO.com first: in a real browser its bot protection
+ * and client-side rendering are no obstacle, so the official HUF price, the
+ * product image and LEGO's own English name (en-us page) come straight from
+ * the source. Brickset (plain request, then browser) fills in only what
+ * LEGO.com lacks, which covers leaked, unannounced and retired sets.
+ */
+async function scrapeLegoInfoViaBrowser(
+  setNumber: string,
+  skipImage: boolean,
+  browserHtml: HtmlFetcher
+): Promise<{ result?: LegoInfo; name: string | null; image: string | null }> {
+  const url = `https://www.lego.com/hu-hu/product/${setNumber}`;
+  const huHtml = await browserHtml(url);
+  const hu = huHtml ? parseLegoProductPage(huHtml) : null;
+
+  if (hu?.isProduct) {
+    const enHtml = await browserHtml(`https://www.lego.com/en-us/product/${setNumber}`);
+    const en = enHtml ? parseLegoProductPage(enHtml) : null;
+    let name = en?.isProduct && en.name ? en.name : '';
+    let image = skipImage ? null : hu.image;
+    let priceHuf = hu.priceHuf;
+
+    // Brickset only for gaps: an English name, an image, or the RRP of a set
+    // LEGO.com lists without a price (sold out, retired).
+    if (!name || (!skipImage && !image) || !priceHuf) {
+      const bsHtml = (await axiosHtml(`https://brickset.com/sets/${setNumber}-1`, { timeout: 7000 })) ??
+        (await browserHtml(`https://brickset.com/sets/${setNumber}-1`));
+      const bs = bsHtml ? parseBricksetSetPage(bsHtml) : null;
+      if (bs) {
+        name = name || bs.name;
+        if (!skipImage) image = image || bs.image;
+        if (!priceHuf && bs.priceEur > 0) {
+          priceHuf = await getRates()
+            .then((r) => Math.round(bs.priceEur * r.HUF))
+            .catch(() => 0);
+        }
+      }
+    }
+    return { result: { name: name || hu.name, priceHuf, image, url }, name: name || hu.name, image };
+  }
+
+  // Not on LEGO.com: Brickset by plain request, then through the browser.
+  const viaRequest = await scrapeLegoInfo(setNumber, skipImage, axiosHtml);
+  if (viaRequest.result) return viaRequest;
+  const viaBrowser = await scrapeLegoInfo(setNumber, skipImage, browserHtml);
+  return {
+    ...viaBrowser,
+    name: viaBrowser.name ?? viaRequest.name,
+    image: viaBrowser.image ?? viaRequest.image,
+  };
 }
 
 /**
@@ -821,7 +892,15 @@ export interface PageCapture {
 
 export interface ApiOptions {
   scraper?: PriceScraper;
+  /**
+   * Per-IP rate limiting (default on). The limits protect the public
+   * deployment's Gemini quota; the desktop app serves one user on loopback,
+   * where they only cut a full "Update all" off after 12 sets.
+   */
+  rateLimit?: boolean;
 }
+
+const noLimit = (_req: Request, _res: Response, next: NextFunction) => next();
 
 /**
  * Prices every (set, source) pair with the browser scraper, one at a time so a
@@ -875,8 +954,9 @@ export function registerApiRoutes(app: Express, options: ApiOptions = {}): void 
 
   // Baseline limit for every /api route, then a much tighter bucket on the
   // handlers that can trigger a Gemini call or a burst of outbound scrapes.
-  const generalLimit = rateLimit({ windowMs: 60_000, max: 120, name: 'general' });
-  const expensiveLimit = rateLimit({ windowMs: 60_000, max: 12, name: 'expensive' });
+  const limited = options.rateLimit !== false;
+  const generalLimit = limited ? rateLimit({ windowMs: 60_000, max: 120, name: 'general' }) : noLimit;
+  const expensiveLimit = limited ? rateLimit({ windowMs: 60_000, max: 12, name: 'expensive' }) : noLimit;
 
   app.use('/api', generalLimit);
 
@@ -964,7 +1044,7 @@ export function registerApiRoutes(app: Express, options: ApiOptions = {}): void 
       // 2a. Desktop: retry the misses through the local browser, one at a time.
       if (missing.length > 0 && browserHtml) {
         for (const setNumber of missing) {
-          const img = await scrapeSetImage(setNumber, browserHtml);
+          const img = await scrapeSetImage(setNumber, browserHtml, true);
           if (img) results[setNumber] = img;
         }
       }
@@ -1136,20 +1216,20 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
     }
 
     const legoUrlHuf = `https://www.lego.com/hu-hu/product/${setNumber}`;
-    let fallbackImage: string | null = null;
-    let fallbackName: string | null = null;
 
-    // 1-2. Brickset, then LEGO.com: by plain request, then (desktop) the same
-    // pages through the local browser.
-    for (const fetchHtml of browserHtml ? [axiosHtml, browserHtml] : [axiosHtml]) {
-      const info = await scrapeLegoInfo(setNumber, skipImage, fetchHtml);
-      if (info.result) {
-        console.log(`Set info fetched for ${setNumber}:`, info.result);
-        return res.json(info.result);
-      }
-      fallbackName = fallbackName ?? info.name;
-      fallbackImage = fallbackImage ?? info.image;
+    // 1-2. Desktop: LEGO.com in the local browser first, Brickset for gaps.
+    // Web: Brickset, then LEGO.com, by plain request (LEGO.com often blocks
+    // or renders its price client-side, hence Brickset first there).
+    const info = browserHtml
+      ? await scrapeLegoInfoViaBrowser(setNumber, skipImage, browserHtml)
+      : await scrapeLegoInfo(setNumber, skipImage, axiosHtml);
+    if (info.result) {
+      console.log(`Set info fetched for ${setNumber}:`, info.result);
+      return res.json(info.result);
     }
+    // The best name and image seen, for the fallbacks below.
+    const fallbackName = info.name;
+    const fallbackImage = info.image;
 
     // 3a. Desktop: no AI. A name without a price still beats an error, so it
     // is returned marked provisional, the way Gemini results from fan sites are.

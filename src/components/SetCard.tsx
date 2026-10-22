@@ -5,6 +5,7 @@ import { LegoSet, PriceHistory, PriceSource, MinifigureStatus, SUPPORTED_CURRENC
 import { format } from 'date-fns';
 import { formatPrice as formatPriceUtil, convertFromHuf } from '../lib/currency';
 import { Modal } from './Modal';
+import { isDesktopApp } from '../lib/platform';
 
 // Lazy so recharts (~350 kB with its d3 deps) is only fetched when a user
 // actually opens the price-history panel.
@@ -278,7 +279,8 @@ const SetCardComponent: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, get
     if (onStatusUpdate) {
        onStatusUpdate({
           setId: set.setNumber,
-          message: "Fetching Market Price using Gemini"
+          // The desktop app reads shop pages in its own browser, no AI involved.
+          message: isDesktopApp ? 'Reading market prices in the local browser' : 'Fetching Market Price using Gemini'
        });
     }
 

@@ -101,10 +101,13 @@ exclusive.
 - **Never use 7-Zip.** It is blocked on the build machine. That rules out
   electron-builder's NSIS/7z/portable targets and Squirrel; packaging is
   `@electron/packager` + `Compress-Archive` + `install.cmd` (`npm run dist`).
-- On desktop the set-details, image and minifigure routes retry failed
-  scrapes through the browser (`fetchPageHtml`) and never call Gemini. Keep
-  the parsers HTML-in (`parseBricksetSetPage`, `parseLegoProductPage`, ...)
-  so both fetch paths share them.
+- On desktop the set-details route reads LEGO.com first in the browser
+  (`scrapeLegoInfoViaBrowser`: official HUF price, image, en-us name), with
+  Brickset for gaps; image and minifigure routes retry failed requests through
+  the browser (`fetchPageHtml`). None of them call Gemini. Keep the parsers
+  HTML-in (`parseBricksetSetPage`, `parseLegoProductPage`, ...) so both fetch
+  paths share them. `parseLegoProductPage().isProduct` guards against LEGO's
+  not-found page, and Brickset's "{?}" title means "no name yet".
 - **BrickLink price = cheapest New lot that is sealed or complete.** It reads
   per-lot listings (`catalogifs.ajax`), not the price guide's aggregate Min,
   and also drops lots whose description admits missing parts or minifigures
