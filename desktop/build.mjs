@@ -83,5 +83,19 @@ function brickPng(size) {
   ]);
 }
 writeFileSync(path.join(out, 'icon.png'), brickPng(64));
+// Windows .ico for the packaged exe: a single 256x256 PNG wrapped in an ICO
+// header, which Windows Vista and later read directly.
+const png256 = brickPng(256);
+const ico = Buffer.alloc(22);
+ico.writeUInt16LE(0, 0); // reserved
+ico.writeUInt16LE(1, 2); // type: icon
+ico.writeUInt16LE(1, 4); // one image
+ico[6] = 0; // width 256
+ico[7] = 0; // height 256
+ico.writeUInt16LE(1, 10); // colour planes
+ico.writeUInt16LE(32, 12); // bits per pixel
+ico.writeUInt32LE(png256.length, 14);
+ico.writeUInt32LE(22, 18); // image data offset
+writeFileSync(path.join(out, 'icon.ico'), Buffer.concat([ico, png256]));
 
-console.log('desktop build: dist/main.cjs, dist/preload.cjs, dist/icon.png');
+console.log('desktop build: dist/main.cjs, dist/preload.cjs, dist/icon.png, dist/icon.ico');

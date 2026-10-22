@@ -96,7 +96,15 @@ exclusive.
   (`lib/scrapeRecipe.ts`), never code; `/api/teach-source` has Gemini write
   one and test-runs it, and it 404s on the web (no browser there).
 - **Desktop secrets** (`desktop/.env` with `GEMINI_API_KEY`,
-  `desktop/oauth-client.json`) are gitignored and must never be committed.
+  `desktop/oauth-client.json`) are gitignored and must never be committed or
+  packaged. A packaged app reads them from `%APPDATA%\Brick Tracker`.
+- **Never use 7-Zip.** It is blocked on the build machine. That rules out
+  electron-builder's NSIS/7z/portable targets and Squirrel; packaging is
+  `@electron/packager` + `Compress-Archive` + `install.cmd` (`npm run dist`).
+- On desktop the set-details, image and minifigure routes retry failed
+  scrapes through the browser (`fetchPageHtml`) and never call Gemini. Keep
+  the parsers HTML-in (`parseBricksetSetPage`, `parseLegoProductPage`, ...)
+  so both fetch paths share them.
 - **BrickLink price = cheapest New lot that is sealed or complete.** It reads
   per-lot listings (`catalogifs.ajax`), not the price guide's aggregate Min,
   and also drops lots whose description admits missing parts or minifigures

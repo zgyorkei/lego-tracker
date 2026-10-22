@@ -7,7 +7,7 @@ import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   // Build output, deps, and relocated one-off debug scripts are not linted.
-  { ignores: ['dist', 'build', 'coverage', 'node_modules', 'scripts', 'desktop/dist', 'desktop/release'] },
+  { ignores: ['dist', 'build', 'coverage', 'node_modules', 'scripts', 'desktop/dist', 'desktop/release', 'desktop/build-resources'] },
 
   js.configs.recommended,
   ...tseslint.configs.recommended,

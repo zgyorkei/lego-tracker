@@ -1,4 +1,4 @@
-import { chromium, type BrowserContext, type Page } from 'playwright';
+import type { BrowserContext, Page } from 'playwright';
 import {
   parseRecipe,
   parseDisplayPrice,
@@ -66,6 +66,19 @@ export class PlaywrightScraper implements PriceScraper {
     }
     const r = await this.enqueue((page) => this.runRecipe(page, url, setNumber, recipe));
     return r.price != null ? { price: r.price, url: r.url } : null;
+  }
+
+  /**
+   * The rendered HTML of a page (Brickset, LEGO.com) for the set-details,
+   * image and minifigure lookups. Null if the page was blocked or failed.
+   */
+  fetchPageHtml(url: string): Promise<string | null> {
+    return this.enqueue(async (page) => {
+      if (!(await this.open(page, url, GENERIC_CONSENT))) return null;
+      // LEGO.com renders its price client-side; give it a moment to settle.
+      await page.waitForLoadState('networkidle', { timeout: 6000 }).catch(() => {});
+      return page.content();
+    });
   }
 
   /** Runs a candidate recipe on a live page and reports what it saw. */
@@ -137,8 +150,11 @@ export class PlaywrightScraper implements PriceScraper {
 
   private getContext(): Promise<BrowserContext> {
     if (!this.context) {
-      this.context = chromium
-        .launchPersistentContext(this.profileDir, {
+      // Loaded on first use, not at startup: Playwright resolves its browser
+      // location when the module loads, and the packaged app points
+      // PLAYWRIGHT_BROWSERS_PATH at its bundled Chromium only after start.
+      this.context = import('playwright')
+        .then(({ chromium }) => chromium.launchPersistentContext(this.profileDir, {
           headless: false,
           // Sets Accept-Language and navigator.languages together.
           locale: 'en-US',
@@ -156,7 +172,7 @@ export class PlaywrightScraper implements PriceScraper {
           // Without this the browser sets navigator.webdriver and shows the
           // "controlled by automated software" bar.
           ignoreDefaultArgs: ['--enable-automation'],
-        })
+        }))
         .catch((e) => {
           this.context = null;
           throw e;

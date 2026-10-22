@@ -589,36 +589,206 @@ async function fetchBrickLinkPrices(setNumber: string, rates: Rates): Promise<Br
  * when nothing could be scraped. Used so batch image fetching tries cheap,
  * reliable scraping before falling back to Gemini/AI search.
  */
-async function scrapeSetImage(setNumber: string): Promise<string | null> {
+async function scrapeSetImage(setNumber: string, fetchHtml: HtmlFetcher = axiosHtml): Promise<string | null> {
   // 1. Brickset
-  try {
-    const bs = await axios.get(`https://brickset.com/sets/${setNumber}-1`, {
-      headers: getCommonHeaders(),
-      timeout: 8000,
-    });
-    const $bs = cheerio.load(bs.data);
-    const img =
-      $bs('a.highslide img').attr('src') ||
-      $bs('img[src*="images.brickset.com/sets/images"]').attr('src');
-    if (img) return img;
-  } catch {
-    /* fall through to lego.com */
-  }
+  const bs = await fetchHtml(`https://brickset.com/sets/${setNumber}-1`);
+  const bsImage = bs ? parseBricksetSetPage(bs).image : null;
+  if (bsImage) return bsImage;
   // 2. lego.com (HU) og:image
+  const hu = await fetchHtml(`https://www.lego.com/hu-hu/product/${setNumber}`);
+  return hu ? parseLegoProductPage(hu).image : null;
+}
+
+// ---------------------------------------------------------------------------
+// Page fetching and parsing for the set-details, image and minifigure routes.
+//
+// The parsers take HTML, not a URL, so the same logic serves both ways of
+// getting a page: a plain request (web and desktop) and, on desktop, the
+// local browser, which gets past the bot checks and JavaScript-only pages
+// that defeat a plain request. That browser pass is what replaces the Gemini
+// fallbacks in the desktop app.
+// ---------------------------------------------------------------------------
+
+/** Resolves with page HTML, or null on any failure. */
+export type HtmlFetcher = (url: string, opts?: { headers?: Record<string, string>; timeout?: number }) => Promise<string | null>;
+
+// Only ever called with fixed brickset.com / lego.com URLs built from a
+// validated set number, so no outbound-URL check is needed here.
+const axiosHtml: HtmlFetcher = async (url, opts = {}) => {
   try {
-    const hu = await axios.get(`https://www.lego.com/hu-hu/product/${setNumber}`, {
-      headers: getCommonHeaders(),
-      timeout: 8000,
+    const r = await axios.get(url, {
+      headers: { ...getCommonHeaders(), ...opts.headers },
+      timeout: opts.timeout ?? 8000,
     });
-    const $hu = cheerio.load(hu.data);
-    const img =
-      $hu('meta[property="og:image"]').attr('content') ||
-      $hu('img[class*="ProductImage"]').first().attr('src');
-    if (img) return img;
-  } catch {
-    /* fall through */
+    return typeof r.data === 'string' ? r.data : null;
+  } catch (e: any) {
+    console.warn(`Fetch failed for ${url}:`, e?.message || e);
+    return null;
   }
-  return null;
+};
+
+export interface MinifigureInfo {
+  id: string;
+  name: string;
+  image: string | null;
+}
+
+/** A Brickset set page: English name, main image, RRP in EUR (0 if none). */
+export function parseBricksetSetPage(html: string): { name: string; image: string | null; priceEur: number } {
+  const $ = cheerio.load(html);
+  const title = $('h1').first().text().trim();
+  const name = title ? title.replace(/^\d+\s/, '') : '';
+  const image =
+    $('a.highslide img').attr('src') || $('img[src*="images.brickset.com/sets/images"]').attr('src') || null;
+  const rrpText = $('dt:contains("RRP")').next('dd').text();
+  const eur = rrpText.match(/€([\d.]+)/);
+  const usd = rrpText.match(/\$([\d.]+)/);
+  const priceEur = eur ? parseFloat(eur[1]) : usd ? parseFloat(usd[1]) * 0.9 : 0;
+  return { name, image, priceEur: Number.isFinite(priceEur) ? priceEur : 0 };
+}
+
+/** A LEGO.com product page: displayed name, price in the page's currency (HUF on hu-hu), image. */
+export function parseLegoProductPage(html: string): { name: string; priceHuf: number; image: string | null } {
+  const $ = cheerio.load(html);
+  const priceText = $('span[data-test="product-price"]').first().text().trim();
+  let priceHuf = parseInt(priceText.replace(/[^0-9]/g, ''), 10) || 0;
+  if (!priceHuf) priceHuf = parseInt($('meta[property="product:price:amount"]').attr('content') || '0', 10) || 0;
+  if (!priceHuf) {
+    // The rendered page (what the desktop browser returns) also carries
+    // schema.org Product data, which survives markup changes better.
+    $('script[type="application/ld+json"]').each((_i, el) => {
+      if (priceHuf) return;
+      try {
+        const data = JSON.parse($(el).text());
+        for (const node of [data, ...(Array.isArray(data?.['@graph']) ? data['@graph'] : [])]) {
+          const offers = [].concat(node?.offers ?? []) as any[];
+          const p = Math.round(Number(offers[0]?.price ?? offers[0]?.lowPrice));
+          if (p > 0) {
+            priceHuf = p;
+            break;
+          }
+        }
+      } catch {
+        /* not JSON */
+      }
+    });
+  }
+  const image = $('meta[property="og:image"]').attr('content') || $('img[class*="ProductImage"]').first().attr('src') || null;
+  const name = $('h1[data-test="product-overview-name"]').first().text().trim() || $('h1').first().text().trim();
+  return { name, priceHuf, image };
+}
+
+/** Brickset's "minifigs in set" page. */
+export function parseBricksetMinifigs(html: string): MinifigureInfo[] {
+  const $ = cheerio.load(html);
+  const out: MinifigureInfo[] = [];
+  $('article.set').each((_i, el) => {
+    const href = $(el).find('h1 a').attr('href') || '';
+    const img = $(el).find('img').attr('src');
+    const name = $(el).find('h1 a').html();
+    const match = href.match(/\/minifigs\/([^/]+)\//);
+    if (match && name) {
+      out.push({ id: match[1], name: name.toString().replace(/<[^>]*>?/gm, '').trim(), image: img || null });
+    }
+  });
+  return out;
+}
+
+/** Brickset set search, for collectible minifigure series (one sub-set per figure). */
+export function parseBricksetSeriesSearch(html: string, setNumber: string): MinifigureInfo[] {
+  const $ = cheerio.load(html);
+  const out: MinifigureInfo[] = [];
+  $('.set').each((_i, el) => {
+    const heading = $(el).find('h1 a').clone().children().remove().end().text().trim();
+    const url = $(el).find('h1 a').attr('href') || '';
+    let image = $(el).find('img').attr('src');
+    if (image) image = image.replace('/small/', '/images/');
+
+    const match = url.match(new RegExp(`/sets/${setNumber}-(\\d+)/`));
+    if (!match) return;
+    const subId = match[1];
+    const name = heading.replace(`${setNumber}:`, '').trim();
+    if (name.startsWith('LEGO Minifigures')) return;
+    const lower = name.toLowerCase();
+    if (parseInt(subId) > 0 && !lower.includes('random pack') && !lower.includes('sealed box') && !lower.includes('complete')) {
+      out.push({ id: `${setNumber}-${subId}`, name, image: image || null });
+    }
+  });
+  return out.sort((a, b) => parseInt(a.id.split('-')[1]) - parseInt(b.id.split('-')[1]));
+}
+
+async function scrapeMinifigures(setNumber: string, fetchHtml: HtmlFetcher): Promise<MinifigureInfo[]> {
+  const inSet = await fetchHtml(`https://brickset.com/minifigs/in-${setNumber}-1`, { timeout: 10000 });
+  const figures = inSet ? parseBricksetMinifigs(inSet) : [];
+  if (figures.length) return figures;
+  const search = await fetchHtml(`https://brickset.com/sets?query=${setNumber}`, { timeout: 10000 });
+  return search ? parseBricksetSeriesSearch(search, setNumber) : [];
+}
+
+interface LegoInfo {
+  name: string;
+  priceHuf: number;
+  image: string | null;
+  url: string;
+  isTemporary?: boolean;
+  releaseDate?: string | null;
+}
+
+/**
+ * Set details from Brickset, then LEGO.com. `result` is set when a usable
+ * answer was found; otherwise the best name and image seen are returned so a
+ * later pass (browser or Gemini) can fall back on them.
+ */
+async function scrapeLegoInfo(
+  setNumber: string,
+  skipImage: boolean,
+  fetchHtml: HtmlFetcher
+): Promise<{ result?: LegoInfo; name: string | null; image: string | null }> {
+  const url = `https://www.lego.com/hu-hu/product/${setNumber}`;
+  let name: string | null = null;
+  let image: string | null = null;
+
+  // 1. Brickset: English name, image and RRP.
+  const bsHtml = await fetchHtml(`https://brickset.com/sets/${setNumber}-1`, { timeout: 7000 });
+  if (bsHtml) {
+    const bs = parseBricksetSetPage(bsHtml);
+    if (bs.name) name = bs.name;
+    if (!skipImage && bs.image) image = bs.image;
+    let priceHuf = 0;
+    if (bs.priceEur > 0) {
+      try {
+        priceHuf = Math.round(bs.priceEur * (await getRates()).HUF);
+      } catch (e: any) {
+        // Previously fell back to a hardcoded 395 HUF/EUR silently, so a broken
+        // rate source looked identical to a working one. Leave priceHuf at 0.
+        console.warn(`Exchange-rate lookup failed for ${setNumber}, leaving priceHuf unset:`, e?.message || e);
+      }
+    }
+    if (priceHuf > 0 || bs.name) {
+      return { result: { name: bs.name, priceHuf, image: skipImage ? null : bs.image, url }, name, image };
+    }
+  }
+
+  // 2. LEGO.com (HU) for the price, then the en-us page for the English name.
+  const huHtml = await fetchHtml(url, { timeout: 7000 });
+  if (huHtml) {
+    const hu = parseLegoProductPage(huHtml);
+    if (!skipImage && hu.image) image = image ?? hu.image;
+    if (hu.name) name = name ?? hu.name;
+    if (hu.priceHuf > 0) {
+      const enHtml = await fetchHtml(`https://www.lego.com/en-us/product/${setNumber}`, {
+        timeout: 5000,
+        headers: {
+          'Accept-Language': 'en-US,en;q=0.9',
+          Cookie: 'cs-setCountry=US; cs-setLanguage=en_US; cs-CountryRegion=US;',
+        },
+      });
+      const enName = enHtml ? parseLegoProductPage(enHtml).name : '';
+      const finalName = enName || hu.name || `Lego Set ${setNumber}`;
+      return { result: { name: finalName, priceHuf: hu.priceHuf, image: skipImage ? null : hu.image, url }, name, image };
+    }
+  }
+  return { name, image };
 }
 
 /**
@@ -632,6 +802,11 @@ export interface PriceScraper {
     source: { id: string; urlTemplate: string; scraper?: unknown },
     setNumber: string
   ): Promise<{ price: number; url: string | null } | null>;
+  /**
+   * The fully rendered HTML of a page, loaded in the browser. Replaces the
+   * Gemini fallbacks for set details, images and minifigures on desktop.
+   */
+  fetchPageHtml?(url: string): Promise<string | null>;
   /** For teaching: a compact HTML excerpt of a page, centred on `focus`. */
   capturePage?(url: string, focus: string): Promise<PageCapture | null>;
   /** For teaching: runs a candidate recipe on a live page. */
@@ -705,6 +880,13 @@ export function registerApiRoutes(app: Express, options: ApiOptions = {}): void 
 
   app.use('/api', generalLimit);
 
+  // Desktop only: page HTML via the local browser. When present it replaces
+  // every Gemini fallback in the set-details, image and minifigure routes, so
+  // the desktop app looks sets up without spending AI tokens.
+  const browserHtml: HtmlFetcher | null = options.scraper?.fetchPageHtml
+    ? (url) => options.scraper!.fetchPageHtml!(url)
+    : null;
+
   // API Route: Fetch Minifigure Series Items
   app.get('/api/minifigures/:setNumber', expensiveLimit, async (req, res) => {
     const { setNumber } = req.params;
@@ -712,67 +894,16 @@ export function registerApiRoutes(app: Express, options: ApiOptions = {}): void 
       return res.status(400).json({ error: 'setNumber must be alphanumeric, max 20 chars' });
     }
     try {
-      let results: any[] = [];
+      // 1-2. Brickset's minifigs-in-set page, then its series search.
+      let results: any[] = await scrapeMinifigures(setNumber, axiosHtml);
 
-      // 1. First try regular set minifigures list
-      const minResp = await axios
-        .get(`https://brickset.com/minifigs/in-${setNumber}-1`, {
-          headers: getCommonHeaders(),
-          timeout: 10000,
-        })
-        .catch(() => null);
-      if (minResp && minResp.data) {
-        const $m = cheerio.load(minResp.data);
-        $m('article.set').each((_i, el) => {
-          const href = $m(el).find('h1 a').attr('href') || '';
-          const img = $m(el).find('img').attr('src');
-          const name = $m(el).find('h1 a').html();
-          const match = href.match(/\/minifigs\/([^/]+)\//);
-          if (match && name) {
-            results.push({
-              id: match[1],
-              name: name.toString().replace(/<[^>]*>?/gm, '').trim(),
-              image: img || null,
-            });
-          }
-        });
+      // 3a. Desktop: the same Brickset pages through the local browser.
+      if (results.length === 0 && browserHtml) {
+        results = await scrapeMinifigures(setNumber, browserHtml);
       }
 
-      // 2. If no results, fallback to Minifigure Series search
-      if (results.length === 0) {
-        const response = await axios.get(`https://brickset.com/sets?query=${setNumber}`, {
-          headers: getCommonHeaders(),
-          timeout: 10000,
-        });
-        const $ = cheerio.load(response.data);
-        $('.set').each((_i, el) => {
-          const heading = $(el).find('h1 a').clone().children().remove().end().text().trim();
-          const url = $(el).find('h1 a').attr('href') || '';
-          let image = $(el).find('img').attr('src');
-
-          if (image) image = image.replace('/small/', '/images/');
-
-          const match = url.match(new RegExp(`/sets/${setNumber}-(\\d+)/`));
-          if (match) {
-            const subId = match[1];
-            const name = heading.replace(`${setNumber}:`, '').trim();
-            if (name.startsWith('LEGO Minifigures')) return;
-
-            if (
-              parseInt(subId) > 0 &&
-              !name.toLowerCase().includes('random pack') &&
-              !name.toLowerCase().includes('sealed box') &&
-              !name.toLowerCase().includes('complete')
-            ) {
-              results.push({ id: `${setNumber}-${subId}`, name, image: image || null });
-            }
-          }
-        });
-        results.sort((a, b) => parseInt(a.id.split('-')[1]) - parseInt(b.id.split('-')[1]));
-      }
-
-      // 3. Fallback using Gemini if still empty
-      if (results.length === 0 && process.env.GEMINI_API_KEY) {
+      // 3b. Web: Gemini search if still empty.
+      if (results.length === 0 && !browserHtml && process.env.GEMINI_API_KEY) {
         console.log('Scraping minifigures failed, attempting Gemini Search fallback...');
         const prompt = `Find all the minifigures or characters included in Lego set ${setNumber}. Prioritize searching jaysbrickblog.com and brickfanatics.com, or other reputable lego news sites. Return a JSON object with this exact shape: { "figures": [{ "id": "string (create a short distinct id, e.g. fig1)", "name": "string", "image": "string (direct image url or null)" }] } Return ONLY the JSON object.`;
         try {
@@ -830,8 +961,16 @@ export function registerApiRoutes(app: Express, options: ApiOptions = {}): void 
         else missing.push(setNumber);
       });
 
-      // 2. Gemini fallback only for the sets scraping could not resolve.
-      if (missing.length > 0 && process.env.GEMINI_API_KEY) {
+      // 2a. Desktop: retry the misses through the local browser, one at a time.
+      if (missing.length > 0 && browserHtml) {
+        for (const setNumber of missing) {
+          const img = await scrapeSetImage(setNumber, browserHtml);
+          if (img) results[setNumber] = img;
+        }
+      }
+
+      // 2b. Web: Gemini fallback only for the sets scraping could not resolve.
+      if (missing.length > 0 && !browserHtml && process.env.GEMINI_API_KEY) {
         console.log(`Scraping found ${Object.keys(results).length}/${setNumbers.length} images; querying Gemini for ${missing.length} missing.`);
         const queryList = missing.map((n) => `"Lego ${n}"`).join(', ');
         const prompt = `Find the main high-quality product image URL for the following Lego sets: ${queryList}.
@@ -997,167 +1136,70 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
     }
 
     const legoUrlHuf = `https://www.lego.com/hu-hu/product/${setNumber}`;
-    const legoUrlEn = `https://www.lego.com/en-us/product/${setNumber}`;
-
     let fallbackImage: string | null = null;
     let fallbackName: string | null = null;
 
+    // 1-2. Brickset, then LEGO.com: by plain request, then (desktop) the same
+    // pages through the local browser.
+    for (const fetchHtml of browserHtml ? [axiosHtml, browserHtml] : [axiosHtml]) {
+      const info = await scrapeLegoInfo(setNumber, skipImage, fetchHtml);
+      if (info.result) {
+        console.log(`Set info fetched for ${setNumber}:`, info.result);
+        return res.json(info.result);
+      }
+      fallbackName = fallbackName ?? info.name;
+      fallbackImage = fallbackImage ?? info.image;
+    }
+
+    // 3a. Desktop: no AI. A name without a price still beats an error, so it
+    // is returned marked provisional, the way Gemini results from fan sites are.
+    if (browserHtml) {
+      if (fallbackName) {
+        return res.json({
+          name: fallbackName,
+          priceHuf: 0,
+          image: fallbackImage,
+          url: legoUrlHuf,
+          isTemporary: true,
+          releaseDate: null,
+        });
+      }
+      return res.status(404).json({ error: `Set ${setNumber} was not found on Brickset or LEGO.com.` });
+    }
+
+    // 3b. Web: Gemini search.
+    console.warn(`Scraping Brickset and LEGO.com failed for ${setNumber}, attempting Gemini Search fallback...`);
     try {
-      // 1. Try Brickset first
-      try {
-        const bricksetRes = await axios.get(`https://brickset.com/sets/${setNumber}-1`, {
-          headers: getCommonHeaders(),
-          timeout: 7000,
-        });
-        const $bs = cheerio.load(bricksetRes.data);
+      const imagePrompt = skipImage ? '' : 'and the main product image URL. ';
+      const imageJsonFormat = skipImage ? '' : ', "imageUrl": "string"';
+      const prompt = `Search for Lego set ${setNumber}. ALWAYS find the official ENGLISH name, current HUF price, ${imagePrompt}If it's an unreleased set or not on lego.com, prioritize searching jaysbrickblog.com and brickfanatics.com to find information such as price (convert USD/EUR to HUF roughly), image, and release date. If you get the info from an unofficial source like jaysbrickblog or brickfanatics, set 'isTemporary' to true. Return ONLY a JSON object: { "name": "string", "priceHuf": 1234${imageJsonFormat}, "isTemporary": boolean, "releaseDate": "string | null" }.`;
 
-        const title = $bs('h1').text().trim();
-        const name = title ? title.replace(/^\d+\s/, '') : '';
-        if (name) fallbackName = name;
-
-        let productImage = null;
-        if (!skipImage) {
-          productImage =
-            $bs('a.highslide img').attr('src') ||
-            $bs('img[src*="images.brickset.com/sets/images"]').attr('src');
-          if (productImage) fallbackImage = productImage;
-        }
-
-        const rrpText = $bs('dt:contains("RRP")').next('dd').text();
-        const eurMatch = rrpText.match(/€([\d.]+)/);
-        const usdMatch = rrpText.match(/\$([\d.]+)/);
-
-        let priceEur = 0;
-        if (eurMatch) {
-          priceEur = parseFloat(eurMatch[1]);
-        } else if (usdMatch) {
-          priceEur = parseFloat(usdMatch[1]) * 0.9;
-        }
-
-        let priceHuf = 0;
-        if (priceEur > 0) {
-          try {
-            const rates = await getRates();
-            priceHuf = Math.round(priceEur * rates.HUF);
-          } catch (e: any) {
-            // Previously fell back to a hardcoded 395 HUF/EUR silently, so a
-            // broken rate source looked identical to a working one. Leave
-            // priceHuf at 0 and let the caller see priceEur only.
-            console.warn(
-              `Exchange-rate lookup failed for ${setNumber}, leaving priceHuf unset:`,
-              e?.message || e
-            );
-          }
-        }
-
-        if (priceHuf > 0 || name) {
-          console.log(`Brickset info fetched for ${setNumber}:`, {
-            name,
-            priceEur,
-            priceHuf,
-            image: productImage || null,
-          });
-          return res.json({ name, priceHuf, image: productImage || null, url: legoUrlHuf });
-        }
-      } catch (bricksetError: any) {
-        console.warn('Brickset scraping failed:', bricksetError.message);
-      }
-
-      const responseHu = await axios.get(legoUrlHuf, {
-        headers: getCommonHeaders(),
-        timeout: 7000,
+      const text = await callGeminiWithFallback({
+        prompt,
+        config: { tools: [{ googleSearch: {} }] },
+        logLabel: 'lego-info',
+        accept: isParseableJson,
       });
-      const $hu = cheerio.load(responseHu.data);
 
-      const priceText = $hu('span[data-test="product-price"]').first().text().trim();
-      let priceHuf = parseInt(priceText.replace(/[^0-9]/g, '')) || 0;
-      if (priceHuf === 0) {
-        priceHuf = parseInt($hu('meta[property="product:price:amount"]').attr('content') || '0', 10);
+      const json = extractJson(text);
+      if (!json) throw new Error('Could not parse Gemini response');
+      const data = JSON.parse(json);
+      res.json({
+        name: data.name || fallbackName || `Lego Set ${setNumber}`,
+        priceHuf: data.priceHuf,
+        image: data.imageUrl || fallbackImage,
+        url: legoUrlHuf,
+        isTemporary: data.isTemporary || false,
+        releaseDate: data.releaseDate || null,
+      });
+    } catch (fallbackError: any) {
+      console.error('Gemini failed:', fallbackError);
+      if (fallbackError?.isRateLimit) {
+        return res.status(429).json({ error: 'Rate limit exceeded.', retryAfter: fallbackError.retryAfter });
       }
-      let productImage = null;
-      if (!skipImage) {
-        productImage = $hu('meta[property="og:image"]').attr('content');
-        if (!productImage) {
-          productImage = $hu('img[class*="ProductImage"]').first().attr('src');
-        }
-        if (productImage) fallbackImage = productImage;
-      }
-
-      if (priceHuf === 0) {
-        throw new Error(
-          'Price not found on Lego page (both span and meta were empty/0), trying fallback'
-        );
-      }
-
-      let name = `Lego Set ${setNumber}`;
-      try {
-        const responseEn = await axios.get(legoUrlEn, {
-          headers: {
-            ...getCommonHeaders(),
-            'Accept-Language': 'en-US,en;q=0.9',
-            Cookie: 'cs-setCountry=US; cs-setLanguage=en_US; cs-CountryRegion=US;',
-          },
-          timeout: 5000,
-        });
-        const $en = cheerio.load(responseEn.data);
-        name =
-          $en('h1[data-test="product-overview-name"]').first().text().trim() ||
-          $en('h1').first().text().trim() ||
-          name;
-        if (name && name !== `Lego Set ${setNumber}`) fallbackName = name;
-      } catch (enError) {
-        name =
-          $hu('h1[data-test="product-overview-name"]').first().text().trim() ||
-          $hu('h1').first().text().trim() ||
-          name;
-        if (name && name !== `Lego Set ${setNumber}`) fallbackName = name;
-      }
-
-      res.json({ name, priceHuf, image: productImage, url: legoUrlHuf });
-    } catch (scrapingError: any) {
-      console.warn(
-        'Scraping Lego.com failed, attempting Gemini Search fallback...',
-        scrapingError.message
-      );
-
-      try {
-        const imagePrompt = skipImage ? '' : 'and the main product image URL. ';
-        const imageJsonFormat = skipImage ? '' : ', "imageUrl": "string"';
-        const prompt = `Search for Lego set ${setNumber}. ALWAYS find the official ENGLISH name, current HUF price, ${imagePrompt}If it's an unreleased set or not on lego.com, prioritize searching jaysbrickblog.com and brickfanatics.com to find information such as price (convert USD/EUR to HUF roughly), image, and release date. If you get the info from an unofficial source like jaysbrickblog or brickfanatics, set 'isTemporary' to true. Return ONLY a JSON object: { "name": "string", "priceHuf": 1234${imageJsonFormat}, "isTemporary": boolean, "releaseDate": "string | null" }.`;
-
-        const text = await callGeminiWithFallback({
-          prompt,
-          config: { tools: [{ googleSearch: {} }] },
-          logLabel: 'lego-info',
-          accept: isParseableJson,
-        });
-
-        const json = extractJson(text);
-        if (json) {
-          const data = JSON.parse(json);
-          res.json({
-            name: data.name || fallbackName || `Lego Set ${setNumber}`,
-            priceHuf: data.priceHuf,
-            image: data.imageUrl || fallbackImage,
-            url: legoUrlHuf,
-            isTemporary: data.isTemporary || false,
-            releaseDate: data.releaseDate || null,
-          });
-        } else {
-          throw new Error('Could not parse Gemini response');
-        }
-      } catch (fallbackError: any) {
-        console.error('Gemini failed:', fallbackError);
-        if (fallbackError?.isRateLimit) {
-          return res
-            .status(429)
-            .json({ error: 'Rate limit exceeded.', retryAfter: fallbackError.retryAfter });
-        }
-        res.status(500).json({
-          error:
-            'Failed to fetch LEGO set info from all sources. Make sure your GEMINI_API_KEY is valid.',
-        });
-      }
+      res.status(500).json({
+        error: 'Failed to fetch LEGO set info from all sources. Make sure your GEMINI_API_KEY is valid.',
+      });
     }
   });
 

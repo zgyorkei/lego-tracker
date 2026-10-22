@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, shell } from 'electron';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { config as loadEnv } from 'dotenv';
 import { startLocalServer } from './localServer';
 import { PlaywrightScraper } from './scraper/engine';
@@ -13,14 +14,22 @@ const APP_ORIGIN = `http://localhost:${PORT}`;
 // Passed by the login item, so a start with Windows goes straight to the tray.
 const startHidden = process.argv.includes('--hidden');
 
-// Packaged builds carry their files in resources/; dev runs from desktop/dist.
-const resource = (...p: string[]) =>
-  app.isPackaged ? path.join(process.resourcesPath, ...p) : path.join(__dirname, '..', ...p);
+// The installer ships Playwright's Chromium in resources/ms-playwright, so a
+// fresh machine needs no separate browser download. Dev runs use the
+// per-user Playwright cache instead.
+if (app.isPackaged) process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(process.resourcesPath, 'ms-playwright');
 
-// GEMINI_API_KEY for the shared API routes, from the gitignored desktop/.env.
-// It stays in this process: the page talks to the local API, never to Gemini.
-// Price refreshes do not use it (the scraper replaces Gemini there).
-loadEnv({ path: resource('.env'), quiet: true });
+// Secrets are never packaged: the installer must be safe to copy around. A
+// packaged app reads them from its data folder (%APPDATA%\Brick Tracker);
+// dev runs read the gitignored files in desktop/.
+const secretFile = (name: string) =>
+  app.isPackaged ? path.join(app.getPath('userData'), name) : path.join(__dirname, '..', name);
+
+// GEMINI_API_KEY for the shared API routes (teaching sources only). It stays
+// in this process: the page talks to the local API, never to Gemini.
+loadEnv({ path: secretFile('.env'), quiet: true });
+
+// The packaged web app sits in resources/web; dev runs use the repo build.
 const webDir = app.isPackaged ? path.join(process.resourcesPath, 'web') : path.resolve(__dirname, '../../dist');
 
 let win: BrowserWindow | null = null;
@@ -80,6 +89,19 @@ function createTray() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'Open Brick Tracker', click: showWindow },
+      // Lets the user stop (or restore) the start-with-Windows entry, which
+      // is also how the 4AM refresh gets its chance to run.
+      ...(app.isPackaged
+        ? [
+            {
+              label: 'Start with Windows',
+              type: 'checkbox' as const,
+              checked: app.getLoginItemSettings({ path: process.execPath, args: ['--hidden'] }).openAtLogin,
+              click: (item: Electron.MenuItem) =>
+                app.setLoginItemSettings({ openAtLogin: item.checked, path: process.execPath, args: ['--hidden'] }),
+            },
+          ]
+        : []),
       { type: 'separator' },
       {
         label: 'Quit',
@@ -100,17 +122,37 @@ async function start() {
   ipcMain.handle('auth:google', (event) => {
     // Only the app's own page may start a sign-in.
     if (!event.senderFrame?.url.startsWith(APP_ORIGIN)) throw new Error('Unexpected sender');
-    return googleSignIn(loadOAuthClient(resource('oauth-client.json')));
+    const clientFile = secretFile('oauth-client.json');
+    if (!existsSync(clientFile)) {
+      throw new Error(`Sign-in is not set up yet: place the Google OAuth client file at ${clientFile}`);
+    }
+    return googleSignIn(loadOAuthClient(clientFile));
   });
 
   createWindow();
   createTray();
 
-  // Start with Windows, straight into the tray, so the 4AM refresh happens
-  // without anyone opening the app. Dev runs would register electron.exe.
-  if (app.isPackaged) {
-    app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] });
-  }
+  // install.cmd copies the app into place and starts it once with --install.
+  // Only then does it register itself, so running the packaged app from a
+  // build folder (or a test) never leaves a login item behind.
+  if (app.isPackaged && process.argv.includes('--install')) registerInstall();
+}
+
+/**
+ * Start with Windows, straight into the tray, so the 4AM refresh happens
+ * without anyone opening the app; plus a Start menu shortcut, since there is
+ * no installer to create one (installer builders need 7-Zip, which is
+ * blocked on this machine).
+ */
+function registerInstall() {
+  app.setLoginItemSettings({ openAtLogin: true, path: process.execPath, args: ['--hidden'] });
+  const link = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Brick Tracker.lnk');
+  shell.writeShortcutLink(link, existsSync(link) ? 'replace' : 'create', {
+    target: process.execPath,
+    description: 'Brick Tracker',
+    icon: process.execPath,
+    iconIndex: 0,
+  });
 }
 
 if (!app.requestSingleInstanceLock()) {
