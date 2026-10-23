@@ -29,7 +29,17 @@ export function Modal({
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  // Callers pass inline arrows, so onClose is a new function on every parent
+  // render. Read it through a ref: when the effect below depended on it, each
+  // keystroke in a dialog input re-rendered the parent, re-ran the effect, and
+  // its cleanup/setup pulled focus out of the input after every character.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
+  // Runs once per opening: move focus in, trap Tab, close on Escape, restore
+  // focus on close.
   useEffect(() => {
     previouslyFocused.current = document.activeElement as HTMLElement | null;
 
@@ -41,7 +51,7 @@ export function Modal({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab' || !panelRef.current) return;
@@ -71,7 +81,7 @@ export function Modal({
       document.body.style.overflow = overflow;
       previouslyFocused.current?.focus?.();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div
