@@ -25,6 +25,7 @@ import { SetCard } from './components/SetCard';
 import { GiftRegistryDialog } from './components/GiftRegistryDialog';
 import { PlannedListDialog } from './components/PlannedListDialog';
 import { TeachSourcePanel } from './components/TeachSourcePanel';
+import { SourceIdInput } from './components/SourceIdInput';
 import { withUrlTemplate } from './lib/priceSources';
 import { Modal } from './components/Modal';
 import { Status, Priority, DEFAULT_PRICE_SOURCES, PERMANENT_SOURCE_IDS, LegoSet, PriceHistory, SUPPORTED_CURRENCIES, isSupportedCurrency, isPriceQuote } from './types';
@@ -889,16 +890,14 @@ export default function App() {
                     <div className="grid grid-cols-2 gap-2 mb-2">
                       <div>
                         <label htmlFor={`src-${source.id}-id`} className="block text-[10px] font-black uppercase text-gray-500 mb-1">ID (Short name)</label>
-                        <input 
-                          id={`src-${source.id}-id`}
-                          type="text"
+                        <SourceIdInput
+                          inputId={`src-${source.id}-id`}
+                          id={source.id}
                           disabled={lockEdit}
-                          value={source.id}
-                          onChange={(e) => {
-                             const value = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-                             savePriceSources(priceSources.map((s, i) => i === index ? { ...s, id: value } : s));
-                          }}
-                          className="w-full bg-white border border-black p-2 rounded text-sm font-bold disabled:bg-gray-100 disabled:text-gray-500"
+                          taken={priceSources.filter((_, i) => i !== index).map(s => s.id)}
+                          onCommit={(value) =>
+                            savePriceSources(priceSources.map((s, i) => i === index ? { ...s, id: value } : s))
+                          }
                         />
                       </div>
                       <div>
