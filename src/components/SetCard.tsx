@@ -583,7 +583,10 @@ const SetCardComponent: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, get
         </div>
       </div>
 
-      <div className="bg-white border-t border-gray-100 flex overflow-hidden lg:min-h-0 min-h-[50px] mt-auto">
+      {/* A column, so the price-history panel stacks under the price tiles.
+          As a row it sat beside them, past the card's edge, clipped out of
+          sight by overflow-hidden. */}
+      <div className="bg-white border-t border-gray-100 flex flex-col overflow-hidden lg:min-h-0 min-h-[50px] mt-auto">
         {set.status === 'ordered' ? (
           <div className="space-y-1 bg-green-50 p-4 w-full h-full flex flex-col justify-between">
             <div className="mb-auto flex items-start justify-between gap-2">
