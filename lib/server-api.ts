@@ -1631,7 +1631,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       if (error?.isRateLimit) {
         return res.status(429).json({ error: 'Gemini rate limit reached. Try again in a minute.', retryAfter: error.retryAfter });
       }
-      res.status(500).json({ error: 'Teaching failed. Check that GEMINI_API_KEY is set in desktop/.env.' });
+      res.status(500).json({ error: 'Teaching failed. Check that a Gemini key is set (enter it in BrickBudget, or run npx shop-teacher key set).' });
     }
   });
 

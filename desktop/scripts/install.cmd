@@ -25,8 +25,8 @@ if not exist "%APPDATA%\Brick Tracker\oauth-client.json" (
   echo.
   echo Note: sign-in needs the Google OAuth client file at
   echo   "%APPDATA%\Brick Tracker\oauth-client.json"
-  echo and teaching new price sources needs GEMINI_API_KEY in
-  echo   "%APPDATA%\Brick Tracker\.env"
+  echo and teaching new price sources needs a Gemini key, shared with
+  echo BrickBudget, or GEMINI_API_KEY in "%APPDATA%\Brick Tracker\.env".
   echo See desktop\README.md in the repository.
 )
 

@@ -45,8 +45,10 @@ const [appDir] = await packager({
   appVersion: pkg.version,
   icon: path.join(desktop, 'dist', 'icon.ico'),
   prune: true,
-  // Playwright reads its own files and drivers from disk; keep it outside the asar.
-  asar: { unpackDir: '{node_modules/playwright,node_modules/playwright-core}' },
+  // Playwright reads its own files and drivers from disk, and native modules
+  // (the shared Gemini key's credential store) cannot load from inside an
+  // archive: both stay outside the asar.
+  asar: { unpackDir: '{node_modules/playwright,node_modules/playwright-core}', unpack: '**/*.node' },
   extraResource: [webStage, chromiumStage],
   // Only dist/, package.json and production node_modules belong in the app.
   // Secrets are listed explicitly so they can never be swept in.

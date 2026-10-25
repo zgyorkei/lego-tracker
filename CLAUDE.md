@@ -95,9 +95,20 @@ exclusive.
   `desktop/README.md` before changing them. Recipes are declarative data
   (`lib/scrapeRecipe.ts`), never code; `/api/teach-source` has Gemini write
   one and test-runs it, and it 404s on the web (no browser there).
-- **Desktop secrets** (`desktop/.env` with `GEMINI_API_KEY`,
-  `desktop/oauth-client.json`) are gitignored and must never be committed or
-  packaged. A packaged app reads them from `%APPDATA%\Brick Tracker`.
+- **Recipes, teaching and the Gemini key are shared code.** The recipe
+  format, matching rules, teaching loop and in-page helpers live in the
+  `shop-teacher` package (github.com/zgyorkei/shop-teacher), also used by
+  BrickBudget; `lib/scrapeRecipe.ts` and `lib/teachSource.ts` only re-export
+  them under this app's names. Change them there, tag a release and bump the
+  dependency in both `package.json` files (root and `desktop/`).
+- **The desktop app's Gemini key** is the one shared with the user's other
+  apps: shop-teacher keeps it in Windows Credential Manager, and
+  `desktop/src/main.ts` puts it in `GEMINI_API_KEY` at start. A key in
+  `desktop/.env` is moved there once. The web deployment still reads
+  `GEMINI_API_KEY` from the environment.
+- **Desktop secrets** (`desktop/.env`, `desktop/oauth-client.json`) are
+  gitignored and must never be committed or packaged. A packaged app reads
+  them from `%APPDATA%\Brick Tracker`.
 - **Never use 7-Zip.** It is blocked on the build machine. That rules out
   electron-builder's NSIS/7z/portable targets and Squirrel; packaging is
   `@electron/packager` + `Compress-Archive` + `install.cmd` (`npm run dist`).

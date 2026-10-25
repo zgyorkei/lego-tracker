@@ -1,12 +1,6 @@
 import type { BrowserContext, Page } from 'playwright';
-import {
-  parseRecipe,
-  parseDisplayPrice,
-  rankCards,
-  type RecipeTestResult,
-  type ScrapeRecipe,
-  type ScrapedCard,
-} from '../../../lib/scrapeRecipe';
+import { capturePage as captureOpenPage, GENERIC_CONSENT, readPagePrice, readSearchCards } from 'shop-teacher/browser';
+import { parseRecipe, rankCards, type RecipeTestResult, type ScrapeRecipe, type ScrapedCard } from '../../../lib/scrapeRecipe';
 import type { PageCapture, PriceScraper } from '../../../lib/server-api';
 import { builtinRecipeFor } from '../../../lib/builtinRecipes';
 
@@ -17,13 +11,7 @@ const NAV_TIMEOUT_MS = 30_000;
 // Cloudflare's interstitial (Arukereso) usually clears in a few seconds.
 const CHALLENGE_TIMEOUT_MS = 40_000;
 const MAX_PRODUCT_PAGES = 2;
-// Size of the HTML excerpt handed to Gemini when teaching (~30k tokens).
-const CAPTURE_MAX_CHARS = 110_000;
-// Cookie banners on pages being taught have no recipe yet; these cover the
-// common consent platforms so the capture shows the real page.
-const GENERIC_CONSENT =
-  '#onetrust-accept-btn-handler, #sp-cc-accept, #didomi-notice-agree-button, ' +
-  'button#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll, .cmpboxbtnyes, [data-testid="uc-accept-all-button"]';
+
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // A person-paced gap between page loads.
@@ -95,32 +83,7 @@ export class PlaywrightScraper implements PriceScraper {
     return this.enqueue(async (page) => {
       if (!(await this.open(page, url, GENERIC_CONSENT))) return null;
       await page.waitForLoadState('networkidle', { timeout: 6000 }).catch(() => {});
-      const html = await page.evaluate(() => {
-        const root = document.body.cloneNode(true) as HTMLElement;
-        root
-          .querySelectorAll('script, style, noscript, svg, iframe, link, meta, template, video, canvas, source')
-          .forEach((el) => el.remove());
-        const keep = /^(id|class|href|role|aria-label|itemprop|itemtype|data-[\w-]+|type|name|value|content|title|alt)$/;
-        root.querySelectorAll('*').forEach((el) => {
-          for (const a of [...el.attributes]) {
-            if (!keep.test(a.name)) el.removeAttribute(a.name);
-            else if (a.value.length > 120) el.setAttribute(a.name, a.value.slice(0, 120));
-          }
-        });
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-          const t = (n.textContent || '').replace(/\s+/g, ' ');
-          n.textContent = t.length > 200 ? t.slice(0, 200) + '...' : t;
-        }
-        return root.innerHTML.replace(/>\s+</g, '><').replace(/\s{2,}/g, ' ');
-      });
-      let excerpt = html;
-      if (html.length > CAPTURE_MAX_CHARS) {
-        const at = Math.max(0, html.indexOf(focus));
-        const start = Math.max(0, Math.min(at - 15_000, html.length - CAPTURE_MAX_CHARS));
-        excerpt = html.slice(start, start + CAPTURE_MAX_CHARS);
-      }
-      return { html: excerpt, title: await page.title(), finalUrl: page.url() };
+      return captureOpenPage(page, focus, { before: 15_000 });
     });
   }
 
@@ -197,21 +160,7 @@ export class PlaywrightScraper implements PriceScraper {
 
     let cards: ScrapedCard[];
     try {
-      cards = await page.$$eval(
-        recipe.resultSelector,
-        (nodes, sel) =>
-          nodes.slice(0, 60).map((n) => ({
-            // Every match is joined: some layouts split brand and title.
-            title: [...n.querySelectorAll(sel.title)]
-              .map((el) => el.textContent || '')
-              .join(' ')
-              .replace(/\s+/g, ' ')
-              .trim(),
-            priceText: n.querySelector(sel.price)?.textContent?.trim() || null,
-            href: sel.link ? n.querySelector(sel.link)?.getAttribute('href') || null : null,
-          })),
-        { title: recipe.titleSelector, price: recipe.priceSelector, link: recipe.linkSelector ?? null }
-      );
+      cards = await readSearchCards(page, recipe);
     } catch (e) {
       // A taught recipe can carry a selector the browser rejects outright.
       return { ...result, titles: [`selector error: ${String((e as Error)?.message || e).slice(0, 160)}`] };
@@ -243,14 +192,8 @@ export class PlaywrightScraper implements PriceScraper {
       productPages++;
       if (!(await this.open(page, link, recipe.consentSelector))) continue;
       await page.waitForSelector(recipe.productPagePriceSelector, { timeout: 8000 }).catch(() => {});
-      // Every match, in order: the first is often an empty placeholder. Form
-      // fields (Amazon's hidden price input) carry the number in their value.
-      const texts = await page
-        .$$eval(recipe.productPagePriceSelector, (els) =>
-          els.map((el) => (el instanceof HTMLInputElement ? el.value : el.textContent || ''))
-        )
-        .catch(() => [] as string[]);
-      const price = texts.map((t) => parseDisplayPrice(t, recipe.decimalSeparator)).find((p) => p != null);
+      // The first match that reads as a price: the first is often an empty placeholder.
+      const price = await readPagePrice(page, recipe.productPagePriceSelector, recipe.decimalSeparator);
       if (price != null) return { ...result, price, url: link };
     }
     return result;

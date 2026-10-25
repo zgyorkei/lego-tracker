@@ -21,7 +21,10 @@ const common = {
   logLevel: 'warning',
   // Electron is provided at runtime; Playwright ships native drivers and
   // finds its browsers relative to its own package, so it is not bundled.
-  external: ['electron', 'playwright', 'playwright-core'],
+  // shop-teacher loads a native module (the shared Gemini key's credential
+  // store) next to itself, so it is installed in desktop/ and not bundled
+  // either; marking it also covers shop-teacher/gemini and /browser.
+  external: ['electron', 'playwright', 'playwright-core', 'shop-teacher'],
 };
 
 await build({ ...common, entryPoints: [path.join(here, 'src/main.ts')], outfile: path.join(out, 'main.cjs') });

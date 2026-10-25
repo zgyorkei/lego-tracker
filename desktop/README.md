@@ -17,8 +17,11 @@ keeps running when its window is closed. Use the tray menu to quit.
 1. Build the web app from the repo root: `npm run build`. It needs the
    Firebase client config (`VITE_FIREBASE_*` env vars or
    `firebase-applet-config.json`).
-2. Copy `desktop/.env.example` to `desktop/.env` and set `GEMINI_API_KEY`
-   (used for teaching sources). Gitignored; never commit it.
+2. Teaching sources needs a Gemini key. It is shared with your other apps
+   (the `shop-teacher` package keeps it in Windows Credential Manager): if
+   BrickBudget already has one, nothing to do; otherwise run
+   `npx shop-teacher key set` here. A `GEMINI_API_KEY` in `desktop/.env`
+   also works and is moved to the shared store at the next start.
 3. Put the Google OAuth client for the desktop app at
    `desktop/oauth-client.json`. This is the JSON downloaded from Google Cloud
    console, Credentials, OAuth client of type "Desktop app", in the Firebase
@@ -59,8 +62,9 @@ pauses. Each setting below came from live trials and is load-bearing:
 | `viewport: null`, no `--enable-automation` | Avoids the usual automation tells (as in the budget-tracker app) |
 | Persistent profile | Consent and Cloudflare clearance survive between runs |
 
-What to read on each page is described by a **recipe** (`lib/scrapeRecipe.ts`):
-CSS selectors plus number format, never code. The built-in ones for Amazon.de
+What to read on each page is described by a **recipe** (`lib/scrapeRecipe.ts`,
+from the shared `shop-teacher` package): CSS selectors plus number format,
+never code. The built-in ones for Amazon.de
 and Arukereso are in `lib/builtinRecipes.ts`; a taught recipe on a source
 takes precedence over a built-in one.
 
@@ -71,8 +75,8 @@ In the desktop app, open Price Sources, add the shop with its search URL
 
 1. The local browser opens that search page for up to three of your planned
    sets and keeps a compact HTML excerpt of each.
-2. Gemini (key from `desktop/.env`) writes a recipe from the excerpts
-   (`lib/teachSource.ts`).
+2. Gemini (the key shared with your other apps) writes a recipe from the
+   excerpts (`lib/teachSource.ts`, from the `shop-teacher` package).
 3. The recipe is run on the same live pages. If it finds nothing, Gemini gets
    one retry with what the test saw.
 4. The prices found are shown; **Save** stores the recipe on the source in
@@ -142,8 +146,11 @@ its data folder instead:
 
 ```
 %APPDATA%\Brick Tracker\oauth-client.json   (sign-in)
-%APPDATA%\Brick Tracker\.env                (GEMINI_API_KEY, teaching only)
+%APPDATA%\Brick Tracker\.env                (optional: GEMINI_API_KEY, moved to the shared store at start)
 ```
+
+The Gemini key itself is in Windows Credential Manager (service
+`shop-teacher`), shared with BrickBudget and BLOK.AI.
 
 The exe is not code-signed, so Windows SmartScreen may warn on first start.
 

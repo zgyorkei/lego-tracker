@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, shell } from 'ele
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { config as loadEnv } from 'dotenv';
+import { adoptGeminiKey, storedGeminiKey } from 'shop-teacher/gemini';
 import { startLocalServer } from './localServer';
 import { PlaywrightScraper } from './scraper/engine';
 import { googleSignIn, loadOAuthClient } from './oauth';
@@ -28,6 +29,14 @@ const secretFile = (name: string) =>
 // GEMINI_API_KEY for the shared API routes (teaching sources only). It stays
 // in this process: the page talks to the local API, never to Gemini.
 loadEnv({ path: secretFile('.env'), quiet: true });
+
+// The Gemini key is shared with the user's other apps (the shop-teacher
+// package keeps it in Windows Credential Manager). A key from .env is moved
+// there once; after that the shared key wins, so a key entered in BrickBudget
+// or with `npx shop-teacher key set` works here from the next start.
+adoptGeminiKey(process.env.GEMINI_API_KEY);
+const sharedGeminiKey = storedGeminiKey();
+if (sharedGeminiKey) process.env.GEMINI_API_KEY = sharedGeminiKey;
 
 // The packaged web app sits in resources/web; dev runs use the repo build.
 const webDir = app.isPackaged ? path.join(process.resourcesPath, 'web') : path.resolve(__dirname, '../../dist');
