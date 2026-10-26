@@ -27,7 +27,7 @@ import { PlannedListDialog } from './components/PlannedListDialog';
 import { TeachSourcePanel } from './components/TeachSourcePanel';
 import { SourceIdInput } from './components/SourceIdInput';
 import { identityFromQuotes, mergeLookupName } from './lib/setIdentity';
-import { useDesktopWorker, type RunRefresh } from './hooks/useDesktopWorker';
+import { scheduleDailyRun, useDesktopWorker, type RunRefresh } from './hooks/useDesktopWorker';
 import { withUrlTemplate } from './lib/priceSources';
 import { Modal } from './components/Modal';
 import { Status, Priority, DEFAULT_PRICE_SOURCES, PERMANENT_SOURCE_IDS, LegoSet, PriceHistory, SUPPORTED_CURRENCIES, isSupportedCurrency, isPriceQuote } from './types';
@@ -114,6 +114,27 @@ export default function App() {
   const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [showGiftRegistry, setShowGiftRegistry] = useState(false);
   const [showPlannedList, setShowPlannedList] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
+
+  // The click handler used to be signInWithGoogle itself, so a failure (on a
+  // phone, typically a blocked sign-in pop-up) did nothing visible at all.
+  const handleSignIn = async () => {
+    setSignInError(null);
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      const code = (err as { code?: string } | null)?.code;
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return;
+      console.error('Sign-in failed', err);
+      setSignInError(
+        code === 'auth/popup-blocked'
+          ? 'Your browser blocked the Google sign-in window. Allow pop-ups for this site, then try again.'
+          : err instanceof Error && err.message.startsWith('Sign-in')
+            ? err.message
+            : 'Sign-in failed. Please try again.'
+      );
+    }
+  };
   const [displayCurrency, setDisplayCurrency] = useState<string>(() => readStoredString('legoDisplayCurrency', 'HUF'));
   const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null);
 
@@ -482,8 +503,17 @@ export default function App() {
   // Desktop app only. Automatic refreshes moved there because it scrapes with a
   // local browser instead of spending Gemini quota; on the web this would burn
   // credits on every open tab, so the web app refreshes only on request.
+  //
+  // The run itself is a shared request with a fixed id per day
+  // (scheduleDailyRun), so with the desktop app signed in on several machines
+  // exactly one of them does it; useDesktopWorker's claim decides which.
+  const filteredSetsRef = useRef(filteredSets);
   useEffect(() => {
-    if (!isDesktopApp) return;
+    filteredSetsRef.current = filteredSets;
+  });
+  const uid = user?.uid ?? null;
+  useEffect(() => {
+    if (!isDesktopApp || !uid || isDemoMode) return;
     let running = false;
 
     const checkSchedule = async () => {
@@ -500,12 +530,14 @@ export default function App() {
 
       running = true;
       try {
-        await batchRefreshRef.current(true); // skip lego info, only market prices
-        // Marked only after the refresh actually finishes. Writing it up front
-        // meant a reload mid-refresh silently skipped the whole day.
-        writeStored('brickTrackerLastDailyRefresh', quotaDay);
+        // Market prices only. Creates (or retries) today's request; this or
+        // another desktop's worker runs it. Checked again every minute until
+        // some desktop reports it done, and only then marked locally, so a
+        // reload or crash mid-run does not skip the day.
+        const action = await scheduleDailyRun(uid, quotaDay, filteredSetsRef.current.map(s => s.id));
+        if (action === 'done') writeStored('brickTrackerLastDailyRefresh', quotaDay);
       } catch (e) {
-        console.error('Daily refresh failed; will retry on the next tick', e);
+        console.error('Scheduling the daily refresh failed; will retry on the next tick', e);
       } finally {
         running = false;
       }
@@ -514,10 +546,10 @@ export default function App() {
     void checkSchedule();
     const interval = setInterval(() => void checkSchedule(), 60 * 1000);
     return () => clearInterval(interval);
-    // Deliberately depends only on whether there is anything to refresh.
-    // isBatchRefreshing was previously a dependency, which tore down and
-    // re-ran the scheduler every time a batch started and finished.
-  }, [filteredSets.length]);
+    // Deliberately depends only on whether there is anything to refresh and
+    // who is signed in. isBatchRefreshing was previously a dependency, which
+    // tore down and re-ran the scheduler every time a batch started and finished.
+  }, [filteredSets.length, uid, isDemoMode]);
 
   const formatPrice = (priceHuf: number) => formatPriceUtil(priceHuf, displayCurrency, exchangeRates);
 
@@ -596,8 +628,13 @@ export default function App() {
           <h1 className="text-4xl font-black text-lego-red uppercase tracking-tighter mb-2">Brick Tracker</h1>
           <p className="text-gray-500 font-bold mb-8 uppercase text-sm tracking-widest">Plan. Track. Save.</p>
           <div className="space-y-3">
-            <button 
-              onClick={signInWithGoogle}
+            {signInError && (
+              <div role="alert" className="bg-red-50 border-2 border-red-200 text-red-600 font-bold text-sm rounded-lg px-4 py-3 text-left">
+                {signInError}
+              </div>
+            )}
+            <button
+              onClick={() => void handleSignIn()}
               className="lego-button bg-lego-blue w-full flex items-center justify-center gap-3"
             >
               <LogIn size={20} /> Login with Google

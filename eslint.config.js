@@ -32,6 +32,14 @@ export default tseslint.config(
     },
   },
 
+  // The web app's service worker
+  {
+    files: ['public/sw.js'],
+    languageOptions: {
+      globals: globals.serviceworker,
+    },
+  },
+
   // Backend (Node)
   {
     files: ['server.ts', 'lib/**/*.ts', 'api/**/*.ts', 'vite.config.ts', 'desktop/**/*.{ts,mjs}'],

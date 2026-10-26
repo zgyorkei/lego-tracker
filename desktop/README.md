@@ -118,7 +118,12 @@ updates, from any device, including your phone.
 The website uses Gemini as before when the desktop app has not been seen for
 5 minutes, does not pick the request up within 45 seconds, or reports a
 failure. Requests are claimed and cancelled in Firestore transactions, so a
-request is never run by both. Logic: `src/hooks/useDesktopWorker.ts` and
+request is never run by both.
+
+The desktop app can run on more than one Windows machine signed in to the
+same Google account. Every one of them sees each request, but only the first
+to claim it runs it; the 4AM refresh is a request with a fixed id per day, so
+it also runs once, on whichever machine claims it. Logic: `src/hooks/useDesktopWorker.ts` and
 `src/lib/desktopWorker.ts`; rules: `desktopStatus` and `refreshRequests` in
 `firestore.rules`.
 

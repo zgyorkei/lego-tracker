@@ -20,11 +20,14 @@ import {
   REFRESH_REQUESTS_COLLECTION,
   RUN_TIMEOUT_MS,
   canCancel,
+  dailyRequestId,
+  dailyRunAction,
   isDesktopOnline,
   newRequest,
   newRequestId,
   outcomeFor,
   shouldClaim,
+  type DailyRunAction,
   type DelegateOutcome,
   type RefreshKind,
   type RefreshRequest,
@@ -32,6 +35,23 @@ import {
 
 /** Runs one claimed request on the desktop. Resolves when the refresh has finished. */
 export type RunRefresh = (kind: RefreshKind, setIds: string[]) => Promise<void>;
+
+/**
+ * Desktop scheduler: makes sure today's 4AM refresh exists as a request (see
+ * dailyRunAction). The worker in whichever desktop claims it first runs it, so
+ * with several machines signed in it runs once. "done" means some desktop
+ * finished today's run and the caller can stop checking for the day.
+ */
+export async function scheduleDailyRun(uid: string, day: string, setIds: string[]): Promise<DailyRunAction> {
+  const ref = doc(db, REFRESH_REQUESTS_COLLECTION, dailyRequestId(uid, day));
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const action = dailyRunAction(snap.exists() ? (snap.data() as RefreshRequest) : undefined);
+    // A full replacement, so a retry starts clean (no stale claim or error).
+    if (action === 'create' || action === 'retry') tx.set(ref, newRequest(uid, 'prices', setIds));
+    return action;
+  });
+}
 
 /**
  * The desktop app as the website's scraper (see src/lib/desktopWorker.ts).

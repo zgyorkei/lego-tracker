@@ -101,6 +101,49 @@ export function newRequest(userId: string, kind: RefreshKind, setIds: string[], 
   };
 }
 
+// ---- The daily 4AM refresh -------------------------------------------------
+//
+// Each desktop app used to run its own 4AM refresh, so two machines signed in
+// to the same account loaded every shop page twice and wrote two price-history
+// entries per set per day. Now the run is a request with a fixed id per day:
+// whichever desktop finds it missing creates it, the normal worker claim makes
+// exactly one desktop run it, and every desktop sees when it is done.
+
+/** After a failed daily run, wait this long before trying again. */
+export const DAILY_RETRY_MS = 30 * 60 * 1000;
+
+/** The day's request id; satisfies isValidId (Firebase uids are alphanumeric). */
+export const dailyRequestId = (uid: string, day: string) => `daily-${uid}-${day}`;
+
+/**
+ * create: no request for today yet. retry: today's run failed (or was
+ * abandoned) long enough ago to try again. done: finished, by any desktop.
+ * wait: someone is on it.
+ */
+export type DailyRunAction = 'create' | 'retry' | 'done' | 'wait';
+
+export function dailyRunAction(
+  existing: Pick<RefreshRequest, 'status' | 'requestedAt' | 'claimedAt' | 'finishedAt'> | undefined,
+  now = Date.now()
+): DailyRunAction {
+  if (!existing) return 'create';
+  switch (existing.status) {
+    case 'done':
+      return 'done';
+    case 'failed':
+    case 'cancelled':
+      return now - (ms(existing.finishedAt) ?? 0) > DAILY_RETRY_MS ? 'retry' : 'wait';
+    case 'pending':
+      // Nobody claimed it in time (every desktop busy or gone): make it fresh.
+      return shouldClaim(existing, now) ? 'wait' : 'retry';
+    case 'running':
+      // A desktop that died mid-run leaves it running; give up on it eventually.
+      return now - (ms(existing.claimedAt) ?? 0) > RUN_TIMEOUT_MS ? 'retry' : 'wait';
+    default:
+      return 'wait';
+  }
+}
+
 /** Random request id that satisfies the rules' isValidId. */
 export function newRequestId(): string {
   const bytes = new Uint8Array(12);

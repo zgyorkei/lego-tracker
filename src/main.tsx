@@ -1,7 +1,10 @@
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
+import { registerServiceWorker } from './lib/pwa.ts';
 import './index.css';
+
+registerServiceWorker();
 
 // The two entry points are mutually exclusive, so neither needs to be in the
 // other's bundle: a signed-in user never renders RegistryView, and a gift
