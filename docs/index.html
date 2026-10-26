@@ -40,6 +40,7 @@
   .btn:hover { text-decoration: none; transform: translate(2px, 2px); box-shadow: 2px 2px 0 #000; }
   .btn.alt { background: #fff; }
   .btn.blue { background: #2f8cff; color: #fff; }
+  .btn.red { background: #e3000b; color: #fff; }
   .hero-shot { align-self: end; }
   .hero-shot img { width: 100%; display: block; border-radius: 14px 14px 0 0; border: 1px solid var(--line); border-bottom: 0; box-shadow: 0 -10px 50px rgba(0, 0, 0, .45); cursor: zoom-in; }
 
@@ -203,6 +204,7 @@
       <div class="cta">
         <a class="btn" href="https://lego.gykovacszoltan.hu/">Try the demo</a>
         <a class="btn blue" href="#setup">Set up your own</a>
+        <a class="btn red" href="#setup-desktop">Windows app</a>
         <a class="btn alt" href="https://github.com/zgyorkei/lego-tracker">Source on GitHub</a>
       </div>
     </div>
@@ -703,6 +705,7 @@ npm install</code></pre>
         <li><strong>Project settings</strong> (the gear) &rarr; <em>Your apps</em> &rarr; add a <strong>Web app</strong>. Copy the <code>firebaseConfig</code> values it shows: they become the <code>VITE_FIREBASE_*</code> variables below. They are not secret; the rules protect the data.</li>
       </ol>
       <p class="callout info">If your database is not named <code>(default)</code>, set <code>VITE_FIREBASE_DATABASE_ID</code> to its name, and pick that database in the console before pasting the rules: rules are per database.</p>
+      <p><strong>Only your accounts, optionally.</strong> Anyone with a Google account can sign in to your site and keep their own list there, using your quota. To allow only yourself and your family: in Firestore, <em>Start collection</em> <code>access</code>, document ID <code>allowlist</code>, with a field <code>emails</code> of type <em>array</em> holding each Google address in lower case. The rules then refuse every other account, and the app signs it out with a message. Gift-registry links keep working for everyone. Edit the list there to add someone; delete the document to open the site again.</p>
     </div>
 
     <div class="step" id="setup-gemini">
@@ -757,22 +760,24 @@ VITE_FIREBASE_DATABASE_ID=(default)</code></pre>
         <li><em>APIs &amp; Services</em> &rarr; <em>OAuth consent screen</em>: it already exists for Firebase's web sign-in. Make sure its publishing status is <strong>In production</strong> (in "Testing", sign-ins expire every 7 days). The app only asks for name and email, so no Google review is needed.</li>
         <li><em>Credentials</em> &rarr; <em>Create credentials</em> &rarr; <em>OAuth client ID</em> &rarr; type <strong>Desktop app</strong> &rarr; <em>Create</em> &rarr; <em>Download JSON</em>.</li>
       </ol>
-      <p><strong>b. Build it.</strong> The desktop app contains the website, so it is built with the same <code>.env</code> as step 4. Add your public address, so gift-registry and API links point at your site rather than at the desktop app:</p>
-<pre><code># in .env, next to the Firebase variables
-VITE_PUBLIC_APP_URL=https://your-site.example
-
-cd desktop
+      <p><strong>b. Get the installer.</strong> It carries no Firebase project, yours or anybody's: each install is connected to a project in its own setup window (step d), so the same build works for everyone.</p>
+      <p><a class="btn red" href="https://github.com/zgyorkei/lego-tracker/releases/latest/download/Brick-Tracker-win-x64.zip">Download for Windows</a> &nbsp;zip, about 350 MB (<a href="https://github.com/zgyorkei/lego-tracker/releases">all releases</a>)</p>
+      <p>Or build it yourself from your fork; it needs no <code>.env</code>:</p>
+<pre><code>cd desktop
 npm install
 npx playwright install chromium
 npm run dist</code></pre>
-      <p>This builds the website, bundles Chromium, and writes <code>desktop\release\&lt;version&gt;-&lt;date&gt;\</code> with the app, <code>install.cmd</code> and a zip of both (about 350 MB). Copy the zip to any PC you want it on.</p>
-      <p><strong>c. Install it.</strong> Run <code>install.cmd</code> from that folder (no admin rights needed). It copies the app to <code>%LOCALAPPDATA%\Programs\Brick Tracker</code>, adds a Start menu shortcut, makes it start with Windows, and starts it. The app is not code-signed, so Windows SmartScreen may warn the first time: <em>More info</em> &rarr; <em>Run anyway</em>.</p>
-      <p><strong>d. Its two secrets</strong>, which are never part of a build:</p>
+      <p>This builds the website, bundles Chromium, and writes <code>desktop\release\&lt;version&gt;-&lt;date&gt;\</code> with the app, <code>install.cmd</code> and a zip of both.</p>
+      <p><strong>c. Install it.</strong> Unzip it and run <code>install.cmd</code> (no admin rights needed). It copies the app to <code>%LOCALAPPDATA%\Programs\Brick Tracker</code>, adds a Start menu shortcut, makes it start with Windows, and starts it. The app is not code-signed, so Windows SmartScreen may warn the first time: <em>More info</em> &rarr; <em>Run anyway</em>.</p>
+      <p><strong>d. Connect it.</strong> The first start opens the setup window:</p>
       <ul>
-        <li>Save the downloaded client JSON as <code>%APPDATA%\Brick Tracker\oauth-client.json</code>.</li>
-        <li>For teaching new shops, store your Gemini key in Windows Credential Manager by running <code>npx shop-teacher key set</code> in the <code>desktop</code> folder (it asks for the key and never shows it). Alternatively put <code>GEMINI_API_KEY=...</code> in <code>%APPDATA%\Brick Tracker\.env</code>; the app moves it into Credential Manager at the next start.</li>
+        <li><strong>Firebase config:</strong> paste the <code>firebaseConfig</code> snippet from step 2 as the console shows it, and the database ID if it is not <code>(default)</code>.</li>
+        <li><strong>Website address:</strong> your site from step 5 (for example <code>https://bricks.example.com</code>). Gift-registry and Planned Sets links point there, since the app itself runs on <code>localhost</code>, which nobody else can open.</li>
+        <li><strong>Google sign-in client:</strong> choose the JSON downloaded in step a.</li>
+        <li><strong>Gemini API key</strong>, optional: only for teaching new shops. It is kept in Windows Credential Manager, never in a file or a build.</li>
       </ul>
-      <p><strong>e. Sign in.</strong> Open Brick Tracker, <em>Login with Google</em>: Google opens in your normal browser; approve, and you are signed in. From then on the app lives in the tray, refreshes at 4AM, and does the website's refreshes while it runs.</p>
+      <p>The settings are saved in <code>%APPDATA%\Brick Tracker</code>. The tray menu's <em>Settings...</em> opens the window again; saving restarts the app.</p>
+      <p><strong>e. Sign in.</strong> <em>Login with Google</em>: Google opens in your normal browser; approve, and you are signed in. From then on the app lives in the tray, refreshes at 4AM, and does the website's refreshes while it runs.</p>
       <p class="callout warn">If you build from a terminal inside VS Code, <code>npm start</code> and <code>install.cmd</code> already cope with VS Code's <code>ELECTRON_RUN_AS_NODE</code> variable; other Electron tools may need it cleared.</p>
     </div>
   </div>
@@ -782,7 +787,7 @@ npm run dist</code></pre>
     <div class="section-head"><h2>Updating</h2></div>
     <ul>
       <li><strong>Website:</strong> sync your fork with the original on GitHub (<em>Sync fork</em>); Vercel deploys it. If <code>firestore.rules</code> changed, paste it into the Firebase console again.</li>
-      <li><strong>Desktop app:</strong> pull, run <code>npm run dist</code> in <code>desktop</code> again, quit the app from the tray, and run the new <code>install.cmd</code>. Your sign-in and settings are kept.</li>
+      <li><strong>Desktop app:</strong> download the newest release (or pull and run <code>npm run dist</code> in <code>desktop</code> again), quit the app from the tray, and run the new <code>install.cmd</code>. Your sign-in and settings are kept.</li>
     </ul>
   </section>
 
@@ -807,9 +812,10 @@ npm run dist</code></pre>
       <tr><td>"You do not have access to this data", or price sources not saving</td><td>The Firestore rules in the console are older than <code>firestore.rules</code>: paste and publish them again, in the right database.</td></tr>
       <tr><td>The API link answers 502</td><td>Same: the <code>plannedLists</code> rule is not published yet. A 503 means the server lacks <code>VITE_FIREBASE_PROJECT_ID</code>.</td></tr>
       <tr><td>The website still says "via Gemini" with the desktop app running</td><td>The desktop app is not signed in, or the rules lack <code>desktopStatus</code> and <code>refreshRequests</code>. Give it two minutes after starting for its first "I'm online".</td></tr>
-      <tr><td>"Sign-in is not set up yet" in the desktop app</td><td><code>%APPDATA%\Brick Tracker\oauth-client.json</code> is missing (step 7d).</td></tr>
+      <tr><td>"Sign-in is not set up yet" in the desktop app</td><td>The sign-in client file is missing: tray menu &rarr; <em>Settings...</em> &rarr; <em>Choose file...</em> (step 7d).</td></tr>
+      <tr><td>The Vercel build fails with "No Firebase project configured"</td><td>The <code>VITE_FIREBASE_*</code> variables are missing for that environment: add them under <em>Environment Variables</em> (step 5) and deploy again. The build stops rather than publish a site nobody can sign in to.</td></tr>
       <tr><td>Desktop sign-ins expire after a week</td><td>The OAuth consent screen is in "Testing": set it to "In production" (step 7a).</td></tr>
-      <tr><td>Gift-registry links from the desktop app point at the wrong site</td><td>Rebuild with <code>VITE_PUBLIC_APP_URL</code> set (step 7b).</td></tr>
+      <tr><td>Gift-registry links from the desktop app point at the wrong site</td><td>Fix the website address in the tray menu's <em>Settings...</em> (step 7d).</td></tr>
       <tr><td>A shop shows no price in the desktop app</td><td>It may not sell that set itself, or not be taught yet: open Price Sources and press <em>Teach</em>.</td></tr>
     </table></div>
   </section>

@@ -2,8 +2,25 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Helper functions
+
+    // Signed in with an account allowed to use this copy. Every owner-only
+    // rule goes through here (isOwner too), so the allowlist below covers all
+    // of them; the public reads (registries, reservations, planned lists)
+    // never call it and stay open to link holders.
     function isSignedIn() {
-      return request.auth != null;
+      return request.auth != null && isAllowedUser();
+    }
+
+    // Who may use this copy: with no access/allowlist doc, any Google account
+    // (each sees only its own data); with one, only the addresses in its
+    // `emails` list, written in lower case. The doc is created and edited in
+    // the Firebase console only: no rule lets a client read or write it.
+    // Costs one document read per request that reaches an owner-only rule.
+    function isAllowedUser() {
+      let allowlist = /databases/$(database)/documents/access/allowlist;
+      return !exists(allowlist) ||
+        (request.auth.token.email_verified == true &&
+         request.auth.token.email.lower() in get(allowlist).data.emails);
     }
     
     function isOwner(userId) {

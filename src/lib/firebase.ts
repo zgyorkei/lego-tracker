@@ -1,40 +1,14 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithCredential, signInWithPopup } from 'firebase/auth';
-import './platform';
-import { getFirestore } from 'firebase/firestore';
+import { doc, getDoc, getFirestore } from 'firebase/firestore';
+import { firebaseConfig } from './firebaseConfig';
 
-// In our AI Studio environment, we load from a generated JSON config.
-// In Vercel/production, we load from environment variables so secrets aren't exposed in standard Git repositories.
-const getFirebaseConfig = () => {
-    // If we're deployed on Vercel, use the VITE_ prefixed environment variables you set
-    if (import.meta.env.VITE_FIREBASE_API_KEY) {
-        return {
-            apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-            authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-            projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-            storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-            messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-            appId: import.meta.env.VITE_FIREBASE_APP_ID,
-            firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || '(default)'
-        };
-    }
-    
-    // Otherwise fallback to the local json file (used in AI Studio preview)
-    // We import it this way so Vite doesn't crash if the file is missing during build in Vercel
-    const jsonProviders = import.meta.glob('../../firebase-applet-config.json', { eager: true });
-    const configPath = '../../firebase-applet-config.json';
-    if (jsonProviders[configPath]) {
-        return (jsonProviders[configPath] as any).default;
-    }
-    
-    console.error("No Firebase config found. Please set VITE_FIREBASE_* environment variables.");
-    return {};
-};
-
-const firebaseConfig: any = getFirebaseConfig();
+// main.tsx shows the setup instructions instead of the app when no project is
+// configured, so this only runs once there is one.
+if (!firebaseConfig) throw new Error('No Firebase project is configured (see src/lib/firebaseConfig.ts).');
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
@@ -48,6 +22,24 @@ export const signInWithGoogle = async () => {
     return signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
   }
   return signInWithPopup(auth, googleProvider);
+};
+
+/**
+ * False when this copy is limited to certain accounts (access/allowlist in
+ * firestore.rules) and this one is not among them. The rules are what keep
+ * such an account out of the data; this only lets the app say so instead of
+ * showing permission errors. It reads the user's own settings doc, which
+ * every allowed account may read (missing or not), so it needs no rule of its
+ * own. Anything but a refusal (offline, say) counts as allowed: the rules
+ * still decide.
+ */
+export const hasAccess = async (uid: string): Promise<boolean> => {
+  try {
+    await getDoc(doc(db, 'userSettings', uid));
+    return true;
+  } catch (err) {
+    return (err as { code?: string } | null)?.code !== 'permission-denied';
+  }
 };
 
 // Clear the local set cache on the way out. 'cachedSets' holds the signed-in

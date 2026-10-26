@@ -66,6 +66,13 @@ exclusive.
   holds the signed-in user's real sets. `signOut` in `src/lib/firebase.ts`
   clears that key; keep it that way or the next person on the machine sees the
   previous user's collection pre-login.
+- **Sign-in can be limited to listed accounts.** `isSignedIn()` in
+  `firestore.rules` also requires `isAllowedUser()`: when the
+  `access/allowlist` doc exists (console-only, `emails` in lower case), other
+  Google accounts authenticate but reach no data. Every owner-only rule must
+  keep going through `isSignedIn()`/`isOwner()`, never `request.auth` alone.
+  `hasAccess` (`src/lib/firebase.ts`) probes the user's own `userSettings`
+  doc so the app can sign a refused account out with a message.
 - **Registry docs are world-readable** (`allow get: if true`) because the share
   link is the feature. `GiftRegistryDialog` therefore writes an explicit field
   whitelist, not `{...set}`. Never spread a whole `LegoSet` into a registry doc:
@@ -127,9 +134,21 @@ exclusive.
   `desktop/src/main.ts` puts it in `GEMINI_API_KEY` at start. A key in
   `desktop/.env` is moved there once. The web deployment still reads
   `GEMINI_API_KEY` from the environment.
-- **Desktop secrets** (`desktop/.env`, `desktop/oauth-client.json`) are
-  gitignored and must never be committed or packaged. A packaged app reads
-  them from `%APPDATA%\Brick Tracker`.
+- **The desktop installer belongs to nobody's Firebase project.** The web
+  app inside it is built with `npm run build:desktop` (`--mode desktop`),
+  which leaves out `VITE_FIREBASE_*` and `firebase-applet-config.json`; the
+  setup window (`desktop/src/setup.ts`, first start and tray "Settings...")
+  saves the user's project and website address as `app-config.json`
+  (`lib/appConfig.ts`), and the preload hands it to the page synchronously.
+  `package.mjs` refuses a web build that contains a Firebase API key or the
+  builder's project. Never bake a project or domain into the desktop build.
+  Releases go to GitHub Releases as `Brick-Tracker-win-x64.zip` (a fixed
+  asset name, so the intro page's `releases/latest/download/...` link keeps
+  working); upload the `desktop/release` zip only, never a bundle with
+  secrets.
+- **Desktop secrets and setup** (`desktop/.env`, `desktop/oauth-client.json`,
+  `desktop/app-config.json`) are gitignored and must never be committed or
+  packaged. A packaged app reads them from `%APPDATA%\Brick Tracker`.
 - **Never use 7-Zip.** It is blocked on the build machine. That rules out
   electron-builder's NSIS/7z/portable targets and Squirrel; packaging is
   `@electron/packager` + `Compress-Archive` + `install.cmd` (`npm run dist`).
@@ -154,10 +173,10 @@ exclusive.
   (`isIncompleteLotDescription`), because sellers mislabel partial sets as
   Complete.
 - **Links handed to other people go through `publicAppUrl`**
-  (`src/lib/appUrl.ts`): registry links and the Planned Sets API URL. It uses
-  `VITE_PUBLIC_APP_URL`, else the site's own origin, so self-hosted copies
-  link to themselves; the desktop app (localhost) needs the variable at build
-  time. Never hard-code a domain again.
+  (`src/lib/appUrl.ts`): registry links and the Planned Sets API URL. The
+  desktop app (localhost) uses the website address from its setup; the
+  website uses `VITE_PUBLIC_APP_URL`, else its own origin, so self-hosted
+  copies link to themselves. Never hard-code a domain again.
 - **Demo Mode is curated data** (`src/demoData.ts`): Brickset image URLs
   (LEGO's old image CDN is gone), dates relative to today, generated price
   history (`demoPriceHistory`), and the built-in `/registry/demo`
@@ -174,9 +193,12 @@ exclusive.
   in-repo `firestore.rules` is the readable source of record; edits to it have
   to be synced to the Firebase store to take effect. There are no rules tests
   yet; `security_spec.md` documents the intended invariants.
-- **Client Firebase config** resolves from `VITE_FIREBASE_*` env vars, falling
-  back to a gitignored `firebase-applet-config.json` (see
-  `firebase-applet-config.example.json` for the shape).
+- **Client Firebase config** resolves in `src/lib/firebaseConfig.ts`: the
+  desktop setup on desktop, else `VITE_FIREBASE_*` env vars, else a gitignored
+  `firebase-applet-config.json` (see `firebase-applet-config.example.json`
+  for the shape). With none, `main.tsx` shows a "not set up" screen, and a
+  website build stops (`checkFirebaseConfig` in `vite.config.ts`); CI opts
+  out with `ALLOW_MISSING_FIREBASE_CONFIG=1`, real deployments must not.
 
 ## Conventions
 

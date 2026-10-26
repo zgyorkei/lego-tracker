@@ -24,6 +24,29 @@ const pkg = JSON.parse(readFileSync(path.join(desktop, 'package.json'), 'utf8'))
 if (!existsSync(path.join(desktop, '..', 'dist', 'index.html'))) throw new Error('Build the web app first (npm run build in the repo root).');
 if (!existsSync(chromiumStage)) throw new Error('Stage Chromium first (node scripts/prepare-chromium.mjs).');
 
+// The installer must not carry the builder's Firebase project: every install
+// gets its own from the setup window (src/setup.ts). `npm run build:desktop`
+// leaves it out; a plain website build would bake it in.
+const firebaseValues = new Set();
+for (const f of [path.join(desktop, '..', 'firebase-applet-config.json'), path.join(desktop, 'app-config.json')]) {
+  if (!existsSync(f)) continue;
+  const cfg = JSON.parse(readFileSync(f, 'utf8'));
+  const fb = cfg.firebase ?? cfg;
+  for (const k of ['apiKey', 'projectId', 'appId']) if (typeof fb[k] === 'string' && fb[k]) firebaseValues.add(fb[k]);
+}
+for (const k of ['VITE_FIREBASE_API_KEY', 'VITE_FIREBASE_PROJECT_ID', 'VITE_FIREBASE_APP_ID']) if (process.env[k]) firebaseValues.add(process.env[k]);
+const webFiles = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? webFiles(path.join(dir, e.name)) : [path.join(dir, e.name)]));
+const baked = webFiles(path.join(desktop, '..', 'dist')).filter((f) => {
+  const text = readFileSync(f).toString('latin1');
+  return /AIza[0-9A-Za-z_-]{35}/.test(text) || [...firebaseValues].some((v) => text.includes(v));
+});
+if (baked.length) {
+  throw new Error(
+    `The web build contains a Firebase project (${baked.map((f) => path.basename(f)).join(', ')}). ` +
+      'Build it with npm run build:desktop in the repo root (npm run dist does).'
+  );
+}
+
 // extraResource keeps each folder's name, so the web build is staged as "web".
 rmSync(webStage, { recursive: true, force: true });
 cpSync(path.join(desktop, '..', 'dist'), webStage, { recursive: true });
@@ -51,10 +74,12 @@ const [appDir] = await packager({
   asar: { unpackDir: '{node_modules/playwright,node_modules/playwright-core}', unpack: '**/*.node' },
   extraResource: [webStage, chromiumStage],
   // Only dist/, package.json and production node_modules belong in the app.
-  // Secrets are listed explicitly so they can never be swept in.
+  // Secrets and the dev setup are listed explicitly so they can never be
+  // swept in.
   ignore: [
     /^\/\.env/,
     /^\/oauth-client\.json$/,
+    /^\/app-config\.json$/,
     /^\/(src|scripts|build-resources|release)(\/|$)/,
     /^\/(tsconfig\.json|build\.mjs|run\.mjs|README\.md)$/,
     /\.map$/,
@@ -65,7 +90,7 @@ const [appDir] = await packager({
 // Belt and braces: fail the build if a secret reached the package anyway.
 const asarPath = path.join(appDir, 'resources', 'app.asar');
 const packaged = listPackage(asarPath, { isPack: false });
-const leaked = packaged.filter((f) => /[\\/](\.env|oauth-client\.json)$/.test(f));
+const leaked = packaged.filter((f) => /[\\/](\.env|oauth-client\.json|app-config\.json)$/.test(f));
 const secretValues = [];
 for (const f of ['.env', 'oauth-client.json']) {
   const p = path.join(desktop, f);

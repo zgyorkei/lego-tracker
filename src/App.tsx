@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useSets } from './hooks/useSets';
 import { usePlannedList } from './hooks/usePlannedList';
-import { signInWithGoogle, signOut } from './lib/firebase';
+import { hasAccess, signInWithGoogle, signOut } from './lib/firebase';
 import { formatPrice as formatPriceUtil } from './lib/currency';
 import { ClassicSpaceLogo } from './components/ClassicSpaceLogo';
 import { SetCard } from './components/SetCard';
@@ -139,6 +139,21 @@ export default function App() {
       );
     }
   };
+  // An account that is not on this copy's allowlist (firestore.rules) is
+  // signed straight out again, with the reason on the sign-in screen. Runs for
+  // a fresh sign-in and for a session remembered from before the list existed.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    void hasAccess(user.uid).then(async (ok) => {
+      if (ok || cancelled) return;
+      await signOut();
+      setSignInError(`This Brick Tracker is private: ${user.email ?? 'this Google account'} cannot sign in here.`);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
   const [displayCurrency, setDisplayCurrency] = useState<string>(() => readStoredString('legoDisplayCurrency', 'HUF'));
   const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null);
 

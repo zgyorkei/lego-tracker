@@ -6,6 +6,8 @@ import { adoptGeminiKey, storedGeminiKey } from 'shop-teacher/gemini';
 import { startLocalServer } from './localServer';
 import { PlaywrightScraper } from './scraper/engine';
 import { googleSignIn, loadOAuthClient } from './oauth';
+import { readAppConfig, runSetup } from './setup';
+import type { DesktopAppConfig } from '../../lib/appConfig';
 
 // Express renders stack traces on its error pages outside production.
 process.env.NODE_ENV ??= 'production';
@@ -41,12 +43,24 @@ if (sharedGeminiKey) process.env.GEMINI_API_KEY = sharedGeminiKey;
 // The packaged web app sits in resources/web; dev runs use the repo build.
 const webDir = app.isPackaged ? path.join(process.resourcesPath, 'web') : path.resolve(__dirname, '../../dist');
 
+// Which Firebase project and website this install uses. Not built in, so the
+// installer works for anybody: the setup window asks on first start and saves
+// it here (lib/appConfig.ts), next to the sign-in client file.
+const setupFiles = { configFile: secretFile('app-config.json'), oauthFile: secretFile('oauth-client.json') };
+let appConfig: DesktopAppConfig | null = null;
+
 let win: BrowserWindow | null = null;
+let setupWin: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
 let scraper: PlaywrightScraper | null = null;
 
 function showWindow() {
+  if (setupWin) {
+    setupWin.show();
+    setupWin.focus();
+    return;
+  }
   if (!win) return;
   if (win.isMinimized()) win.restore();
   win.show();
@@ -98,6 +112,7 @@ function createTray() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'Open Brick Tracker', click: showWindow },
+      { label: 'Settings...', click: () => void openSettings() },
       // Lets the user stop (or restore) the start-with-Windows entry, which
       // is also how the 4AM refresh gets its chance to run.
       ...(app.isPackaged
@@ -124,16 +139,48 @@ function createTray() {
   tray.on('click', showWindow);
 }
 
+const setupIcon = () => path.join(__dirname, 'icon.png');
+
+/** The tray's "Settings...": the same window as the first-run setup; saving restarts the app. */
+async function openSettings() {
+  if (setupWin) return showWindow();
+  const saved = await runSetup(setupFiles, { current: appConfig, icon: setupIcon(), onWindow: (w) => (setupWin = w) });
+  if (!saved) return;
+  app.relaunch({ args: process.argv.slice(1).filter((a) => a !== '--install' && a !== '--hidden') });
+  quitting = true;
+  app.quit();
+}
+
 async function start() {
+  const stored = readAppConfig(setupFiles.configFile);
+  appConfig =
+    stored.config ??
+    (await runSetup(setupFiles, { current: null, problem: stored.problem, icon: setupIcon(), onWindow: (w) => (setupWin = w) }));
+  if (!appConfig) {
+    // Closed without saving: there is nothing to connect to yet.
+    quitting = true;
+    app.quit();
+    return;
+  }
+  // The planned-sets route reads Firestore over REST and finds the project
+  // the same way as on the website (getFirestoreTarget in lib/server-api.ts).
+  process.env.VITE_FIREBASE_PROJECT_ID = appConfig.firebase.projectId;
+  process.env.VITE_FIREBASE_DATABASE_ID = appConfig.firebase.firestoreDatabaseId;
+
+  // Read synchronously by the preload script as the page starts.
+  ipcMain.on('config:get', (event) => {
+    event.returnValue = event.senderFrame?.url.startsWith(APP_ORIGIN) ? appConfig : null;
+  });
+
   scraper = new PlaywrightScraper(path.join(app.getPath('userData'), 'scraper-profile'));
   await startLocalServer({ port: PORT, distDir: webDir, scraper });
 
   ipcMain.handle('auth:google', (event) => {
     // Only the app's own page may start a sign-in.
     if (!event.senderFrame?.url.startsWith(APP_ORIGIN)) throw new Error('Unexpected sender');
-    const clientFile = secretFile('oauth-client.json');
+    const clientFile = setupFiles.oauthFile;
     if (!existsSync(clientFile)) {
-      throw new Error(`Sign-in is not set up yet: place the Google OAuth client file at ${clientFile}`);
+      throw new Error('Sign-in is not set up yet: choose the Google sign-in client in the tray menu, Settings...');
     }
     return googleSignIn(loadOAuthClient(clientFile));
   });

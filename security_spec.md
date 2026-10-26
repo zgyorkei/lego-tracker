@@ -14,6 +14,8 @@
 8. `desktopStatus/{uid}` (the desktop app's heartbeat) is readable and writable only by that user, with only `lastSeenAt` and an optional `appVersion`.
 9. `refreshRequests/{id}` (refreshes the website hands to the desktop app) are readable, listable, writable and deletable only by their owner. They are created as `pending` only, `userId` is pinned on update, and the shape (`kind`, at most 500 `setIds`, `status`, timestamps, a short `error`) is validated. They carry set ids only, never set data.
 
+10. When `access/allowlist` exists, only signed-in accounts with a verified email in its `emails` list (lower case) pass `isSignedIn()`, and so every owner-only rule; any other Google account can still authenticate but reads and writes nothing. Without the doc, any account may use the app for its own data. No client can read or write `access/*` (default deny); it is edited in the Firebase console only. The public reads (registries, reservations, planned lists) do not depend on it.
+
 ## The "Dirty Dozen" Payloads (Rejected Cases)
 1. Creating a set for another user (`userId` mismatch).
 2. Updating a set's `userId` to steal it.
@@ -27,6 +29,8 @@
 10. Spoofing `orderedDate` as a future date from the client (should use server timestamp or be after createdAt).
 11. Setting priority to an invalid value.
 12. Attempting to bypass rules by not providing `userId`.
+13. With an allowlist in place, an account not on it (or with an unverified email) reading or writing its own sets, settings or requests.
+14. Any client reading or writing `access/allowlist`, including an account on the list.
 
 ## Tests
 (To be implemented in `firestore.rules.test.ts` if needed, but here I'll focus on the rules first).

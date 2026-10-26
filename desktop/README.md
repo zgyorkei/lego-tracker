@@ -1,7 +1,7 @@
 # Brick Tracker desktop app
 
-An Electron shell around the same web app. It behaves the same as
-https://lego.gykovacszoltan.hu except for two things:
+An Electron shell around the same web app. It behaves the same as the
+website except for two things:
 
 - **Prices are read with a local browser (Playwright), not Gemini.** No AI
   tokens are spent on refreshes.
@@ -14,21 +14,28 @@ keeps running when its window is closed. Use the tray menu to quit.
 
 ## Setup
 
-1. Build the web app from the repo root: `npm run build`. It needs the
-   Firebase client config (`VITE_FIREBASE_*` env vars or
-   `firebase-applet-config.json`).
-2. Teaching sources needs a Gemini key. It is shared with your other apps
-   (the `shop-teacher` package keeps it in Windows Credential Manager): if
-   BrickBudget already has one, nothing to do; otherwise run
-   `npx shop-teacher key set` here. A `GEMINI_API_KEY` in `desktop/.env`
-   also works and is moved to the shared store at the next start.
-3. Put the Google OAuth client for the desktop app at
-   `desktop/oauth-client.json`. This is the JSON downloaded from Google Cloud
-   console, Credentials, OAuth client of type "Desktop app", in the Firebase
-   project. It is gitignored.
-4. `cd desktop && npm install`. Playwright 1.64.1 is pinned exactly; it uses
+1. Build the web app from the repo root: `npm run build:desktop`. A desktop
+   build carries **no Firebase project**; the app gets one from its setup.
+2. `cd desktop && npm install`. Playwright 1.64.1 is pinned exactly; it uses
    the Chromium build Playwright installs (`npx playwright install chromium`).
-5. `npm start` builds `desktop/dist/` and launches the app.
+3. `npm start` builds `desktop/dist/` and launches the app. The first start
+   opens the setup window (`src/setup.ts`), which asks for:
+   - the Firebase web config (the console's `firebaseConfig` snippet, or
+     the JSON of `firebase-applet-config.json`) and the database ID;
+   - the website's address, for gift-registry and Planned Sets links (the app
+     itself is on localhost, which nobody else can open);
+   - the Google OAuth client for the desktop app: the JSON downloaded from
+     Google Cloud console, Credentials, OAuth client of type "Desktop app", in
+     the Firebase project;
+   - optionally a Gemini key, for teaching sources. It is shared with your
+     other apps (the `shop-teacher` package keeps it in Windows Credential
+     Manager), so if BrickBudget already has one there is nothing to enter.
+     A `GEMINI_API_KEY` in `desktop/.env` also works and is moved to the
+     shared store at the next start.
+
+   Dev runs save these in `desktop/app-config.json` and
+   `desktop/oauth-client.json` (both gitignored). The tray's **Settings...**
+   reopens the window; saving restarts the app.
 
 `npm start` works from VS Code terminals too: VS Code exports
 `ELECTRON_RUN_AS_NODE=1`, which `run.mjs` removes before starting Electron.
@@ -43,7 +50,10 @@ keeps running when its window is closed. Use the tray menu to quit.
   and Vercel use. Supplying a scraper switches the price routes from Gemini to
   Playwright; nothing else differs.
 - `src/preload.ts` exposes `window.legoTrackerDesktop`, which
-  `src/lib/platform.ts` uses to detect the desktop build.
+  `src/lib/platform.ts` uses to detect the desktop build. It also carries the
+  saved setup (`lib/appConfig.ts`), read synchronously so
+  `src/lib/firebaseConfig.ts` can start Firebase on the user's own project as
+  the page loads.
 - Sign-in (`src/oauth.ts`): Google blocks sign-in pages inside Electron, so
   the app opens Google in your normal browser and receives the result on a
   one-off loopback port (PKCE). The Google ID token is exchanged for a Firebase
@@ -85,9 +95,8 @@ In the desktop app, open Price Sources, add the shop with its search URL
 Changing a source's URL to another host drops its recipe. Teaching takes one
 to two minutes and a couple of Gemini calls; daily refreshes use none.
 
-The Gemini key lives only in the gitignored `desktop/.env` (see
-`.env.example`) and is loaded by the main process; the page never sees it. A
-packaged installer will contain it, so keep installers private.
+The Gemini key is read by the main process only (from Windows Credential
+Manager, see Setup); the page never sees it, and no build contains it.
 
 Matching rules (`rankCards`):
 
@@ -145,7 +154,8 @@ cd desktop
 npm run dist
 ```
 
-This builds the desktop bundle and the web app, stages Playwright's Chromium
+This builds the desktop bundle and the web app (`build:desktop`, so without
+a Firebase project), stages Playwright's Chromium
 (copied from the local Playwright cache, or downloaded), and packages with
 `@electron/packager` into `release/`:
 
@@ -161,14 +171,20 @@ which adds a Start menu shortcut and the start-with-Windows entry. The tray
 menu's "Start with Windows" toggle turns that entry off or on again. To
 update, quit from the tray and run the new `install.cmd`.
 
-**Secrets are never packaged**, and `package.mjs` fails the build if either
-file or the key value appears in `app.asar`. The installed app reads them from
-its data folder instead:
+**The installer is not tied to anybody's project, and secrets are never
+packaged.** `package.mjs` fails the build if the web build contains a
+Firebase API key or the builder's project, or if a secret file or key value
+appears in `app.asar`. So one installer can be given to anybody: each install
+runs the setup window on first start and keeps the result in its data folder:
 
 ```
+%APPDATA%\Brick Tracker\app-config.json     (Firebase project, website address)
 %APPDATA%\Brick Tracker\oauth-client.json   (sign-in)
 %APPDATA%\Brick Tracker\.env                (optional: GEMINI_API_KEY, moved to the shared store at start)
 ```
+
+Moving to another PC: install there and run the setup again, or copy those
+files into the same folder first.
 
 The Gemini key itself is in Windows Credential Manager (service
 `shop-teacher`), shared with BrickBudget and BLOK.AI.

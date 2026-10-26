@@ -12,6 +12,8 @@ firebase-applet-config.json
 # pattern changes.
 desktop/oauth-client.json
 desktop/.env
+# The dev run's setup (Firebase project, website address); see lib/appConfig.ts.
+desktop/app-config.json
 desktop/release/
 desktop/build-resources/
 firebase-blueprint.json

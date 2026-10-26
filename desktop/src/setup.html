@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self'" />
+    <title>Brick Tracker setup</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 system-ui, 'Segoe UI', sans-serif; background: #ffd500; color: #111; }
+      main { max-width: 600px; margin: 24px auto; padding: 24px; background: #fff; border: 3px solid #000; box-shadow: 6px 6px 0 #000; }
+      h1 { margin: 0 0 4px; font-size: 24px; font-weight: 900; }
+      .intro { margin: 0 0 20px; color: #444; }
+      label { display: block; margin-top: 18px; font-weight: 800; }
+      .hint { margin: 2px 0 6px; font-size: 13px; color: #555; }
+      textarea, input { width: 100%; padding: 8px 10px; border: 2px solid #000; font: 13px/1.4 Consolas, monospace; }
+      textarea { height: 150px; resize: vertical; }
+      textarea:focus, input:focus, button:focus-visible { outline: 3px solid #e3000b; outline-offset: 1px; }
+      .row { display: flex; gap: 10px; align-items: center; }
+      .row span { font-size: 13px; overflow-wrap: anywhere; }
+      button { padding: 8px 14px; border: 2px solid #000; background: #fff; font: inherit; font-weight: 800; cursor: pointer; box-shadow: 3px 3px 0 #000; }
+      button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #000; }
+      button.primary { background: #e3000b; color: #fff; }
+      .actions { margin-top: 24px; display: flex; justify-content: flex-end; }
+      .error { margin-top: 16px; padding: 10px 12px; border: 2px solid #e3000b; background: #fff0f0; font-weight: 700; }
+      .error:empty { display: none; }
+      .ok { color: #0a7a2f; font-weight: 700; }
+      code { background: #f2f2f2; padding: 0 3px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Brick Tracker setup</h1>
+      <p class="intro" id="intro">Connect this app to your own Brick Tracker: the Firebase project your website uses, and its address. The setup guide on the intro page shows where each value comes from.</p>
+      <div class="error" id="problem" role="alert"></div>
+      <form id="form">
+        <label for="firebase">Firebase config</label>
+        <p class="hint">Firebase console, Project settings, Your apps, your web app: paste the <code>firebaseConfig</code> snippet, or the JSON of <code>firebase-applet-config.json</code>.</p>
+        <textarea id="firebase" spellcheck="false" required></textarea>
+
+        <label for="database">Firestore database ID</label>
+        <p class="hint">Leave empty for <code>(default)</code>.</p>
+        <input id="database" spellcheck="false" placeholder="(default)" />
+
+        <label for="url">Website address</label>
+        <p class="hint">Where your Brick Tracker website runs. Gift-registry and Planned Sets links point there.</p>
+        <input id="url" type="url" spellcheck="false" placeholder="https://bricks.example.com" required />
+
+        <label>Google sign-in client</label>
+        <p class="hint">The "Desktop app" OAuth client JSON downloaded from the Google Cloud console.</p>
+        <div class="row"><button type="button" id="pick">Choose file...</button><span id="client"></span></div>
+
+        <label for="gemini">Gemini API key (optional)</label>
+        <p class="hint" id="geminiHint">Only needed to teach new price sources. Saved in Windows Credential Manager, shared with BrickBudget.</p>
+        <input id="gemini" type="password" spellcheck="false" autocomplete="off" />
+
+        <div class="error" id="error" role="alert"></div>
+        <div class="actions"><button type="submit" class="primary" id="save">Save and start</button></div>
+      </form>
+    </main>
+    <script src="setupPage.js"></script>
+  </body>
+</html>

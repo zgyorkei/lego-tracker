@@ -33,5 +33,9 @@ jobs:
       # after a one-time `npm run format` pass formats the legacy files, so this
       # workflow doesn't fail on pre-existing formatting.
 
+      # CI has no Firebase project; the build only has to compile. Real
+      # deployments must not set this (vite.config.ts).
       - name: Build
         run: npm run build
+        env:
+          ALLOW_MISSING_FIREBASE_CONFIG: '1'

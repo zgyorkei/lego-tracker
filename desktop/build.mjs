@@ -3,7 +3,7 @@
 // (express, axios, cheerio, ...) from the root node_modules, so the desktop
 // package only needs Electron, Playwright and esbuild of its own.
 import { build } from 'esbuild';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { brickPng } from './icon.mjs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -30,6 +30,18 @@ const common = {
 await build({ ...common, entryPoints: [path.join(here, 'src/main.ts')], outfile: path.join(out, 'main.cjs') });
 await build({ ...common, entryPoints: [path.join(here, 'src/preload.ts')], outfile: path.join(out, 'preload.cjs') });
 
+// The setup window (src/setup.ts): its preload, its page script and the page.
+await build({ ...common, entryPoints: [path.join(here, 'src/setupPreload.ts')], outfile: path.join(out, 'setupPreload.cjs') });
+await build({
+  ...common,
+  platform: 'browser',
+  format: 'iife',
+  target: 'chrome130',
+  entryPoints: [path.join(here, 'src/setupPage.ts')],
+  outfile: path.join(out, 'setupPage.js'),
+});
+copyFileSync(path.join(here, 'src/setup.html'), path.join(out, 'setup.html'));
+
 // --- Icons: the shared LEGO-yellow brick (icon.mjs). ------------------------
 writeFileSync(path.join(out, 'icon.png'), brickPng(64));
 // Windows .ico for the packaged exe: a single 256x256 PNG wrapped in an ICO
@@ -47,4 +59,4 @@ ico.writeUInt32LE(png256.length, 14);
 ico.writeUInt32LE(22, 18); // image data offset
 writeFileSync(path.join(out, 'icon.ico'), Buffer.concat([ico, png256]));
 
-console.log('desktop build: dist/main.cjs, dist/preload.cjs, dist/icon.png, dist/icon.ico');
+console.log('desktop build: dist/main.cjs, dist/preload.cjs, dist/setup*, dist/icon.png, dist/icon.ico');

@@ -21,13 +21,11 @@ if errorlevel 8 (
   exit /b 1
 )
 
-if not exist "%APPDATA%\Brick Tracker\oauth-client.json" (
+if not exist "%APPDATA%\Brick Tracker\app-config.json" (
   echo.
-  echo Note: sign-in needs the Google OAuth client file at
-  echo   "%APPDATA%\Brick Tracker\oauth-client.json"
-  echo and teaching new price sources needs a Gemini key, shared with
-  echo BrickBudget, or GEMINI_API_KEY in "%APPDATA%\Brick Tracker\.env".
-  echo See desktop\README.md in the repository.
+  echo First start: a setup window asks for your Firebase config, your
+  echo website's address and the Google sign-in client file. See the setup
+  echo guide on the intro page for where each one comes from.
 )
 
 rem Terminals inside VS Code export ELECTRON_RUN_AS_NODE=1, which would make
