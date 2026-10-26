@@ -1,4 +1,5 @@
 import { useEffect, useRef, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 interface ModalProps {
   onClose: () => void;
@@ -83,7 +84,12 @@ export function Modal({
     };
   }, []);
 
-  return (
+  // Portalled to <body>. A position:fixed element is placed relative to the
+  // nearest transformed ancestor rather than the screen, and SetCard is a
+  // motion `layout` element that carries a transform while it animates: the
+  // purchase dialog used to appear centred on the card, then jump to the
+  // centre of the screen once the card's animation settled.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 overflow-y-auto"
       onMouseDown={closeOnBackdrop ? (e) => {
@@ -102,6 +108,7 @@ export function Modal({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

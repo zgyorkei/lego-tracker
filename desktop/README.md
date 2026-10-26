@@ -106,6 +106,22 @@ npx tsx desktop/scripts/try-scrape.ts <profileDir> amazon 31393 11383
 
 Set `SCRAPER_DEBUG=1` to print the cards the engine read.
 
+## Refreshing for the website
+
+While the desktop app runs (signed in, even just in the tray), it is also the
+website's scraper. It writes a heartbeat to Firestore every 2 minutes; when
+you press "Update all" or a card's refresh on the website, the website hands
+the job to the desktop app instead of asking Gemini, and the desktop runs it
+with its normal refresh. The results reach the website through the live set
+updates, from any device, including your phone.
+
+The website uses Gemini as before when the desktop app has not been seen for
+5 minutes, does not pick the request up within 45 seconds, or reports a
+failure. Requests are claimed and cancelled in Firestore transactions, so a
+request is never run by both. Logic: `src/hooks/useDesktopWorker.ts` and
+`src/lib/desktopWorker.ts`; rules: `desktopStatus` and `refreshRequests` in
+`firestore.rules`.
+
 ## Set details without AI
 
 Looking up a set on desktop reads LEGO.com in the local browser first: the

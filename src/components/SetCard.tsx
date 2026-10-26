@@ -7,6 +7,7 @@ import { formatPrice as formatPriceUtil, convertFromHuf } from '../lib/currency'
 import { Modal } from './Modal';
 import { isDesktopApp } from '../lib/platform';
 import { identityFromQuotes, mergeLookupName } from '../lib/setIdentity';
+import type { DelegateOutcome } from '../lib/desktopWorker';
 
 // Lazy so recharts (~350 kB with its d3 deps) is only fetched when a user
 // actually opens the price-history panel.
@@ -25,9 +26,15 @@ interface SetCardProps {
   exchangeRates: Record<string, number> | null;
   readOnly?: boolean;
   onStatusUpdate?: (status: {setId: string, message: string} | null) => void;
+  /**
+   * Website only: hands a refresh to the desktop app (useDesktopWorker).
+   * "done" means it did the work and the results arrive through the sets
+   * subscription; anything else means fall back to the web (Gemini) route.
+   */
+  delegateRefresh?: (kind: 'details' | 'prices', setIds: string[]) => Promise<DelegateOutcome>;
 }
 
-const SetCardComponent: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPriceHistory, onAddPriceHistory, priceSources = [], displayCurrency, exchangeRates, readOnly = false, onStatusUpdate }) => {
+const SetCardComponent: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, getPriceHistory, onAddPriceHistory, priceSources = [], displayCurrency, exchangeRates, readOnly = false, onStatusUpdate, delegateRefresh }) => {
   const [history, setHistory] = useState<PriceHistory[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -205,9 +212,21 @@ const SetCardComponent: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, get
        });
     }
 
+    // Website: the desktop app looks the set up with its own browser when it
+    // runs; the details arrive through the sets subscription.
+    if (delegateRefresh) {
+      onStatusUpdate?.({ setId: set.setNumber, message: 'Looking up the set in the desktop app' });
+      if ((await delegateRefresh('details', [set.id])) === 'done') {
+        if (updateInfo) setLoadingLegoInfo(false);
+        if (updatePrice) setLoadingLegoPrice(false);
+        onStatusUpdate?.(null);
+        return;
+      }
+    }
+
     try {
       const shouldSkipImage = !updateInfo;
-      
+
       const res = await fetch(`/api/lego/${set.setNumber}?skipImage=${shouldSkipImage}`);
       if (res.status === 429) {
         throw new Error('Rate limit exceeded (429)');
@@ -285,9 +304,21 @@ const SetCardComponent: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, get
        });
     }
 
+    // Website: the desktop app reads the shops with its own browser when it
+    // runs (no AI); prices and history arrive through the sets subscription.
+    if (delegateRefresh) {
+      onStatusUpdate?.({ setId: set.setNumber, message: 'Reading market prices in the desktop app' });
+      if ((await delegateRefresh('prices', [set.id])) === 'done') {
+        setLoadingMarketPrices(false);
+        onStatusUpdate?.(null);
+        return;
+      }
+      onStatusUpdate?.({ setId: set.setNumber, message: 'Fetching Market Price using Gemini' });
+    }
+
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      const res = await fetch(`/api/prices/${set.setNumber}`, { 
+      const res = await fetch(`/api/prices/${set.setNumber}`, {
          method: 'POST', 
          headers, 
          body: JSON.stringify({ sources: priceSources }) 

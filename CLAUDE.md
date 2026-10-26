@@ -73,7 +73,10 @@ exclusive.
 - **Planned lists (`plannedLists/{token}`) are world-readable too**, and are
   how `GET /api/planned-sets/:token` gets data without an Admin SDK: the
   client (`usePlannedList`) writes a snapshot via `buildPlannedListSets` (an
-  explicit whitelist, same rule as registries), and the server reads it
+  explicit whitelist, same rule as registries), plus the purchases via
+  `buildPlannedListPurchases` in a separate write (for BrickBudget to book as
+  expenses; what was paid is deliberately public to the link holder), and the
+  server reads it
   unauthenticated over the Firestore REST API. Sync is driven only by local
   payload changes, never by the list doc's own snapshot, or two devices with
   different price sources would rewrite each other in a loop. Keep the hook's
@@ -83,6 +86,14 @@ exclusive.
   first-render cache and the one-time migration source. Rules validate the list
   as a container, so adding a source never needs a rules change; keep the
   15-entry cap in step with `MAX_SOURCES`.
+- **The desktop app is the website's scraper when it runs.** The desktop
+  writes a heartbeat (`desktopStatus/{uid}`); the website hands "Update all"
+  and card refreshes to it as `refreshRequests` docs, and the desktop claims
+  and runs them with the normal refresh (`useDesktopWorker`,
+  `src/lib/desktopWorker.ts`). Claim and cancel are transactions, so only one
+  side acts on a request. The website falls back to Gemini when the desktop
+  is offline, does not claim within 45 s, or fails. `handleBatchRefresh`
+  takes explicit `targets`, so keep it free of filter assumptions.
 - **Automatic refresh is desktop-only**, daily at 04:00 local. The scheduler
   in `App.tsx` is gated on `isDesktopApp` (`src/lib/platform.ts`, set by the
   Electron preload). The web app refreshes only when asked, so it does not
@@ -154,6 +165,9 @@ exclusive.
   the `useSets` CRUD functions are `useCallback`'d and `onDelete` is hoisted.
   An inline arrow prop silently defeats the memo.
 - Use the `Modal` component (`src/components/Modal.tsx`) for dialogs. It
-  supplies `role="dialog"`, focus trap, focus restore, and Escape handling.
+  supplies `role="dialog"`, focus trap, focus restore, and Escape handling,
+  and portals to `<body>`: rendered inside a transformed ancestor (SetCard is
+  a motion `layout` element) a fixed overlay is positioned relative to that
+  ancestor instead of the screen.
 - Surface errors in the UI rather than `alert()`. `useSets` exposes an `error`
   field; component-level failures set local error state.

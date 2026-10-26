@@ -58,6 +58,47 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    // Desktop app heartbeat. The desktop app writes lastSeenAt every few
+    // minutes while it runs; the website reads it to decide whether to hand a
+    // refresh to the desktop (local browser, no AI) or use Gemini. Owner-only.
+    match /desktopStatus/{userId} {
+      function isValidStatus(data) {
+        return data.keys().hasOnly(['lastSeenAt', 'appVersion']) &&
+               data.lastSeenAt is string && data.lastSeenAt.size() <= 40 &&
+               (!('appVersion' in data) || (data.appVersion is string && data.appVersion.size() <= 40));
+      }
+
+      allow get: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidStatus(incoming());
+      allow delete: if isOwner(userId);
+    }
+
+    // Refresh requests the website hands to the desktop app. The website
+    // creates one as "pending"; the desktop app claims it ("running") and
+    // finishes it ("done" / "failed"); a website that stops waiting cancels it.
+    // Claim and cancel run in transactions, so only one side ever acts on a
+    // request. Owner-only; userId is pinned after creation.
+    match /refreshRequests/{requestId} {
+      function isValidRequest(data) {
+        return data.keys().hasOnly(['userId', 'kind', 'setIds', 'status', 'requestedAt', 'claimedAt', 'finishedAt', 'error']) &&
+               data.kind in ['all', 'details', 'prices'] &&
+               data.setIds is list && data.setIds.size() <= 500 &&
+               data.status in ['pending', 'running', 'done', 'failed', 'cancelled'] &&
+               data.requestedAt is string && data.requestedAt.size() <= 40 &&
+               (!('claimedAt' in data) || (data.claimedAt is string && data.claimedAt.size() <= 40)) &&
+               (!('finishedAt' in data) || (data.finishedAt is string && data.finishedAt.size() <= 40)) &&
+               (!('error' in data) || (data.error is string && data.error.size() <= 300));
+      }
+
+      allow get, list: if isOwner(resource.data.userId);
+      allow create: if isOwner(incoming().userId) && isValidId(requestId) &&
+        isValidRequest(incoming()) && incoming().status == 'pending';
+      allow update: if isOwner(existing().userId) &&
+        incoming().userId == existing().userId &&
+        isValidRequest(incoming());
+      allow delete: if isOwner(existing().userId);
+    }
+
     // Sets collection
     match /sets/{setId} {
       function isValidSet(data) {

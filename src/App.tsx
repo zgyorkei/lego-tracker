@@ -27,6 +27,7 @@ import { PlannedListDialog } from './components/PlannedListDialog';
 import { TeachSourcePanel } from './components/TeachSourcePanel';
 import { SourceIdInput } from './components/SourceIdInput';
 import { identityFromQuotes, mergeLookupName } from './lib/setIdentity';
+import { useDesktopWorker, type RunRefresh } from './hooks/useDesktopWorker';
 import { withUrlTemplate } from './lib/priceSources';
 import { Modal } from './components/Modal';
 import { Status, Priority, DEFAULT_PRICE_SOURCES, PERMANENT_SOURCE_IDS, LegoSet, PriceHistory, SUPPORTED_CURRENCIES, isSupportedCurrency, isPriceQuote } from './types';
@@ -226,26 +227,78 @@ export default function App() {
     return result;
   }, [activeSets, filter, sortBy]);
 
-  const handleBatchRefresh = async (skipLegoInfo = false) => {
-    if (isBatchRefreshing || filteredSets.length === 0) return;
+  // Mirrors isBatchRefreshing for code that must not wait for a re-render: the
+  // desktop worker checks it before starting a request, and a second refresh
+  // must not start in the gap before the state update lands.
+  const isBatchRefreshingRef = useRef(false);
+  const setsRef = useRef(sets);
+  useEffect(() => {
+    setsRef.current = sets;
+  });
+
+  // Desktop app: runs a refresh the website handed over (useDesktopWorker).
+  // Waits for a refresh already under way (the 4AM run, or one started here).
+  const runDesktopRequest = useCallback<RunRefresh>(async (kind, setIds) => {
+    const deadline = Date.now() + 30 * 60 * 1000;
+    while (isBatchRefreshingRef.current) {
+      if (Date.now() > deadline) throw new Error('The desktop app was busy with another refresh');
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+    const targets = setsRef.current.filter(s => setIds.includes(s.id));
+    if (targets.length === 0) return;
+    const ran = await batchRefreshRef.current(kind === 'prices', { targets, skipPrices: kind === 'details' });
+    if (!ran) throw new Error('Another refresh started first');
+  }, []);
+
+  // The desktop app as the website's scraper: on the website `delegate` hands a
+  // refresh to it, in the desktop app this works through those requests.
+  const { desktopOnline, delegate } = useDesktopWorker(user, isDemoMode, isDesktopApp ? runDesktopRequest : undefined);
+
+  /**
+   * Refreshes set details and/or market prices. `targets` defaults to the sets
+   * in view; `skipPrices` stops after the details (a card's info refresh run
+   * by the desktop for the website). Resolves false if another refresh was
+   * already running.
+   */
+  const handleBatchRefresh = async (
+    skipLegoInfo = false,
+    opts: { targets?: LegoSet[]; skipPrices?: boolean } = {}
+  ): Promise<boolean> => {
+    const targets = opts.targets ?? filteredSets;
+    if (isBatchRefreshingRef.current || targets.length === 0) return false;
+    isBatchRefreshingRef.current = true;
     setIsBatchRefreshing(true);
 
+    try {
+    // Website: hand the whole job to the desktop app when it is running. It
+    // reads the shops in its own browser, so no AI is spent, and the results
+    // arrive through the live sets subscription. Gemini only if it can't.
+    if (!opts.targets && !isDesktopApp && desktopOnline) {
+      setActiveOperation({
+        setId: 'Bulk',
+        message: `Refreshing ${targets.length} sets in the desktop app (local browser, no AI). This can take a while...`,
+      });
+      const outcome = await delegate(skipLegoInfo ? 'prices' : 'all', targets.map(s => s.id));
+      if (outcome === 'done') return true;
+      if (outcome === 'failed') setActionError('The desktop app could not finish the refresh, so Gemini is used instead.');
+    }
+
     const headers = {};
-    // What this run has already written per set. filteredSets is a snapshot
-    // from before the run, so without this a name the details step just found
+    // What this run has already written per set. targets is a snapshot from
+    // before the run, so without this a name the details step just found
     // would still look like a placeholder when the price step fills gaps.
     const resolved = new Map<string, Partial<LegoSet>>();
 
     if (!skipLegoInfo) {
-      setBatchProgress({ current: 0, total: filteredSets.length });
+      setBatchProgress({ current: 0, total: targets.length });
       // Track which sets already have an image (pre-existing or fetched in the
       // loop below) so the remaining gaps can be filled with a single
       // /api/batch-images call afterwards.
       const imagesResolved = new Set<string>();
-      filteredSets.forEach(s => { if (s.productImage) imagesResolved.add(s.setNumber); });
-      for (let i = 0; i < filteredSets.length; i++) {
-          setBatchProgress({ current: i + 1, total: filteredSets.length });
-          const set = filteredSets[i];
+      targets.forEach(s => { if (s.productImage) imagesResolved.add(s.setNumber); });
+      for (let i = 0; i < targets.length; i++) {
+          setBatchProgress({ current: i + 1, total: targets.length });
+          const set = targets[i];
           
           if (i > 0) {
               await new Promise(resolve => setTimeout(resolve, 500));
@@ -305,7 +358,7 @@ export default function App() {
       // Gap-fill: any sets still without an image get one via a single batched
       // call (cheerio-first; misses go to Gemini on the web, the local browser
       // on desktop).
-      const setsMissingImage = filteredSets.filter(s => !imagesResolved.has(s.setNumber));
+      const setsMissingImage = targets.filter(s => !imagesResolved.has(s.setNumber));
       if (setsMissingImage.length > 0) {
           try {
               setActiveOperation({ setId: 'Bulk', message: 'Fetching Missing Images...' });
@@ -333,17 +386,17 @@ export default function App() {
     }
 
     // Batch market prices
-    try {
+    if (!opts.skipPrices) try {
         setBatchProgress(null);
         setActiveOperation({
           setId: 'Bulk',
           // The desktop app reads every shop page in its own browser, one at a
           // time, so a full refresh takes minutes rather than seconds.
           message: isDesktopApp
-            ? `Reading market prices in the local browser for ${filteredSets.length} sets. This takes a few minutes...`
+            ? `Reading market prices in the local browser for ${targets.length} sets. This takes a few minutes...`
             : 'Fetching Market Prices via Gemini...',
         });
-        const setNumbers = filteredSets.map(s => s.setNumber);
+        const setNumbers = targets.map(s => s.setNumber);
         const marketRes = await fetch(`/api/prices-batch`, { 
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -361,7 +414,7 @@ export default function App() {
             const setUpdates: Promise<void>[] = [];
             const historyEntries: { setId: string; entry: PriceHistory }[] = [];
 
-            for (const set of filteredSets) {
+            for (const set of targets) {
                 const marketPrices = batchPrices[set.setNumber];
                 if (marketPrices) {
                     setUpdates.push(updateSet(set.id, {
@@ -407,10 +460,13 @@ export default function App() {
         console.error('Batch market prices failed', e);
         setActionError('Could not refresh market prices. Please try again.');
     }
-    
-    setIsBatchRefreshing(false);
-    setBatchProgress(null);
-    setActiveOperation(null);
+    return true;
+    } finally {
+      isBatchRefreshingRef.current = false;
+      setIsBatchRefreshing(false);
+      setBatchProgress(null);
+      setActiveOperation(null);
+    }
   };
 
   // Always points at the current handleBatchRefresh, so the scheduler below
@@ -760,6 +816,9 @@ export default function App() {
                     set={set}
                     onUpdate={updateSet}
                     onDelete={handleDeleteSet}
+                    // Website only: hand the card's refreshes to the desktop
+                    // app when it runs. Stable identity, so the memo holds.
+                    delegateRefresh={!isDemoMode && !isDesktopApp ? delegate : undefined}
                     getPriceHistory={getPriceHistory}
                     onAddPriceHistory={addPriceHistory}
                     priceSources={priceSources}
