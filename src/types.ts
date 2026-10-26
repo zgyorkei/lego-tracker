@@ -95,7 +95,7 @@ export interface Registry {
 
 // One set as published in a planned list. This is the public, world-readable
 // shape served by GET /api/planned-sets/:token, so it is an explicit field
-// whitelist: nothing about purchases, and no userId.
+// whitelist: no userId. Purchases are published separately (PlannedListPurchase).
 export interface PlannedListPrice {
   sourceId: string;
   sourceName: string;
@@ -118,11 +118,31 @@ export interface PlannedListSet {
   prices: PlannedListPrice[];
 }
 
+// One set the owner bought (status "ordered"), as published for BrickBudget, which
+// books it as an expense on the day it was bought. Prices are per set.
+export interface PlannedListPurchase {
+  id: string;
+  setNumber: string;
+  name: string;
+  quantity: number;
+  /** YYYY-MM-DD */
+  purchasedOn: string;
+  /** As paid, per set. */
+  price: number;
+  currency: string;
+  /** In forints, at the rate of the purchase day. */
+  priceHuf: number;
+  /** The official LEGO price per set, when known. */
+  legoPriceHuf: number | null;
+}
+
 export interface PlannedList {
   id: string; // the token, also the last path segment of the API URL
   userId: string;
   title: string;
   sets: PlannedListSet[];
+  /** Absent on lists written before purchases were published. */
+  purchases?: PlannedListPurchase[];
   createdAt: string;
   updatedAt: string;
 }

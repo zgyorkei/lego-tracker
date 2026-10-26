@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildPlannedListSets, stableStringify } from './plannedList';
+import { buildPlannedListPurchases, buildPlannedListSets, stableStringify } from './plannedList';
 import { LegoSet, PriceSource } from '../types';
 
 const sources: PriceSource[] = [
@@ -68,6 +68,25 @@ describe('buildPlannedListSets', () => {
       sources
     );
     expect(set).toMatchObject({ legoPriceHuf: null, legoUrl: null, productImage: null, releaseDate: null, quantity: 1 });
+  });
+});
+
+describe('buildPlannedListPurchases', () => {
+  it('publishes the sets bought: day, price per set as paid and in forints, and the official price', () => {
+    const result = buildPlannedListPurchases([
+      makeSet({}),
+      makeSet({
+        id: 'id-2', setNumber: '75192', name: 'Millennium Falcon', status: 'ordered', quantity: 2,
+        orderedDate: '2026-10-20T00:00:00.000Z', orderedPriceHuf: 300000, orderedOriginalPrice: 750, orderedCurrency: 'EUR', legoPriceHuf: 330000,
+      }),
+      makeSet({ id: 'id-3', setNumber: '40000', status: 'ordered', orderedDate: '2026-10-21T00:00:00.000Z', orderedPriceHuf: 9990, legoPriceHuf: 0 }),
+      makeSet({ id: 'id-4', status: 'ordered' }), // no day or price: nothing to book
+    ]);
+    expect(result).toEqual([
+      { id: 'id-2', setNumber: '75192', name: 'Millennium Falcon', quantity: 2, purchasedOn: '2026-10-20', price: 750, currency: 'EUR', priceHuf: 300000, legoPriceHuf: 330000 },
+      { id: 'id-3', setNumber: '40000', name: 'Lion Knights Castle', quantity: 1, purchasedOn: '2026-10-21', price: 9990, currency: 'HUF', priceHuf: 9990, legoPriceHuf: null },
+    ]);
+    expect(JSON.stringify(result)).not.toContain('owner-uid');
   });
 });
 

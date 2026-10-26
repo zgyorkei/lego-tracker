@@ -1692,12 +1692,15 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
 
       const data = decodeFirestoreFields(response.data?.fields);
       const sets = Array.isArray(data.sets) ? data.sets : [];
+      // The sets bought, for BrickBudget to book as expenses (absent on older lists)
+      const purchases = Array.isArray(data.purchases) ? data.purchases : [];
       res.setHeader('Cache-Control', 'public, max-age=60');
       res.json({
         title: typeof data.title === 'string' ? data.title : 'Planned sets',
         updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : null,
         count: sets.length,
         sets,
+        purchases,
       });
     } catch (error) {
       console.error('Error fetching planned list:', error);

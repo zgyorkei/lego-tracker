@@ -11,7 +11,7 @@ interface PlannedListDialogProps {
 }
 
 export function PlannedListDialog({ onClose, state }: PlannedListDialogProps) {
-  const { list, loading, busy, error, ready, plannedCount, createList, deleteList, syncNow } = state;
+  const { list, loading, busy, error, ready, plannedCount, purchaseCount, createList, deleteList, syncNow } = state;
   const [copied, setCopied] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -43,9 +43,10 @@ export function PlannedListDialog({ onClose, state }: PlannedListDialogProps) {
           <Webhook /> Planned Sets API
         </h2>
         <p className="text-gray-500 font-bold mb-6 text-sm">
-          Publishes all of your planned sets as JSON so another application can fetch them. The list
-          stays in sync automatically while this app is open. Anyone with the link can read it, so
-          treat it like a password.
+          Publishes all of your planned sets as JSON so another application can fetch them, and the
+          sets you bought (day, price paid and the official price), which BrickBudget books as
+          expenses. The list stays in sync automatically while this app is open. Anyone with the
+          link can read it, so treat it like a password.
         </p>
 
         {error && (
@@ -88,7 +89,8 @@ export function PlannedListDialog({ onClose, state }: PlannedListDialogProps) {
               </button>
             </div>
             <p className="text-gray-500 font-bold text-xs mb-6">
-              {list.sets?.length ?? 0} of {plannedCount} planned sets published, last synced{' '}
+              {list.sets?.length ?? 0} of {plannedCount} planned sets and {list.purchases?.length ?? 0} of {purchaseCount} purchases
+              published, last synced{' '}
               {new Date(list.updatedAt).toLocaleString()}.
             </p>
 

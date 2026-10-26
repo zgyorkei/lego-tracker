@@ -1,4 +1,4 @@
-import { LegoSet, PlannedListPrice, PlannedListSet, PriceSource, isPriceQuote } from '../types';
+import { LegoSet, PlannedListPrice, PlannedListPurchase, PlannedListSet, PriceSource, isPriceQuote } from '../types';
 
 export const PLANNED_LISTS_COLLECTION = 'plannedLists';
 
@@ -64,6 +64,35 @@ export function buildPlannedListSets(
       };
     })
     .sort((a, b) => a.setNumber.localeCompare(b.setNumber));
+}
+
+/**
+ * The owner's purchases (sets marked as ordered) in the public list shape, for
+ * BrickBudget to book as expenses: what was bought, on which day, for how much,
+ * and the official LEGO price to compare with. An explicit whitelist like the
+ * sets; sets without a purchase day or price are left out.
+ */
+export function buildPlannedListPurchases(sets: LegoSet[]): PlannedListPurchase[] {
+  return sets
+    .filter(s => s.status === 'ordered' && s.orderedDate && (s.orderedPriceHuf ?? 0) > 0)
+    .map(s => {
+      // The order dialog stores the chosen day as UTC midnight
+      const purchasedOn = String(s.orderedDate).slice(0, 10);
+      const hasOriginal = Number.isFinite(s.orderedOriginalPrice) && (s.orderedOriginalPrice ?? 0) > 0 && !!s.orderedCurrency;
+      return {
+        id: s.id,
+        setNumber: s.setNumber,
+        name: s.name || '',
+        quantity: s.quantity || 1,
+        purchasedOn,
+        price: hasOriginal ? (s.orderedOriginalPrice as number) : (s.orderedPriceHuf as number),
+        currency: hasOriginal ? (s.orderedCurrency as string) : 'HUF',
+        priceHuf: s.orderedPriceHuf as number,
+        legoPriceHuf: s.legoPriceHuf > 0 ? s.legoPriceHuf : null,
+      };
+    })
+    .filter(p => /^\d{4}-\d{2}-\d{2}$/.test(p.purchasedOn))
+    .sort((a, b) => a.purchasedOn.localeCompare(b.purchasedOn) || a.setNumber.localeCompare(b.setNumber));
 }
 
 /**

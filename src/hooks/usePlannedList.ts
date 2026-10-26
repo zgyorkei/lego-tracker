@@ -14,6 +14,7 @@ import type { User } from 'firebase/auth';
 import { db } from '../lib/firebase';
 import {
   PLANNED_LISTS_COLLECTION,
+  buildPlannedListPurchases,
   buildPlannedListSets,
   generatePlannedListToken,
   stableStringify,
@@ -26,7 +27,8 @@ const SYNC_DEBOUNCE_MS = 3000;
 
 /**
  * Owns the user's published planned list: a world-readable snapshot of every
- * planned set, served to other applications by GET /api/planned-sets/:token.
+ * planned set, and of the purchases (for BrickBudget to book as expenses),
+ * served to other applications by GET /api/planned-sets/:token.
  *
  * The server has no Firestore credentials, so it cannot read the private sets
  * collection itself. Instead this hook keeps the public copy current from the
@@ -74,7 +76,24 @@ export function usePlannedList(
   }, [user]);
 
   const payload = useMemo(() => buildPlannedListSets(sets, priceSources), [sets, priceSources]);
-  const payloadSig = useMemo(() => stableStringify(payload), [payload]);
+  const purchases = useMemo(() => buildPlannedListPurchases(sets), [sets]);
+  const payloadSig = useMemo(() => stableStringify({ sets: payload, purchases }), [payload, purchases]);
+
+  // Purchases go in a write of their own: a Firestore rule that predates them
+  // rejects the field, and that must not stop the planned sets from syncing.
+  const writePurchases = useCallback(
+    async (listId: string) => {
+      try {
+        await updateDoc(doc(db, PLANNED_LISTS_COLLECTION, listId), { purchases });
+        return true;
+      } catch (err) {
+        console.error('Publishing purchases failed (is the plannedLists rule in the Firebase store current?)', err);
+        setError('The planned sets are synced, but the purchases could not be published: the Firestore rules need updating.');
+        return false;
+      }
+    },
+    [purchases]
+  );
 
   // Signature of what this device last wrote (or first saw) for the current
   // list. Syncing is driven by local payload changes only, never by the list
@@ -92,6 +111,7 @@ export function usePlannedList(
         });
         lastSynced.current = { listId, sig: payloadSig };
         setError(null);
+        await writePurchases(listId);
       } catch (err) {
         console.error('Planned list sync failed', err);
         setError('Could not sync the planned list. Please try again.');
@@ -99,13 +119,13 @@ export function usePlannedList(
         setBusy(false);
       }
     },
-    [payload, payloadSig]
+    [payload, payloadSig, writePurchases]
   );
 
   useEffect(() => {
     if (!list || !ready) return;
     if (lastSynced.current?.listId !== list.id) {
-      lastSynced.current = { listId: list.id, sig: stableStringify(list.sets ?? []) };
+      lastSynced.current = { listId: list.id, sig: stableStringify({ sets: list.sets ?? [], purchases: list.purchases ?? [] }) };
     }
     if (lastSynced.current.sig === payloadSig) return;
 
@@ -128,13 +148,14 @@ export function usePlannedList(
       });
       lastSynced.current = { listId: token, sig: payloadSig };
       setError(null);
+      await writePurchases(token);
     } catch (err) {
       console.error('Planned list create failed', err);
       setError('Could not create the planned list. Please try again.');
     } finally {
       setBusy(false);
     }
-  }, [user, ready, payload, payloadSig]);
+  }, [user, ready, payload, payloadSig, writePurchases]);
 
   const deleteList = useCallback(async () => {
     if (!list) return;
@@ -162,6 +183,7 @@ export function usePlannedList(
     error,
     ready,
     plannedCount: payload.length,
+    purchaseCount: purchases.length,
     createList,
     deleteList,
     syncNow,
