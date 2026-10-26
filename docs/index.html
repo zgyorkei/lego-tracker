@@ -1,0 +1,874 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brick Tracker: an introduction and setup guide</title>
+<meta name="description" content="Brick Tracker plans, tracks and prices your LEGO sets: market prices from your shops, price history, purchases and savings, gift registries, and an optional Windows app that fetches prices without AI.">
+<link rel="icon" type="image/png" href="shots/favicon-32.png">
+<style>
+  :root {
+    --bg: #0b0f1a; --panel: #121a2b; --panel-2: #172238; --line: #24314d; --text: #e5e9f2; --muted: #94a3b8; --soft: #cbd5e1;
+    --yellow: #ffd500; --red: #ff4a4f; --blue: #4ea8ff; --green: #34d399; --violet: #a78bfa; --amber: #fbbf24;
+    --tabs: 62px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: calc(var(--tabs) + 16px); }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre, kbd { font-family: "Cascadia Code", Consolas, monospace; }
+  code { color: var(--yellow); font-size: .92em; background: rgba(255, 213, 0, .08); padding: 1px 5px; border-radius: 5px; }
+  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-size: 13.5px; overflow-x: auto; margin: 8px 0 16px; max-width: 980px; color: var(--soft); }
+  pre code { background: none; padding: 0; color: inherit; }
+  kbd { background: var(--panel-2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; font-size: .9em; }
+
+  /* Hero: a field of studs with the dashboard rising out of it */
+  .hero { position: relative; overflow: hidden; border-bottom: 1px solid var(--line);
+    background:
+      radial-gradient(circle at 50% 50%, rgba(255, 213, 0, .16) 0 9px, transparent 10px) 0 0 / 34px 34px,
+      linear-gradient(160deg, #18213a 0%, #0b0f1a 60%); }
+  .hero .wrap { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 40px; align-items: center; padding-top: 56px; padding-bottom: 0; }
+  .hero-text { padding-bottom: 56px; }
+  .logo { display: inline-flex; align-items: center; justify-content: center; width: 84px; height: 84px; background: var(--yellow); border: 4px solid #000; border-radius: 16px; box-shadow: 5px 5px 0 #000; margin-bottom: 22px; }
+  .logo svg { width: 54px; height: 54px; }
+  h1 { font-size: 60px; line-height: 1.02; margin: 0 0 12px; letter-spacing: -.01em; font-weight: 900; text-transform: uppercase; color: #fff; }
+  h1 span { color: var(--yellow); }
+  .tagline { font-size: 21px; color: var(--soft); margin: 0 0 24px; font-weight: 300; max-width: 640px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; font-size: 14px; padding: 11px 18px; border-radius: 10px; border: 3px solid #000; box-shadow: 4px 4px 0 #000; color: #000; background: var(--yellow); }
+  .btn:hover { text-decoration: none; transform: translate(2px, 2px); box-shadow: 2px 2px 0 #000; }
+  .btn.alt { background: #fff; }
+  .btn.blue { background: #2f8cff; color: #fff; }
+  .hero-shot { align-self: end; }
+  .hero-shot img { width: 100%; display: block; border-radius: 14px 14px 0 0; border: 1px solid var(--line); border-bottom: 0; box-shadow: 0 -10px 50px rgba(0, 0, 0, .45); cursor: zoom-in; }
+
+  .wrap { max-width: 1360px; margin: 0 auto; padding: 0 32px; }
+  .tabbar { position: sticky; top: 0; z-index: 10; background: rgba(11, 15, 26, .94); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .tabbar .wrap { display: flex; gap: 4px; align-items: stretch; height: var(--tabs); overflow-x: auto; }
+  .tabbar .brand { font-weight: 900; text-transform: uppercase; color: var(--text); align-self: center; margin-right: 18px; white-space: nowrap; }
+  .tabbar .brand b { color: var(--yellow); }
+  .tab { display: flex; flex-direction: column; justify-content: center; padding: 0 18px; color: var(--muted); border-bottom: 3px solid transparent; white-space: nowrap; }
+  .tab:hover { text-decoration: none; color: var(--text); }
+  .tab .t { font-weight: 700; font-size: 15px; line-height: 1.2; }
+  .tab .s { font-size: 12px; line-height: 1.2; }
+  .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--yellow); }
+  .tab[data-tab="desktop"][aria-selected="true"] { border-bottom-color: var(--violet); }
+  .tab[data-tab="sync"][aria-selected="true"] { border-bottom-color: var(--blue); }
+  .tab[data-tab="setup"][aria-selected="true"] { border-bottom-color: var(--green); }
+
+  .layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 40px; align-items: start; }
+  .side { position: sticky; top: calc(var(--tabs) + 20px); max-height: calc(100vh - var(--tabs) - 40px); overflow-y: auto; padding: 28px 4px 28px 0; }
+  .menu { display: none; flex-direction: column; border-left: 1px solid var(--line); }
+  .menu.on { display: flex; }
+  .menu a { color: var(--muted); padding: 4px 0 4px 14px; margin-left: -1px; border-left: 2px solid transparent; font-size: 14px; line-height: 1.35; }
+  .menu a:hover { color: var(--text); text-decoration: none; }
+  .menu a.top { color: var(--soft); font-weight: 600; margin-top: 10px; }
+  .menu a.sub { padding-left: 26px; font-size: 13px; }
+  .menu a.here { color: var(--text); border-left-color: var(--yellow); }
+  main { padding-bottom: 40px; min-width: 0; }
+  .panel[hidden] { display: none; }
+  section { margin: 56px 0 0; }
+  h2 { font-size: 30px; margin: 0; }
+  h3 { margin: 0; }
+  .section-head { margin-bottom: 18px; }
+  .section-head p { color: var(--muted); max-width: 900px; margin: 8px 0 0; }
+  .lede p, .prose p { max-width: 900px; color: var(--soft); font-size: 17px; }
+  .prose ul, .prose ol { max-width: 900px; color: var(--soft); padding-left: 22px; }
+  .prose li { margin-bottom: 6px; }
+  .tab-head { border-left: 4px solid var(--yellow); padding: 6px 0 6px 20px; margin-top: 40px; }
+  .tab-head .label { font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--yellow); font-weight: 700; }
+  .tab-head h2 { font-size: 40px; margin: 4px 0 6px; }
+  .tab-head p { color: var(--soft); font-size: 18px; max-width: 900px; margin: 0; }
+  .tab-head.desktop { border-left-color: var(--violet); } .tab-head.desktop .label { color: var(--violet); }
+  .tab-head.sync { border-left-color: var(--blue); } .tab-head.sync .label { color: var(--blue); }
+  .tab-head.setup { border-left-color: var(--green); } .tab-head.setup .label { color: var(--green); }
+
+  .caps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .cap { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; color: var(--text); border-top: 4px solid var(--yellow); }
+  .cap:hover { text-decoration: none; background: var(--panel-2); }
+  .cap.red { border-top-color: var(--red); } .cap.blue { border-top-color: var(--blue); } .cap.violet { border-top-color: var(--violet); } .cap.green { border-top-color: var(--green); }
+  .cap .tag { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  .cap h3 { margin: 4px 0 6px; font-size: 19px; }
+  .cap p { margin: 0 0 12px; color: var(--soft); font-size: 15px; flex: 1; }
+  .cap .more { font-size: 14px; color: var(--blue); }
+
+  .callout { max-width: 900px; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--green); border-radius: 10px; padding: 12px 16px; color: var(--soft); }
+  .callout.warn { border-left-color: var(--amber); }
+  .callout.info { border-left-color: var(--blue); }
+  .muted { color: var(--muted); }
+
+  /* How it works diagram */
+  .arch { display: grid; grid-template-columns: 1fr 1.1fr 1fr; gap: 18px; align-items: stretch; max-width: 1100px; }
+  .node { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  .node .k { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; font-weight: 700; color: var(--muted); }
+  .node h3 { font-size: 18px; margin: 4px 0 8px; }
+  .node ul { margin: 0; padding-left: 18px; color: var(--soft); font-size: 14.5px; }
+  .node.web { border-top: 4px solid var(--yellow); }
+  .node.store { border-top: 4px solid var(--blue); background: linear-gradient(180deg, rgba(78, 168, 255, .12), var(--panel) 50%); }
+  .node.desk { border-top: 4px solid var(--violet); }
+  .flows { max-width: 1100px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+  .flow { font-size: 14.5px; color: var(--soft); background: var(--panel); border: 1px dashed var(--line); border-radius: 10px; padding: 10px 14px; }
+  .flow b { color: var(--text); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--soft); }
+  td:first-child { color: var(--text); }
+  .table-box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 6px 10px; overflow-x: auto; max-width: 1100px; }
+
+  .badge { display: inline-block; font-size: 12px; line-height: 1; padding: 5px 8px; border-radius: 999px; margin: 0 6px 6px 0; white-space: nowrap; border: 1px solid; font-weight: 600; }
+  .badge.noai { color: var(--green); border-color: rgba(52, 211, 153, .45); }
+  .badge.ai { color: #fff; background: #6d28d9; border-color: #6d28d9; }
+  .badge.desk { color: var(--violet); border-color: rgba(167, 139, 250, .6); }
+  .badge.web { color: var(--yellow); border-color: rgba(255, 213, 0, .45); }
+  .badge.key { color: #111; background: var(--amber); border-color: var(--amber); }
+  .badge.sync { color: var(--blue); border-color: rgba(78, 168, 255, .5); }
+
+  .chapter-head { display: flex; align-items: baseline; gap: 16px; border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 8px; }
+  .chapter-head .num { font-size: 40px; font-weight: 300; color: var(--red); }
+  .feature { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 32px; padding: 34px 0; border-bottom: 1px solid var(--line); align-items: start; }
+  .feature.flip { grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); }
+  .feature.flip .text { order: 2; }
+  .feature.noshot { grid-template-columns: minmax(0, 1fr); }
+  .feature.noshot .text { max-width: 860px; }
+  .feature h3 { font-size: 24px; margin: 0 0 10px; }
+  .feature .lead { font-size: 18px; color: var(--soft); margin: 8px 0 12px; }
+  .feature ul { padding-left: 20px; margin: 0 0 14px; color: var(--soft); }
+  .feature li { margin-bottom: 6px; }
+  .note { font-size: 15px; padding: 10px 14px; border-radius: 10px; margin: 10px 0 0; }
+  .ai-note { background: rgba(109, 40, 217, .16); border: 1px solid rgba(167, 139, 250, .35); }
+  .ai-note strong { color: var(--violet); }
+  figure { margin: 0; }
+  figure img { width: 100%; display: block; border-radius: 10px; border: 1px solid var(--line); cursor: zoom-in; background: #fff; }
+  figure.narrow img { max-width: 420px; margin: 0 auto; }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 6px; }
+
+  /* Setup steps */
+  .steps { counter-reset: step; max-width: 980px; }
+  .step { position: relative; padding: 4px 0 26px 58px; border-left: 2px solid var(--line); margin-left: 18px; }
+  .step:last-child { border-left-color: transparent; }
+  .step::before { counter-increment: step; content: counter(step); position: absolute; left: -19px; top: 0; width: 36px; height: 36px; border-radius: 50%; background: var(--green); color: #052e1c; font-weight: 900; display: flex; align-items: center; justify-content: center; }
+  .step h3 { font-size: 20px; margin: 4px 0 8px; }
+  .step p, .step li { color: var(--soft); }
+  .step ol, .step ul { padding-left: 22px; }
+  .step li { margin-bottom: 5px; }
+  .opt { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--violet); margin-left: 8px; }
+
+  footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--muted); font-size: 13px; margin-top: 56px; }
+  #viewer { position: fixed; inset: 0; background: rgba(0, 0, 0, .9); display: none; z-index: 20; align-items: center; justify-content: center; flex-direction: column; padding: 24px; cursor: zoom-out; }
+  #viewer.open { display: flex; }
+  #viewer img { max-width: 96vw; max-height: 86vh; border-radius: 8px; background: #fff; }
+  #viewer p { color: var(--soft); max-width: 1100px; text-align: center; }
+  @media (max-width: 1100px) {
+    .caps { grid-template-columns: 1fr 1fr; }
+    .arch { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 900px) {
+    .hero .wrap { grid-template-columns: 1fr; padding-top: 32px; }
+    .hero-text { padding-bottom: 8px; }
+    h1 { font-size: 42px; }
+    .layout { grid-template-columns: 1fr; gap: 0; }
+    .side { position: static; max-height: none; padding: 16px 0 0; }
+    .menu a.sub { display: none; }
+    .caps, .flows { grid-template-columns: 1fr; }
+    .feature, .feature.flip { grid-template-columns: 1fr; }
+    .feature.flip .text { order: 0; }
+    .wrap { padding: 0 18px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="wrap">
+    <div class="hero-text">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <g stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2C8 2 6 5 6 9v2.5A1.5 1.5 0 0 0 7.5 13h9a1.5 1.5 0 0 0 1.5-1.5V9c0-4-2-7-6-7z" fill="#2563eb"/>
+            <path d="M8 9v2c0 1 1 1.5 2 1.5h4c1 0 2-.5 2-1.5V9c0-1-1-1.5-2-1.5h-4C9 7.5 8 8 8 9z" fill="#fde047"/>
+            <circle cx="10.5" cy="9.5" r="0.5" fill="black"/><circle cx="13.5" cy="9.5" r="0.5" fill="black"/>
+            <path d="M11 11c.3.2.7.2 1 0" stroke="black" stroke-width="0.5"/>
+            <path d="M4 8v6a2 2 0 0 0 2 2h0 M20 8v6a2 2 0 0 1-2 2h0" stroke="#1e40af" stroke-width="3"/>
+            <path d="M7.5 13L6 22h12l-1.5-9" fill="#2563eb"/>
+            <path d="M7.5 13L6 22h12l-1.5-9H7.5z" stroke="#1e40af" stroke-width="1"/>
+            <circle cx="12" cy="18" r="1.5" fill="#facc15"/>
+            <path d="M9 20c1.5-2 3-3.5 5-4" stroke="#ef4444" stroke-width="1"/><path d="M14 16l1.5-1" stroke="#ef4444" stroke-width="1"/>
+          </g>
+        </svg>
+      </div>
+      <h1>Brick <span>Tracker</span></h1>
+      <p class="tagline">Plan the LEGO sets you want, watch their prices at the shops you trust, and buy at the right moment. Without paying an AI to check the prices for you.</p>
+      <div class="cta">
+        <a class="btn" href="https://lego.gykovacszoltan.hu/">Try the demo</a>
+        <a class="btn blue" href="#setup">Set up your own</a>
+        <a class="btn alt" href="https://github.com/zgyorkei/lego-tracker">Source on GitHub</a>
+      </div>
+    </div>
+    <div class="hero-shot"><img src="shots/dashboard.jpg" alt="The Brick Tracker dashboard in Demo Mode: planned and purchased totals, and set cards with the official LEGO price and market prices from Amazon, BrickLink and Arukereso."></div>
+  </div>
+</div>
+
+<div class="tabbar"><div class="wrap" role="tablist">
+  <span class="brand">Brick <b>Tracker</b></span>
+  <a class="tab" role="tab" href="#overview" data-tab="overview"><span class="t">Overview</span><span class="s">What it is, how it works</span></a>
+  <a class="tab" role="tab" href="#features" data-tab="features"><span class="t">Features</span><span class="s">The app, on every device</span></a>
+  <a class="tab" role="tab" href="#desktop" data-tab="desktop"><span class="t">Desktop app</span><span class="s">Prices without AI</span></a>
+  <a class="tab" role="tab" href="#sync" data-tab="sync"><span class="t">Sync</span><span class="s">Devices, desktops, other apps</span></a>
+  <a class="tab" role="tab" href="#setup" data-tab="setup"><span class="t">Setup guide</span><span class="s">Run your own copy</span></a>
+</div></div>
+
+<div class="wrap layout">
+<aside class="side">
+  <nav class="menu" data-menu="overview">
+    <a class="top" href="#introduction">Introduction</a>
+    <a class="top" href="#capabilities">Capabilities</a>
+    <a class="top" href="#how-it-works">How it works</a>
+    <a class="top" href="#ai">Where AI is used</a>
+    <a class="top" href="#keys">Keys and services</a>
+    <a class="top" href="#requirements">What you need</a>
+  </nav>
+  <nav class="menu" data-menu="features">
+    <a class="top" href="#ch-sets">Your sets</a>
+    <a class="sub" href="#f-dashboard">Dashboard</a>
+    <a class="sub" href="#f-add">Adding a set</a>
+    <a class="sub" href="#f-anywhere">On your phone</a>
+    <a class="top" href="#ch-prices">Prices</a>
+    <a class="sub" href="#f-market">Market prices</a>
+    <a class="sub" href="#f-bricklink">BrickLink, the honest way</a>
+    <a class="sub" href="#f-sources">Your price sources</a>
+    <a class="sub" href="#f-history">Price history</a>
+    <a class="top" href="#ch-collection">Collection</a>
+    <a class="sub" href="#f-purchases">Purchases and savings</a>
+    <a class="sub" href="#f-minifigs">Minifigure checklists</a>
+    <a class="top" href="#ch-sharing">Sharing</a>
+    <a class="sub" href="#f-registry">Gift registry</a>
+    <a class="sub" href="#f-api">Planned Sets API</a>
+    <a class="sub" href="#f-demo">Demo Mode</a>
+  </nav>
+  <nav class="menu" data-menu="desktop">
+    <a class="top" href="#d-what">What it adds</a>
+    <a class="top" href="#d-scraping">Reading shops with a real browser</a>
+    <a class="top" href="#d-daily">The 4AM refresh</a>
+    <a class="top" href="#d-details">Set details from LEGO.com</a>
+    <a class="top" href="#d-teach">Teaching a new shop</a>
+    <a class="top" href="#d-tray">Tray, startup and updates</a>
+    <a class="top" href="#d-private">What stays on your PC</a>
+  </nav>
+  <nav class="menu" data-menu="sync">
+    <a class="top" href="#s-live">Live sync between devices</a>
+    <a class="top" href="#s-handoff">The desktop does the website's work</a>
+    <a class="top" href="#s-machines">Several desktops</a>
+    <a class="top" href="#s-api">Other apps: the Planned Sets API</a>
+    <a class="top" href="#s-links">Share links</a>
+    <a class="top" href="#s-offline">Offline</a>
+    <a class="top" href="#s-table">At a glance</a>
+  </nav>
+  <nav class="menu" data-menu="setup">
+    <a class="top" href="#setup-plan">What you will set up</a>
+    <a class="top" href="#setup-code">1. Get the code</a>
+    <a class="top" href="#setup-firebase">2. Firebase</a>
+    <a class="top" href="#setup-gemini">3. Gemini API key</a>
+    <a class="top" href="#setup-local">4. Run it locally</a>
+    <a class="top" href="#setup-deploy">5. Deploy the website</a>
+    <a class="top" href="#setup-install">6. Install it on devices</a>
+    <a class="top" href="#setup-desktop">7. The desktop app</a>
+    <a class="top" href="#setup-update">Updating</a>
+    <a class="top" href="#setup-costs">Costs</a>
+    <a class="top" href="#setup-trouble">Troubleshooting</a>
+  </nav>
+</aside>
+
+<main>
+
+<!-- ============================ OVERVIEW ============================ -->
+<div class="panel" data-panel="overview" id="overview">
+  <section id="introduction" class="lede">
+    <div class="section-head"><h2>What Brick Tracker is</h2></div>
+    <p>Brick Tracker is a wishlist and price tracker for LEGO sets. You add a set by its number; the app looks up the official name, picture and LEGO price, then checks the shops you choose (Amazon, BrickLink, Arukereso or any shop you add) and shows where each set is cheapest and how far below the official price it is. Over time it records a price history per set, so you can tell a real discount from the usual price.</p>
+    <p>When you buy, mark the set as purchased at what you paid, in any currency: the app converts at that day's exchange rate and keeps a running total of what you saved. Share a gift registry with family so nobody buys the same set twice, tick off collectible minifigures, and let other apps read your planned sets through a small JSON API.</p>
+    <p>It runs as a website on any device, installable as an app on Android, ChromeOS and Googlebooks. An optional Windows app reads the shop pages with a real browser on your own connection, so prices are checked without any AI, refreshes everything every morning at 4AM, and does the fetching for the website too, whichever device you press refresh on.</p>
+  </section>
+
+  <section id="capabilities">
+    <div class="section-head"><h2>Capabilities</h2><p>What it does, in short. Each card opens the details.</p></div>
+    <div class="caps">
+      <a class="cap" href="#f-dashboard"><span class="tag">Plan</span><h3>Every set you want, in one place</h3><p>Planned and purchased sets with priorities, the official LEGO price and picture, filters, sorting, 13 currencies and themed looks.</p><span class="more">Your sets &rarr;</span></a>
+      <a class="cap red" href="#f-market"><span class="tag">Prices</span><h3>The shops you trust, compared</h3><p>Market prices per shop with the difference to the official price, great deals highlighted, BrickLink counted only for new, complete sets.</p><span class="more">Prices &rarr;</span></a>
+      <a class="cap blue" href="#f-history"><span class="tag">History</span><h3>Know a real discount</h3><p>Every refresh adds to a price history per set, charted as the lowest price across your shops over time.</p><span class="more">Price history &rarr;</span></a>
+      <a class="cap green" href="#f-purchases"><span class="tag">Collection</span><h3>Purchases and savings</h3><p>What you paid, in any currency at that day's rate, against the official price; minifigure checklists for collectible series.</p><span class="more">Collection &rarr;</span></a>
+      <a class="cap" href="#f-registry"><span class="tag">Share</span><h3>Gift registries and an API</h3><p>A wishlist link family can reserve gifts on without an account, and a JSON feed of your planned sets for other apps.</p><span class="more">Sharing &rarr;</span></a>
+      <a class="cap violet" href="#desktop"><span class="tag">Desktop app</span><h3>Prices without AI</h3><p>A Windows app that reads shop pages with a real browser, refreshes at 4AM, learns new shops, and works for the website when it is on.</p><span class="more">Desktop app &rarr;</span></a>
+    </div>
+  </section>
+
+  <section id="how-it-works">
+    <div class="section-head"><h2>How it works</h2><p>Three parts, each optional beyond the first. Your data lives in your own Firebase project, under your Google account.</p></div>
+    <div class="arch">
+      <div class="node web"><span class="k">Any device</span><h3>The website</h3><ul><li>A React app, also installable (PWA)</li><li>Sign in with Google</li><li>Its server (Vercel) looks sets up on Brickset, BrickLink and LEGO.com, and asks Gemini for shop prices when no desktop app is running</li></ul></div>
+      <div class="node store"><span class="k">Your Firebase project</span><h3>Firestore</h3><ul><li>Your sets, price history and price sources, private to your account</li><li>Live: a change on one device shows on all of them at once</li><li>The meeting point of website and desktop app</li><li>Public only where you share: registries and the Planned Sets API</li></ul></div>
+      <div class="node desk"><span class="k">Optional, Windows</span><h3>The desktop app</h3><ul><li>The same app, plus a real browser (Playwright, Chromium)</li><li>Reads shop pages itself: no AI</li><li>Refreshes daily at 4AM, sits in the tray</li><li>Picks up refreshes the website hands it</li></ul></div>
+    </div>
+    <div class="flows">
+      <div class="flow"><b>Pressing refresh on the website</b> with the desktop app running: the website writes a request to Firestore, the desktop app claims it, reads the shops, and the new prices appear on every device.</div>
+      <div class="flow"><b>With no desktop app running</b>, the website's server asks Gemini (with Google Search) for the shop prices instead, and reads BrickLink directly.</div>
+    </div>
+  </section>
+
+  <section id="ai">
+    <div class="section-head"><h2>Where AI is used</h2><p>Only for shop prices and set details on the website when no desktop app is running, and once per shop when the desktop app learns a new one. Everything else is read straight from the source.</p></div>
+    <div class="table-box"><table>
+      <tr><th>What</th><th>Website, no desktop app</th><th>With the desktop app</th></tr>
+      <tr><td>Shop prices (Amazon, Arukereso, shops you add)</td><td><span class="badge ai">Gemini + Google Search</span></td><td><span class="badge noai">No AI: read with a real browser</span></td></tr>
+      <tr><td>BrickLink price</td><td colspan="2"><span class="badge noai">No AI</span> BrickLink's own listings, everywhere</td></tr>
+      <tr><td>Set name, picture, official price</td><td><span class="badge noai">No AI</span> Brickset and LEGO.com first; <span class="badge ai">Gemini</span> only if both fail</td><td><span class="badge noai">No AI</span> LEGO.com in the browser, Brickset for gaps</td></tr>
+      <tr><td>Minifigures of a set</td><td><span class="badge noai">No AI</span> Brickset; <span class="badge ai">Gemini</span> if Brickset has none</td><td><span class="badge noai">No AI</span> Brickset in the browser</td></tr>
+      <tr><td>Teaching the app a new shop</td><td class="muted">Desktop only</td><td><span class="badge ai">Gemini, once per shop</span> it writes reading instructions, then tested on live pages</td></tr>
+      <tr><td>Daily 4AM refresh</td><td class="muted">Not on the website</td><td><span class="badge noai">No AI</span></td></tr>
+    </table></div>
+    <p class="callout info" style="margin-top:14px">The instructions Gemini writes for a new shop are data (which elements hold the title and the price), never code, and are tested on live pages before you save them. A shop's page cannot make the app run anything.</p>
+  </section>
+
+  <section id="keys">
+    <div class="section-head"><h2>Keys and services</h2><p>All of them are yours: nothing is shared with the author or anybody else.</p></div>
+    <div class="table-box"><table>
+      <tr><th>Service</th><th>Used for</th><th>Key</th><th>Cost</th></tr>
+      <tr><td>Firebase (Google)</td><td>Sign-in and the Firestore database</td><td>A free project; the web config is not secret</td><td>The free tier covers personal use many times over</td></tr>
+      <tr><td>Vercel</td><td>Hosts the website and its small server</td><td>An account linked to your GitHub fork</td><td>Free (Hobby plan)</td></tr>
+      <tr><td>Google Gemini API</td><td>Website price checks without the desktop app; teaching shops</td><td><span class="badge key">API key</span> server side only, never in the browser</td><td>Pay per use; the free tier covers light use</td></tr>
+      <tr><td>Google OAuth "Desktop app" client</td><td>Signing in to the desktop app</td><td>A client file, kept on your PC</td><td>Free</td></tr>
+      <tr><td>Brickset, BrickLink, LEGO.com, exchange rates (Frankfurter)</td><td>Set details, BrickLink prices, currency conversion</td><td>None</td><td>Free</td></tr>
+    </table></div>
+  </section>
+
+  <section id="requirements" class="prose">
+    <div class="section-head"><h2>What you need</h2></div>
+    <ul>
+      <li>To use it: a browser (Chrome, Edge, Firefox, Safari) and a Google account. Install it as an app from Chrome on Android, ChromeOS or a Googlebook.</li>
+      <li>To run your own copy: a GitHub account, a Firebase project, a Vercel account and a Gemini API key. About an hour, following the <a href="#setup">setup guide</a>.</li>
+      <li>For the desktop app: Windows 10 or 11, Node.js 20 or newer to build it, and about 1 GB of disk for the app and its bundled browser.</li>
+    </ul>
+  </section>
+</div>
+
+<!-- ============================ FEATURES ============================ -->
+<div class="panel" data-panel="features" id="features">
+  <div class="tab-head"><span class="label">The app</span><h2>Features</h2><p>Everything here works on the website, on every device. Where the desktop app does something differently, it says so.</p></div>
+
+  <section id="ch-sets">
+    <div class="chapter-head"><span class="num">01</span><h2>Your sets</h2></div>
+    <article class="feature" id="f-dashboard">
+      <div class="text">
+        <h3>Dashboard</h3>
+        <div><span class="badge noai">No AI</span><span class="badge sync">Synced</span></div>
+        <p class="lead">Every set you plan to buy or have bought, as a card with its picture, the official LEGO price and the market prices.</p>
+        <ul>
+          <li>Filter All, Planned or Purchased; sort by date added, priority, set number or name.</li>
+          <li>Totals at the top: the official value of what is planned and bought, what you paid, and what you saved.</li>
+          <li>Priorities (high, medium, low) and quantities per set.</li>
+          <li>Prices shown in any of 13 currencies (HUF, EUR, USD, GBP, CHF, PLN, CZK and more), converted at the day's rate.</li>
+          <li>Themes inspired by LEGO lines (Classic Space, Star Wars, Ninjago and more), from the palette button.</li>
+        </ul>
+      </div>
+      <figure><img src="shots/dashboard.jpg" alt="The dashboard in Demo Mode with planned and purchased totals and set cards." loading="lazy"><figcaption>The dashboard, in Demo Mode.</figcaption></figure>
+    </article>
+    <article class="feature flip" id="f-add">
+      <div class="text">
+        <h3>Adding a set</h3>
+        <div><span class="badge noai">No AI first</span></div>
+        <p class="lead">Type the set number; the name, picture and official Hungarian LEGO price fill in by themselves.</p>
+        <ul>
+          <li>Looked up on Brickset and LEGO.com. The desktop app reads LEGO.com in a real browser and takes LEGO's own English name and product photo.</li>
+          <li>Leaked and unannounced sets are marked provisional; on the website, Gemini finds their details and expected release date on fan sites.</li>
+          <li>Promotional items that neither LEGO.com nor Brickset know get their name and picture from a shop listing that has them.</li>
+          <li>Collectible minifigure series get their figure list automatically.</li>
+        </ul>
+      </div>
+      <figure><img src="shots/card-purchased.jpg" alt="A set card: Lion Knights' Castle, bought for less than the official price." loading="lazy"><figcaption>A set card with its official price and the shops' prices.</figcaption></figure>
+    </article>
+    <article class="feature" id="f-anywhere">
+      <div class="text">
+        <h3>On your phone, Chromebook or Googlebook</h3>
+        <div><span class="badge web">Installable</span></div>
+        <p class="lead">The website adapts to small screens and installs as an app with its own icon and window.</p>
+        <ul>
+          <li>In Chrome: the menu's <em>Install app</em> or <em>Add to home screen</em>; on ChromeOS and Googlebooks, the install icon in the address bar.</li>
+          <li>Opens instantly, even before the network answers; every deploy shows at once.</li>
+          <li>When the desktop app is running at home, a refresh pressed on the phone is done there, without AI.</li>
+        </ul>
+      </div>
+      <figure class="narrow"><img src="shots/phone.jpg" alt="The app on a phone in Demo Mode." loading="lazy"><figcaption>On a phone.</figcaption></figure>
+    </article>
+  </section>
+
+  <section id="ch-prices">
+    <div class="chapter-head"><span class="num">02</span><h2>Prices</h2></div>
+    <article class="feature flip" id="f-market">
+      <div class="text">
+        <h3>Market prices</h3>
+        <div><span class="badge noai">No AI on desktop</span><span class="badge ai">Gemini on the website alone</span></div>
+        <p class="lead">One tile per shop: the price, converted to your currency, and how far it is from the official price.</p>
+        <ul>
+          <li>30% or more below the official price turns the tile green: a great deal.</li>
+          <li>Each tile links to the listing; click the price to mark the set as bought at it.</li>
+          <li>Refresh one set, or all of them with <em>Update all</em>. With the desktop app running, both are done there.</li>
+          <li>The right product, or none: listings that only mention the set number (light kits, display cases, minifigure packs) are skipped, and a set the shop does not sell itself shows no price rather than a reseller's used offer.</li>
+        </ul>
+      </div>
+      <figure><img src="shots/card-deal.jpg" alt="Barad-dur with Amazon's price over 30% below the official price, highlighted green." loading="lazy"><figcaption>A great deal, highlighted.</figcaption></figure>
+    </article>
+    <article class="feature noshot" id="f-bricklink">
+      <div class="text">
+        <h3>BrickLink, the honest way</h3>
+        <div><span class="badge noai">No AI</span></div>
+        <p class="lead">BrickLink's price is the cheapest <strong>new</strong> lot that is <strong>sealed or complete</strong>, read lot by lot.</p>
+        <ul>
+          <li>BrickLink's summary "minimum price" mixes in incomplete and used lots: a set at 5 EUR is usually "speeder only, no minifigures". Brick Tracker reads every lot instead.</li>
+          <li>Lots marked incomplete are skipped, and so are lots marked complete whose description admits missing parts or figures, which sellers do surprisingly often.</li>
+          <li>The tile says which it is: New (sealed) or New (complete).</li>
+        </ul>
+      </div>
+    </article>
+    <article class="feature" id="f-sources">
+      <div class="text">
+        <h3>Your price sources</h3>
+        <div><span class="badge sync">Synced</span></div>
+        <p class="lead">Amazon EU, BrickLink and Arukereso to start with; add up to fifteen shops of your own by their search address.</p>
+        <ul>
+          <li>A source is a name, a search URL with <code>{setNumber}</code> where the number goes, a currency and a chart colour.</li>
+          <li>Saved to your account, so every device and the desktop app use the same list.</li>
+          <li>In the desktop app each source shows how it is read: built-in rules, taught, or not taught yet. See <a href="#d-teach">teaching a new shop</a>.</li>
+        </ul>
+      </div>
+      <figure><img src="shots/price-sources.jpg" alt="The Price Sources dialog with Amazon EU, BrickLink and Arukereso." loading="lazy"><figcaption>Price sources, on the website.</figcaption></figure>
+    </article>
+    <article class="feature flip" id="f-history">
+      <div class="text">
+        <h3>Price history</h3>
+        <div><span class="badge noai">No AI</span><span class="badge sync">Synced</span></div>
+        <p class="lead">Each refresh stores every shop's price; the chart under the price tiles shows the lowest over time.</p>
+        <ul>
+          <li>Prices are kept both in the shop's own currency and converted to forints, so shops in different currencies chart on one axis.</li>
+          <li>The desktop app's 4AM refresh adds one reading a day, so the history fills in without you doing anything.</li>
+        </ul>
+      </div>
+      <figure><img src="shots/price-history.jpg" alt="A set card with the price history chart open under the price tiles." loading="lazy"><figcaption>Twelve weeks of history (demo data).</figcaption></figure>
+    </article>
+  </section>
+
+  <section id="ch-collection">
+    <div class="chapter-head"><span class="num">03</span><h2>Collection</h2></div>
+    <article class="feature" id="f-purchases">
+      <div class="text">
+        <h3>Purchases and savings</h3>
+        <div><span class="badge noai">No AI</span><span class="badge sync">Synced</span></div>
+        <p class="lead">Mark a set as purchased with the price, the currency and the day; the app does the rest.</p>
+        <ul>
+          <li>Paid in euros or dollars? The price is converted at the exchange rate of the purchase day.</li>
+          <li>The dashboard totals what you paid against the official prices: your savings so far.</li>
+          <li>Change the day later, or move a set back to planned.</li>
+        </ul>
+      </div>
+      <figure><img src="shots/card-purchased.jpg" alt="Lion Knights' Castle marked as purchased for 129,990 HUF." loading="lazy"><figcaption>A purchased set.</figcaption></figure>
+    </article>
+    <article class="feature flip" id="f-minifigs">
+      <div class="text">
+        <h3>Minifigure checklists</h3>
+        <div><span class="badge noai">No AI first</span></div>
+        <p class="lead">For collectible series, flip the card to a checklist of every figure.</p>
+        <ul>
+          <li>Star the figures you want, tick the ones you have; the card shows how many are still wanted.</li>
+          <li>The wanted figures show on your gift registry too.</li>
+        </ul>
+      </div>
+      <figure><img src="shots/minifigures.jpg" alt="The series checklist of the Dungeons and Dragons minifigures: some owned, some wanted." loading="lazy"><figcaption>A series checklist.</figcaption></figure>
+    </article>
+  </section>
+
+  <section id="ch-sharing">
+    <div class="chapter-head"><span class="num">04</span><h2>Sharing</h2></div>
+    <article class="feature" id="f-registry">
+      <div class="text">
+        <h3>Gift registry</h3>
+        <div><span class="badge web">Public link</span></div>
+        <p class="lead">Pick sets for a wishlist and send the link. Family can see the best prices and reserve a gift, without an account.</p>
+        <ul>
+          <li>First reservation wins, so nobody buys the same set twice.</li>
+          <li>Only what a gift-giver needs is shared: names, pictures, best prices and wanted figures. Never what you paid, never your account.</li>
+          <li>Several registries side by side (birthday, Christmas), each with its own link.</li>
+        </ul>
+      </div>
+      <figure><img src="shots/registry.jpg" alt="The demo gift registry, with one set reserved by Grandma." loading="lazy"><figcaption>The demo registry: <a href="https://lego.gykovacszoltan.hu/registry/demo">open it</a>.</figcaption></figure>
+    </article>
+    <article class="feature noshot" id="f-api">
+      <div class="text">
+        <h3>Planned Sets API</h3>
+        <div><span class="badge web">JSON</span><span class="badge sync">Kept in sync</span></div>
+        <p class="lead">A private link that returns your planned sets, with every shop's price, and your purchases, as JSON for other apps.</p>
+        <ul>
+          <li>Create it from the API button (Planned filter). The random token in the link is the only key: delete the link to revoke it.</li>
+          <li>Kept up to date automatically whenever your sets change; responses are cached for a minute; open to browsers (CORS).</li>
+          <li>Purchases carry the day, the price paid and the official price, which a budgeting app can book as expenses.</li>
+        </ul>
+<pre><code>GET https://your-site.example/api/planned-sets/&lt;token&gt;
+{ "title": "Planned sets", "updatedAt": "...", "count": 28,
+  "sets": [{ "setNumber": "31393", "name": "Forest Animals: Gray Wolf", "legoPriceHuf": 18990,
+             "prices": [{ "sourceId": "arukereso", "price": 14998, "currency": "HUF", "priceHuf": 14998, "url": "..." }] }],
+  "purchases": [{ "setNumber": "10305", "purchasedOn": "2026-08-17", "price": 129990, "currency": "HUF", "legoPriceHuf": 154990 }] }</code></pre>
+      </div>
+    </article>
+    <article class="feature flip" id="f-demo">
+      <div class="text">
+        <h3>Demo Mode</h3>
+        <p class="lead">Try everything without signing in: sample sets with made-up prices, a price history to chart, a minifigure checklist and a demo registry.</p>
+        <ul>
+          <li>Nothing is saved and nothing is fetched, so it is safe to click around.</li>
+          <li>Every screenshot on this page is Demo Mode.</li>
+        </ul>
+      </div>
+      <figure><img src="shots/login.jpg" alt="The sign-in screen with Login with Google, Try Demo Mode and Check Demo Registry." loading="lazy"><figcaption>The way in.</figcaption></figure>
+    </article>
+  </section>
+</div>
+
+<!-- ============================ DESKTOP ============================ -->
+<div class="panel" data-panel="desktop" id="desktop">
+  <div class="tab-head desktop"><span class="label">Windows</span><h2>Desktop app</h2><p>The same app, with a real browser of its own. It checks prices without AI, refreshes every morning, and does the fetching for the website whenever it is running.</p></div>
+
+  <section id="d-what" class="prose">
+    <div class="section-head"><h2>What it adds</h2></div>
+    <ul>
+      <li><strong>Prices without AI.</strong> Shop pages are read the way you would read them, in a browser on your own connection, instead of asking Gemini to look them up.</li>
+      <li><strong>A daily refresh at 4AM,</strong> or at the first start after it if the PC was off. Nobody needs to open anything.</li>
+      <li><strong>Work for the website.</strong> Press refresh on your phone and the desktop app at home does it; see <a href="#s-handoff">the hand-off</a>.</li>
+      <li><strong>New shops, learnt once.</strong> Teach it any shop's search page; see <a href="#d-teach">teaching</a>.</li>
+      <li><strong>Everything else is identical:</strong> the same screens, the same account, the same data, live.</li>
+    </ul>
+  </section>
+
+  <section id="d-scraping" class="prose">
+    <div class="section-head"><h2>Reading shops with a real browser</h2><p>Shops guard their pages against bots. Each of these settings came from a live trial, and each one gets past a real block.</p></div>
+    <div class="table-box"><table>
+      <tr><th>Setting</th><th>Why</th></tr>
+      <tr><td>Its own Chromium (Playwright), shipped with the app</td><td>Works the same on every PC, independent of the installed browser and its policies.</td></tr>
+      <tr><td>A real browser window, parked off-screen</td><td>Cloudflare's check (Arukereso) never clears for a headless browser, but clears at once for a real window. Nothing appears on screen.</td></tr>
+      <tr><td>English browser language</td><td>Amazon.de blocks or blanks the page for some browser languages; the display currency is pinned separately.</td></tr>
+      <tr><td>A persistent profile, one page at a time, with pauses</td><td>Consent and clearance cookies survive between runs, and the shops see a person-paced visitor, not a burst.</td></tr>
+    </table></div>
+    <p>Matching is strict: the title must carry the set number where shops put a set's own code, accessories are excluded, and when a set's own listing has no price the answer is "no price", never the next product down the list.</p>
+  </section>
+
+  <section id="d-daily" class="prose">
+    <div class="section-head"><h2>The 4AM refresh</h2></div>
+    <p>Every day at 4AM local time the desktop app refreshes the market prices of your sets and adds the day's reading to their history. If the PC was asleep or off, it runs at the next start. With the app signed in on several machines it still runs once: the day's run is a shared request that the first machine to claim it carries out.</p>
+  </section>
+
+  <section id="d-details" class="prose">
+    <div class="section-head"><h2>Set details from LEGO.com</h2></div>
+    <p>Adding a set in the desktop app reads LEGO.com in the browser first: the official HUF price and the product photo from the Hungarian page, and LEGO's English name from the US page. Brickset fills only the gaps, and covers sets LEGO.com does not list. No AI is involved.</p>
+  </section>
+
+  <section id="d-teach">
+    <div class="section-head"><h2>Teaching a new shop</h2><p>Any shop with a search page can become a price source.</p></div>
+    <article class="feature" style="padding-top:0">
+      <div class="text">
+        <div><span class="badge ai">Gemini, once per shop</span><span class="badge desk">Desktop app</span></div>
+        <ol class="prose" style="padding-left:20px">
+          <li>Add the shop in Price Sources with its search address, <code>{setNumber}</code> where the number goes, and press <strong>Teach</strong>.</li>
+          <li>The app opens that search page for three of your planned sets in its browser and keeps a compact copy of each.</li>
+          <li>Gemini writes reading instructions from them: which elements are the products, their titles and prices, and how numbers are written.</li>
+          <li>The instructions are run on the same live pages; if they find nothing, Gemini gets one retry with what the test saw.</li>
+          <li>You see the prices found and choose <strong>Save</strong> or <strong>Discard</strong>. Saved instructions sync to every device.</li>
+        </ol>
+        <p class="note ai-note"><strong>Why data, not code:</strong> a shop page could try to trick the AI. Instructions can only point at elements and read their text, so nothing a page says can make the app run anything.</p>
+      </div>
+      <figure><img src="shots/price-sources-desktop.jpg" alt="Price Sources in the desktop app: built-in rules for Amazon and Arukereso, an example shop not taught yet, with Teach buttons." loading="lazy"><figcaption>Built-in, taught, or not taught yet.</figcaption></figure>
+    </article>
+  </section>
+
+  <section id="d-tray" class="prose">
+    <div class="section-head"><h2>Tray, startup and updates</h2></div>
+    <ul>
+      <li>Closing the window keeps the app in the tray, so the 4AM refresh and the website's requests still happen. Quit from the tray menu.</li>
+      <li>It starts with Windows, straight into the tray; the tray menu's <em>Start with Windows</em> turns that off.</li>
+      <li>Sign-in opens Google in your normal browser, because Google does not allow signing in inside embedded browsers.</li>
+      <li>To update, quit from the tray and run the new build's <code>install.cmd</code>.</li>
+    </ul>
+  </section>
+
+  <section id="d-private" class="prose">
+    <div class="section-head"><h2>What stays on your PC</h2></div>
+    <ul>
+      <li>The Gemini key (used only for teaching) is kept in Windows Credential Manager; the sign-in client file sits in <code>%APPDATA%\Brick Tracker</code>. Neither is ever part of a build.</li>
+      <li>The app's server listens on this PC only (<code>localhost</code>), never on the network.</li>
+      <li>The browser profile it reads shops with is its own, separate from yours.</li>
+    </ul>
+  </section>
+</div>
+
+<!-- ============================ SYNC ============================ -->
+<div class="panel" data-panel="sync" id="sync">
+  <div class="tab-head sync"><span class="label">Data</span><h2>Sync</h2><p>How your data moves between devices, between the website and the desktop app, and out to other people and apps.</p></div>
+
+  <section id="s-live" class="prose">
+    <div class="section-head"><h2>Live sync between devices</h2></div>
+    <p>Your sets, their price history and your price sources are stored in Firestore under your Google account. Every open copy of the app listens for changes, so a set added on the phone, a price refreshed on the desktop, or a source taught on another PC shows everywhere within a second or two. Access is enforced by Firestore's security rules: nobody else can read or change your sets.</p>
+  </section>
+
+  <section id="s-handoff" class="prose">
+    <div class="section-head"><h2>The desktop does the website's work</h2><p>While the desktop app runs, the website hands it every refresh instead of asking Gemini.</p></div>
+    <ol>
+      <li>The desktop app writes an "I'm online" signal to Firestore every 2 minutes.</li>
+      <li>You press <em>Update all</em>, or refresh a card, on any device. The website writes a request: which sets, and whether details, prices or both.</li>
+      <li>The desktop app claims the request and runs its normal local-browser refresh. The website shows "Refreshing in the desktop app (local browser, no AI)".</li>
+      <li>The new prices arrive on every device through live sync, and the request is cleared.</li>
+    </ol>
+    <p class="callout warn">The website falls back to Gemini when the desktop app has not been seen for 5 minutes, does not pick the request up within 45 seconds, or reports a failure. Claiming and cancelling are Firestore transactions, so a request is never done twice.</p>
+  </section>
+
+  <section id="s-machines" class="prose">
+    <div class="section-head"><h2>Several desktops</h2></div>
+    <p>Sign the desktop app in on more than one Windows PC with the same Google account and they share the work: each request is claimed by exactly one of them, and the 4AM refresh runs once a day, on whichever machine claims it. Moving to a new PC is just installing and signing in there.</p>
+  </section>
+
+  <section id="s-api" class="prose">
+    <div class="section-head"><h2>Other apps: the Planned Sets API</h2></div>
+    <p>The app keeps a public snapshot of your planned sets and purchases, at a link with a random token, up to date whenever your sets change. Other apps read it as JSON at <code>/api/planned-sets/&lt;token&gt;</code>; see <a href="#f-api">the feature</a>. Deleting the link revokes access at once.</p>
+  </section>
+
+  <section id="s-links" class="prose">
+    <div class="section-head"><h2>Share links</h2></div>
+    <p>Gift registries are public by their link, like the API: only the fields a gift-giver needs are copied into the registry, and reservations are written by visitors, first come first served. Links always point at your own deployment.</p>
+  </section>
+
+  <section id="s-offline" class="prose">
+    <div class="section-head"><h2>Offline</h2></div>
+    <p>The installed app opens without a network, from its cached files, and shows the sets the browser last saw; fetching prices and syncing need a connection again.</p>
+  </section>
+
+  <section id="s-table">
+    <div class="section-head"><h2>At a glance</h2></div>
+    <div class="table-box"><table>
+      <tr><th>Data</th><th>Where it lives</th><th>Who can read it</th><th>Reaches</th></tr>
+      <tr><td>Sets, purchases, minifigure ticks</td><td>Firestore <code>sets</code></td><td>You</td><td>Every device, live</td></tr>
+      <tr><td>Price history</td><td>Firestore, under each set</td><td>You</td><td>Every device</td></tr>
+      <tr><td>Price sources and taught shops</td><td>Firestore <code>userSettings</code></td><td>You</td><td>Every device and desktop</td></tr>
+      <tr><td>Desktop heartbeat and refresh requests</td><td>Firestore <code>desktopStatus</code>, <code>refreshRequests</code></td><td>You</td><td>Website and desktop apps</td></tr>
+      <tr><td>Planned Sets API snapshot</td><td>Firestore <code>plannedLists</code></td><td>Anyone with the link</td><td>Other apps</td></tr>
+      <tr><td>Gift registries</td><td>Firestore <code>registries</code></td><td>Anyone with the link</td><td>Family and friends</td></tr>
+      <tr><td>Gemini key, sign-in client</td><td>Vercel env (website); your PC (desktop)</td><td>Your servers only</td><td>Never the browser</td></tr>
+    </table></div>
+  </section>
+</div>
+
+<!-- ============================ SETUP ============================ -->
+<div class="panel" data-panel="setup" id="setup">
+  <div class="tab-head setup"><span class="label">Your own copy</span><h2>Setup guide</h2><p>Run Brick Tracker for yourself and your family: your own Firebase project for the data, Vercel for the website, and optionally the Windows desktop app. About an hour, most of it clicking through consoles.</p></div>
+
+  <section id="setup-plan" class="prose">
+    <div class="section-head"><h2>What you will set up</h2></div>
+    <div class="table-box"><table>
+      <tr><th>Part</th><th>What for</th><th>Needed?</th></tr>
+      <tr><td>A fork of the repository</td><td>Your copy of the code, for Vercel to build</td><td>Yes</td></tr>
+      <tr><td>Firebase project (Authentication + Firestore)</td><td>Sign-in and all the data</td><td>Yes</td></tr>
+      <tr><td>Gemini API key</td><td>Website price checks without the desktop app</td><td>Recommended</td></tr>
+      <tr><td>Vercel project</td><td>Hosting the website and its server</td><td>Yes</td></tr>
+      <tr><td>Google OAuth "Desktop app" client</td><td>Signing in to the desktop app</td><td>Only for the desktop app</td></tr>
+    </table></div>
+    <p>You need Node.js 20 or newer and Git on your computer for steps 1 and 4, and Windows for step 7.</p>
+  </section>
+
+  <section id="setup-steps">
+  <div class="steps">
+
+    <div class="step" id="setup-code">
+      <h3>Get the code</h3>
+      <ol>
+        <li>Fork <a href="https://github.com/zgyorkei/lego-tracker">github.com/zgyorkei/lego-tracker</a> to your GitHub account (the <em>Fork</em> button).</li>
+        <li>Clone your fork and install the dependencies:</li>
+      </ol>
+<pre><code>git clone https://github.com/&lt;you&gt;/lego-tracker.git
+cd lego-tracker
+npm install</code></pre>
+    </div>
+
+    <div class="step" id="setup-firebase">
+      <h3>Firebase: sign-in and the database</h3>
+      <ol>
+        <li>At <a href="https://console.firebase.google.com/">console.firebase.google.com</a>, <em>Create a project</em> (Google Analytics is not needed).</li>
+        <li><strong>Authentication</strong> &rarr; <em>Get started</em> &rarr; <em>Sign-in method</em> &rarr; enable <strong>Google</strong>, choose a support email, save.</li>
+        <li><strong>Firestore Database</strong> &rarr; <em>Create database</em>, in production mode, in a region near you (for Europe, <code>eur3</code> or <code>europe-west</code>). Note its name: usually <code>(default)</code>.</li>
+        <li>In Firestore's <strong>Rules</strong> tab, replace everything with the contents of <code>firestore.rules</code> from the repository, and <em>Publish</em>. Do this again whenever that file changes.</li>
+        <li><strong>Project settings</strong> (the gear) &rarr; <em>Your apps</em> &rarr; add a <strong>Web app</strong>. Copy the <code>firebaseConfig</code> values it shows: they become the <code>VITE_FIREBASE_*</code> variables below. They are not secret; the rules protect the data.</li>
+      </ol>
+      <p class="callout info">If your database is not named <code>(default)</code>, set <code>VITE_FIREBASE_DATABASE_ID</code> to its name, and pick that database in the console before pasting the rules: rules are per database.</p>
+    </div>
+
+    <div class="step" id="setup-gemini">
+      <h3>A Gemini API key</h3>
+      <ol>
+        <li>At <a href="https://aistudio.google.com/apikey">aistudio.google.com/apikey</a>, <em>Create API key</em>, in the Google Cloud project Firebase made (it is listed by the same name).</li>
+        <li>Keep it for the <code>GEMINI_API_KEY</code> variable. It only ever goes into the server's environment, never into the website's code.</li>
+      </ol>
+      <p>Without a key the app still works: BrickLink, Brickset and LEGO.com need none, and with the desktop app running no shop price needs AI either. Only the website's own price checks, and teaching new shops, use it.</p>
+    </div>
+
+    <div class="step" id="setup-local">
+      <h3>Run it locally</h3>
+      <p>Create a file named <code>.env</code> in the repository folder (it is ignored by Git), from <code>.env.example</code>:</p>
+<pre><code>GEMINI_API_KEY=your-gemini-key
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project
+VITE_FIREBASE_STORAGE_BUCKET=your-project.firebasestorage.app
+VITE_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_FIREBASE_APP_ID=...
+VITE_FIREBASE_DATABASE_ID=(default)</code></pre>
+<pre><code>npm run dev      # http://localhost:3000</code></pre>
+      <p>Open <a href="http://localhost:3000">localhost:3000</a> and sign in with Google; <code>localhost</code> is allowed by Firebase out of the box. Add a set to check that lookups and saving work.</p>
+    </div>
+
+    <div class="step" id="setup-deploy">
+      <h3>Deploy the website (Vercel)</h3>
+      <ol>
+        <li>At <a href="https://vercel.com/new">vercel.com/new</a>, import your fork. Vercel detects the Vite preset: build command <code>npm run build</code>, output directory <code>dist</code>. <code>vercel.json</code> makes <code>/api</code> a serverless function.</li>
+        <li>Under <em>Environment Variables</em>, add every line of your <code>.env</code>. Optionally set <code>VITE_PUBLIC_APP_URL</code> to your final address (for example <code>https://bricks.example.com</code>).</li>
+        <li><em>Deploy</em>. Optionally add your own domain under <em>Settings</em> &rarr; <em>Domains</em>.</li>
+        <li>Back in Firebase: <strong>Authentication</strong> &rarr; <em>Settings</em> &rarr; <em>Authorized domains</em> &rarr; add your Vercel address (<code>your-project.vercel.app</code>) and your own domain. Without this, Google sign-in is refused there.</li>
+      </ol>
+      <p>Every push to your fork's <code>main</code> deploys again by itself.</p>
+    </div>
+
+    <div class="step" id="setup-install">
+      <h3>Install it on your devices</h3>
+      <ul>
+        <li><strong>Android:</strong> open your address in Chrome, menu &rarr; <em>Install app</em> (or <em>Add to home screen</em>).</li>
+        <li><strong>ChromeOS, Googlebook, Windows or Mac:</strong> Chrome or Edge's install icon at the right of the address bar.</li>
+        <li><strong>iPhone and iPad:</strong> Safari &rarr; Share &rarr; <em>Add to Home Screen</em>.</li>
+      </ul>
+      <p>If the Google sign-in window is blocked on a phone, allow pop-ups for your site and try again; the sign-in screen says when this happens.</p>
+    </div>
+
+    <div class="step" id="setup-desktop">
+      <h3>The desktop app <span class="opt">optional, Windows</span></h3>
+      <p><strong>a. A sign-in client.</strong> In the <a href="https://console.cloud.google.com/">Google Cloud console</a>, open the project Firebase created:</p>
+      <ol>
+        <li><em>APIs &amp; Services</em> &rarr; <em>OAuth consent screen</em>: it already exists for Firebase's web sign-in. Make sure its publishing status is <strong>In production</strong> (in "Testing", sign-ins expire every 7 days). The app only asks for name and email, so no Google review is needed.</li>
+        <li><em>Credentials</em> &rarr; <em>Create credentials</em> &rarr; <em>OAuth client ID</em> &rarr; type <strong>Desktop app</strong> &rarr; <em>Create</em> &rarr; <em>Download JSON</em>.</li>
+      </ol>
+      <p><strong>b. Build it.</strong> The desktop app contains the website, so it is built with the same <code>.env</code> as step 4. Add your public address, so gift-registry and API links point at your site rather than at the desktop app:</p>
+<pre><code># in .env, next to the Firebase variables
+VITE_PUBLIC_APP_URL=https://your-site.example
+
+cd desktop
+npm install
+npx playwright install chromium
+npm run dist</code></pre>
+      <p>This builds the website, bundles Chromium, and writes <code>desktop\release\&lt;version&gt;-&lt;date&gt;\</code> with the app, <code>install.cmd</code> and a zip of both (about 350 MB). Copy the zip to any PC you want it on.</p>
+      <p><strong>c. Install it.</strong> Run <code>install.cmd</code> from that folder (no admin rights needed). It copies the app to <code>%LOCALAPPDATA%\Programs\Brick Tracker</code>, adds a Start menu shortcut, makes it start with Windows, and starts it. The app is not code-signed, so Windows SmartScreen may warn the first time: <em>More info</em> &rarr; <em>Run anyway</em>.</p>
+      <p><strong>d. Its two secrets</strong>, which are never part of a build:</p>
+      <ul>
+        <li>Save the downloaded client JSON as <code>%APPDATA%\Brick Tracker\oauth-client.json</code>.</li>
+        <li>For teaching new shops, store your Gemini key in Windows Credential Manager by running <code>npx shop-teacher key set</code> in the <code>desktop</code> folder (it asks for the key and never shows it). Alternatively put <code>GEMINI_API_KEY=...</code> in <code>%APPDATA%\Brick Tracker\.env</code>; the app moves it into Credential Manager at the next start.</li>
+      </ul>
+      <p><strong>e. Sign in.</strong> Open Brick Tracker, <em>Login with Google</em>: Google opens in your normal browser; approve, and you are signed in. From then on the app lives in the tray, refreshes at 4AM, and does the website's refreshes while it runs.</p>
+      <p class="callout warn">If you build from a terminal inside VS Code, <code>npm start</code> and <code>install.cmd</code> already cope with VS Code's <code>ELECTRON_RUN_AS_NODE</code> variable; other Electron tools may need it cleared.</p>
+    </div>
+  </div>
+  </section>
+
+  <section id="setup-update" class="prose">
+    <div class="section-head"><h2>Updating</h2></div>
+    <ul>
+      <li><strong>Website:</strong> sync your fork with the original on GitHub (<em>Sync fork</em>); Vercel deploys it. If <code>firestore.rules</code> changed, paste it into the Firebase console again.</li>
+      <li><strong>Desktop app:</strong> pull, run <code>npm run dist</code> in <code>desktop</code> again, quit the app from the tray, and run the new <code>install.cmd</code>. Your sign-in and settings are kept.</li>
+    </ul>
+  </section>
+
+  <section id="setup-costs" class="prose">
+    <div class="section-head"><h2>Costs</h2></div>
+    <div class="table-box"><table>
+      <tr><th>Service</th><th>Typical personal use</th><th>Cost</th></tr>
+      <tr><td>Firestore</td><td>A few hundred reads and writes a day, plus about 720 heartbeat writes while the desktop app runs. The free tier is 50,000 reads and 20,000 writes a day.</td><td>Free</td></tr>
+      <tr><td>Vercel (Hobby)</td><td>Small serverless calls on refresh</td><td>Free</td></tr>
+      <tr><td>Gemini API</td><td>Only website price checks without the desktop app, and teaching a shop (a couple of calls each)</td><td>Pay per use; zero while the desktop app does the work</td></tr>
+      <tr><td>Desktop app</td><td>Your PC and your connection</td><td>Free</td></tr>
+    </table></div>
+    <p>Setting a small budget alert in the Google Cloud console is a good habit for any project with billing.</p>
+  </section>
+
+  <section id="setup-trouble">
+    <div class="section-head"><h2>Troubleshooting</h2></div>
+    <div class="table-box"><table>
+      <tr><th>What you see</th><th>Likely cause and fix</th></tr>
+      <tr><td>Google sign-in fails on the deployed site, but works on localhost</td><td>The address is not in Firebase's <em>Authorized domains</em> (step 5).</td></tr>
+      <tr><td>"Allow pop-ups for this site" on the sign-in screen</td><td>The browser blocked Google's window: allow pop-ups for your address.</td></tr>
+      <tr><td>"You do not have access to this data", or price sources not saving</td><td>The Firestore rules in the console are older than <code>firestore.rules</code>: paste and publish them again, in the right database.</td></tr>
+      <tr><td>The API link answers 502</td><td>Same: the <code>plannedLists</code> rule is not published yet. A 503 means the server lacks <code>VITE_FIREBASE_PROJECT_ID</code>.</td></tr>
+      <tr><td>The website still says "via Gemini" with the desktop app running</td><td>The desktop app is not signed in, or the rules lack <code>desktopStatus</code> and <code>refreshRequests</code>. Give it two minutes after starting for its first "I'm online".</td></tr>
+      <tr><td>"Sign-in is not set up yet" in the desktop app</td><td><code>%APPDATA%\Brick Tracker\oauth-client.json</code> is missing (step 7d).</td></tr>
+      <tr><td>Desktop sign-ins expire after a week</td><td>The OAuth consent screen is in "Testing": set it to "In production" (step 7a).</td></tr>
+      <tr><td>Gift-registry links from the desktop app point at the wrong site</td><td>Rebuild with <code>VITE_PUBLIC_APP_URL</code> set (step 7b).</td></tr>
+      <tr><td>A shop shows no price in the desktop app</td><td>It may not sell that set itself, or not be taught yet: open Price Sources and press <em>Teach</em>.</td></tr>
+    </table></div>
+  </section>
+</div>
+
+<footer>
+  Brick Tracker is a personal project, not affiliated with the LEGO Group. LEGO is a trademark of the LEGO Group. Set pictures on this page come from Brickset; every price shown is demo data.
+  <br>Source: <a href="https://github.com/zgyorkei/lego-tracker">github.com/zgyorkei/lego-tracker</a>
+</footer>
+</main>
+</div>
+
+<div id="viewer" role="dialog" aria-label="Screenshot"><img alt=""><p></p></div>
+
+<script>
+  const TABS = ['overview', 'features', 'desktop', 'sync', 'setup'];
+  const panels = [...document.querySelectorAll('.panel')];
+  let current = null;
+  function show(tab) {
+    if (tab === current) return;
+    current = tab;
+    panels.forEach((p) => { p.hidden = p.dataset.panel !== tab; });
+    document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === tab)));
+    document.querySelectorAll('.menu').forEach((m) => m.classList.toggle('on', m.dataset.menu === tab));
+  }
+  // The address names a tab, or a section inside one: open its tab, then scroll to it.
+  function route() {
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (!id || TABS.includes(id)) {
+      show(id || 'overview');
+      if (id) document.querySelector('.tabbar').scrollIntoView();
+      return;
+    }
+    const target = document.getElementById(id);
+    const panel = target && target.closest('.panel');
+    if (!panel) return show('overview');
+    show(panel.dataset.panel);
+    requestAnimationFrame(() => target.scrollIntoView());
+  }
+  addEventListener('hashchange', route);
+  route();
+  // The side menu marks the section being read.
+  const links = [...document.querySelectorAll('.menu a')];
+  const watch = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      links.forEach((a) => a.classList.toggle('here', a.getAttribute('href') === '#' + entry.target.id && a.closest('.menu').classList.contains('on')));
+    }
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  document.querySelectorAll('main section[id], main article[id], main .step[id]').forEach((el) => watch.observe(el));
+  // Screenshots open full size.
+  const viewer = document.getElementById('viewer');
+  document.querySelectorAll('figure img, .hero-shot img').forEach((img) => img.addEventListener('click', () => {
+    viewer.querySelector('img').src = img.src;
+    viewer.querySelector('p').textContent = img.alt;
+    viewer.classList.add('open');
+  }));
+  viewer.addEventListener('click', () => viewer.classList.remove('open'));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') viewer.classList.remove('open'); });
+</script>
+</body>
+</html>

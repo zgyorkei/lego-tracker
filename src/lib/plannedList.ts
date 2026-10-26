@@ -1,14 +1,13 @@
 import { LegoSet, PlannedListPrice, PlannedListPurchase, PlannedListSet, PriceSource, isPriceQuote } from '../types';
+import { publicAppUrl } from './appUrl';
 
 export const PLANNED_LISTS_COLLECTION = 'plannedLists';
 
-// Same public origin the gift registry links use. The API URL is handed to
-// another application, so it must point at the deployed app rather than
-// whatever origin (localhost, a preview) the owner happens to be on.
-const PUBLIC_APP_URL = 'https://lego.gykovacszoltan.hu';
-
+// Same public origin the gift registry links use (publicAppUrl). The API URL
+// is handed to another application, so it must point at the deployment, not
+// at the desktop app's localhost.
 export const plannedListApiUrl = (token: string): string =>
-  `${PUBLIC_APP_URL}/api/planned-sets/${token}`;
+  `${publicAppUrl()}/api/planned-sets/${token}`;
 
 /** 24 hex chars from the CSPRNG. The token is the only access control. */
 export function generatePlannedListToken(): string {

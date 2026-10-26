@@ -153,6 +153,21 @@ exclusive.
   and also drops lots whose description admits missing parts or minifigures
   (`isIncompleteLotDescription`), because sellers mislabel partial sets as
   Complete.
+- **Links handed to other people go through `publicAppUrl`**
+  (`src/lib/appUrl.ts`): registry links and the Planned Sets API URL. It uses
+  `VITE_PUBLIC_APP_URL`, else the site's own origin, so self-hosted copies
+  link to themselves; the desktop app (localhost) needs the variable at build
+  time. Never hard-code a domain again.
+- **Demo Mode is curated data** (`src/demoData.ts`): Brickset image URLs
+  (LEGO's old image CDN is gone), dates relative to today, generated price
+  history (`demoPriceHistory`), and the built-in `/registry/demo`
+  (`RegistryView` never touches Firestore for it). It must never show anybody's
+  real data.
+- **The intro and setup guide is GitHub Pages from `docs/`** (`index.html`,
+  `shots/`, `.nojekyll`). Screenshots come from Demo Mode via
+  `node scripts/capture-docs-shots.cjs` against `npm run dev`; re-run it after
+  visible UI changes, and keep the setup guide in step with `.env.example`,
+  `firestore.rules` and the desktop build.
 - **Firebase config and rules deployment live in their own Firebase store**,
   not in this repo. The absence of `firebase.json` / `.firebaserc` here is
   deliberate, so do not add one or try to wire up `firebase deploy`. The

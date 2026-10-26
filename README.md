@@ -1,5 +1,7 @@
 # Brick Tracker
 
+**[Introduction, features and the full setup guide](https://zgyorkei.github.io/lego-tracker/)**: what the app does, how the website, Firebase and the desktop app fit together, and how to run your own copy.
+
 Brick Tracker is a comprehensive web application designed for Lego enthusiasts to meticulously manage and track their Lego collections. With this app, you can seamlessly plan future purchases, keep an eye on current market prices from various sources, track your actual purchases including detailed currency exchange calculations, and even check off the minifigures you own!
 
 ## Features

@@ -4,16 +4,23 @@ import { doc, getDoc, collection, onSnapshot, setDoc } from 'firebase/firestore'
 import { Registry, RegistryReservation, DEFAULT_PRICE_SOURCES } from './types';
 import { getLowestPrices } from './lib/prices';
 import { Gift, Check } from 'lucide-react';
+import { DEMO_REGISTRY, DEMO_RESERVATIONS } from './demoData';
+
+// /registry/demo: built-in sample data, reservations kept in memory only, so
+// the demo works on every deployment and nobody's registry is shown.
+const DEMO_ID = 'demo';
 
 export default function RegistryView({ registryId }: { registryId: string }) {
-  const [registry, setRegistry] = useState<Registry | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [reservations, setReservations] = useState<Record<string, RegistryReservation>>({});
+  const isDemo = registryId === DEMO_ID;
+  const [registry, setRegistry] = useState<Registry | null>(isDemo ? DEMO_REGISTRY : null);
+  const [loading, setLoading] = useState(!isDemo);
+  const [reservations, setReservations] = useState<Record<string, RegistryReservation>>(isDemo ? DEMO_RESERVATIONS : {});
   const [reservingSet, setReservingSet] = useState<string | null>(null);
   const [visitorName, setVisitorName] = useState('');
   const [reserveError, setReserveError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (isDemo) return;
     const fetchRegistry = async () => {
       try {
         const docRef = doc(db, 'registries', registryId);
@@ -41,7 +48,7 @@ export default function RegistryView({ registryId }: { registryId: string }) {
     });
 
     return () => unsub();
-  }, [registryId]);
+  }, [registryId, isDemo]);
 
   const handleReserve = async (setId: string) => {
     if (!visitorName.trim()) {
@@ -49,6 +56,12 @@ export default function RegistryView({ registryId }: { registryId: string }) {
       return;
     }
     setReserveError(null);
+    if (isDemo) {
+      const reservation = { id: setId, setId, reservedBy: visitorName.trim(), createdAt: new Date().toISOString() };
+      setReservations((prev) => ({ ...prev, [setId]: reservation }));
+      setReservingSet(null);
+      return;
+    }
     try {
       const resRef = doc(db, 'registries', registryId, 'reservations', setId);
       await setDoc(resRef, {
@@ -82,6 +95,11 @@ export default function RegistryView({ registryId }: { registryId: string }) {
       <main className="max-w-5xl mx-auto p-4 sm:p-6 mt-6">
         <div className="bg-lego-yellow p-4 border-4 border-black font-bold text-center mb-8 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
           <p>Browse the sets below. If you plan to buy one, click "Reserve" and enter your name.</p>
+          {isDemo && (
+            <p className="mt-2 text-sm">
+              This is a demo registry with made-up prices. Try reserving a gift: it stays in this browser tab only.
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">

@@ -31,7 +31,7 @@ import { scheduleDailyRun, useDesktopWorker, type RunRefresh } from './hooks/use
 import { withUrlTemplate } from './lib/priceSources';
 import { Modal } from './components/Modal';
 import { Status, Priority, DEFAULT_PRICE_SOURCES, PERMANENT_SOURCE_IDS, LegoSet, PriceHistory, SUPPORTED_CURRENCIES, isSupportedCurrency, isPriceQuote } from './types';
-import { DEMO_SETS } from './demoData';
+import { DEMO_SETS, demoPriceHistory } from './demoData';
 import { readStoredString, readStoredJson, writeStored } from './lib/storage';
 import { usePriceSources } from './hooks/usePriceSources';
 import { isDesktopApp } from './lib/platform';
@@ -46,6 +46,10 @@ const getMockSets = (): LegoSet[] => {
   if (Array.isArray(parsed) && parsed.length > 0) {
     sourceSets = parsed;
   }
+  // A visitor (nothing cached) gets the whole curated demo, in a fixed order,
+  // so every feature is on show; the random pick below is for previewing the
+  // demo with your own cached sets.
+  if (sourceSets === DEMO_SETS) return DEMO_SETS;
 
   // selection: one from each priority, one minifigures series and at least one purchased
   const high = sourceSets.filter(s => s.priority === 'high');
@@ -571,6 +575,17 @@ export default function App() {
 
   // Hoisted out of the SetCard JSX: as an inline arrow it was a fresh function
   // on every render, which defeated memoising SetCard entirely.
+  // Demo Mode has no Firestore history to read; the demo sets get generated
+  // readings instead, so the price-history chart has something to show.
+  const priceHistoryFor = useCallback(
+    async (id: string): Promise<PriceHistory[]> => {
+      if (!isDemoMode) return getPriceHistory(id);
+      const set = mockSets.find(s => s.id === id);
+      return set ? demoPriceHistory(set) : [];
+    },
+    [isDemoMode, mockSets, getPriceHistory]
+  );
+
   const handleDeleteSet = useCallback((id: string) => {
     if (isDemoMode) {
       setMockSets(prev => prev.filter(s => s.id !== id));
@@ -645,15 +660,20 @@ export default function App() {
             >
               <Eye size={20} /> Try Demo Mode
             </button>
-            <a 
-              href="https://lego.gykovacszoltan.hu/registry/f79e4444c51ee61e775b5521"
+            {/* Built in, so it works on every deployment. This used to link a
+                real registry on one site, which had since been deleted. */}
+            <a
+              href="/registry/demo"
               target="_blank"
               rel="noreferrer"
               className="w-full flex items-center justify-center gap-3 py-3 border-2 border-black rounded-lg font-black uppercase text-sm bg-lego-yellow text-black hover:brightness-95 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] transition-all"
             >
               <Gift size={20} /> Check Demo Registry
             </a>
-            <div className="pt-4 text-center">
+            <div className="pt-4 flex justify-center gap-6 text-center">
+              <a href="https://zgyorkei.github.io/lego-tracker/" target="_blank" rel="noreferrer" className="text-xs font-bold text-gray-500 hover:text-black hover:underline uppercase tracking-wider transition-colors inline-block">
+                How it works &amp; setup
+              </a>
               <a href="https://github.com/zgyorkei/lego-tracker" target="_blank" rel="noreferrer" className="text-xs font-bold text-gray-500 hover:text-black hover:underline uppercase tracking-wider transition-colors inline-block">
                 View on GitHub
               </a>
@@ -720,6 +740,20 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">
+        {isDemoMode && (
+          <div role="status" className="mb-6 bg-white border-2 border-black rounded-lg px-4 py-3 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <p className="text-sm font-bold text-gray-700">
+              <span className="font-black uppercase text-lego-red mr-2">Demo</span>
+              Sample sets with made-up prices. Look around freely: nothing is saved, and no prices are fetched.
+            </p>
+            <button
+              onClick={() => setIsDemoMode(false)}
+              className="shrink-0 px-3 py-1.5 bg-lego-blue text-white border-2 border-black rounded font-black text-xs uppercase"
+            >
+              Sign in to track your own
+            </button>
+          </div>
+        )}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2 p-1 bg-white border-2 border-black rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
@@ -809,8 +843,14 @@ export default function App() {
                      return (
                         <>
                            <RefreshCcw size={14} className="group-hover:animate-spin-once" />
-                           <span className="hidden group-hover:inline">Update All</span>
-                           <span className="inline group-hover:hidden whitespace-nowrap">Updated: {lastUpdatedStr}</span>
+                           {/* Both labels share one grid cell and only their
+                               visibility toggles, so the button keeps the width
+                               of the longer one. Swapping them with display:none
+                               resized the button on hover and made it jump. */}
+                           <span className="grid">
+                             <span className="col-start-1 row-start-1 invisible group-hover:visible text-center whitespace-nowrap">Update All</span>
+                             <span className="col-start-1 row-start-1 group-hover:invisible text-center whitespace-nowrap">Updated: {lastUpdatedStr}</span>
+                           </span>
                         </>
                      );
                   })()}
@@ -856,7 +896,7 @@ export default function App() {
                     // Website only: hand the card's refreshes to the desktop
                     // app when it runs. Stable identity, so the memo holds.
                     delegateRefresh={!isDemoMode && !isDesktopApp ? delegate : undefined}
-                    getPriceHistory={getPriceHistory}
+                    getPriceHistory={priceHistoryFor}
                     onAddPriceHistory={addPriceHistory}
                     priceSources={priceSources}
                     displayCurrency={displayCurrency}

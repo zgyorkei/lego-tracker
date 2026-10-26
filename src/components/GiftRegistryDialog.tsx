@@ -6,6 +6,7 @@ import { collection, doc, setDoc, query, where, deleteDoc, onSnapshot } from 'fi
 import { db, auth } from '../lib/firebase';
 import { getLowestPrices } from '../lib/prices';
 import { Modal } from './Modal';
+import { registryUrl } from '../lib/appUrl';
 
 interface GiftRegistryDialogProps {
   onClose: () => void;
@@ -144,7 +145,7 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
          createdAt: editingRegistry ? editingRegistry.createdAt : new Date().toISOString()
       }, { merge: true });
       
-      setCreatedLink(`https://lego.gykovacszoltan.hu/registry/${token}`);
+      setCreatedLink(registryUrl(token!));
     } catch (e) {
       console.error(e);
       setSaveError('Could not save the registry. Please try again.');
@@ -201,13 +202,13 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
                      </div>
                      <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                         <button 
-                          onClick={() => handleCopy(`https://lego.gykovacszoltan.hu/registry/${reg.id}`)}
+                          onClick={() => handleCopy(registryUrl(reg.id))}
                           className="px-3 py-2 bg-gray-100 hover:bg-gray-200 border-2 border-black rounded font-black text-xs uppercase flex items-center gap-2 transition-colors"
                         >
                           <LinkIcon size={14} /> Copy Link
                         </button>
                         <a 
-                          href={`https://lego.gykovacszoltan.hu/registry/${reg.id}`}
+                          href={registryUrl(reg.id)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="px-3 py-2 bg-white hover:bg-gray-50 border-2 border-black rounded font-black text-xs uppercase flex items-center gap-2 transition-colors"
