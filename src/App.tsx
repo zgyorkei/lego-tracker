@@ -26,6 +26,7 @@ import { GiftRegistryDialog } from './components/GiftRegistryDialog';
 import { PlannedListDialog } from './components/PlannedListDialog';
 import { TeachSourcePanel } from './components/TeachSourcePanel';
 import { SourceIdInput } from './components/SourceIdInput';
+import { identityFromQuotes, mergeLookupName } from './lib/setIdentity';
 import { withUrlTemplate } from './lib/priceSources';
 import { Modal } from './components/Modal';
 import { Status, Priority, DEFAULT_PRICE_SOURCES, PERMANENT_SOURCE_IDS, LegoSet, PriceHistory, SUPPORTED_CURRENCIES, isSupportedCurrency, isPriceQuote } from './types';
@@ -228,8 +229,12 @@ export default function App() {
   const handleBatchRefresh = async (skipLegoInfo = false) => {
     if (isBatchRefreshing || filteredSets.length === 0) return;
     setIsBatchRefreshing(true);
-    
+
     const headers = {};
+    // What this run has already written per set. filteredSets is a snapshot
+    // from before the run, so without this a name the details step just found
+    // would still look like a placeholder when the price step fills gaps.
+    const resolved = new Map<string, Partial<LegoSet>>();
 
     if (!skipLegoInfo) {
       setBatchProgress({ current: 0, total: filteredSets.length });
@@ -258,7 +263,8 @@ export default function App() {
                   const legoData = await legoRes.json();
                   if (legoData?.image) imagesResolved.add(set.setNumber);
                   if (legoData && legoData.priceHuf !== undefined) {
-                      const finalName = legoData.name || set.name;
+                      // A placeholder ("633412-1") never replaces a real name.
+                      const finalName = mergeLookupName(legoData.name, set);
                       const updates: any = {
                          name: finalName,
                          ...(legoData.image ? { productImage: legoData.image } : {}),
@@ -288,6 +294,7 @@ export default function App() {
                       }
                       
                       await updateSet(set.id, updates);
+                      resolved.set(set.id, updates);
                   }
               }
           } catch (e) {
@@ -313,7 +320,10 @@ export default function App() {
                   await Promise.allSettled(
                       setsMissingImage
                           .filter(s => imageMap[s.setNumber])
-                          .map(s => updateSet(s.id, { productImage: imageMap[s.setNumber] }))
+                          .map(s => {
+                              resolved.set(s.id, { ...resolved.get(s.id), productImage: imageMap[s.setNumber] });
+                              return updateSet(s.id, { productImage: imageMap[s.setNumber] });
+                          })
                   );
               }
           } catch (e) {
@@ -356,7 +366,10 @@ export default function App() {
                 if (marketPrices) {
                     setUpdates.push(updateSet(set.id, {
                         marketPrices,
-                        lastPricesRefreshTime: Date.now()
+                        lastPricesRefreshTime: Date.now(),
+                        // Name and image from a shop listing, only where the set
+                        // still has none (e.g. promotional items like 633412).
+                        ...identityFromQuotes({ ...set, ...resolved.get(set.id) }, marketPrices, priceSources),
                     }));
 
                     const historyEntry: PriceHistory = {

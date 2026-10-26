@@ -1,7 +1,7 @@
 import type { BrowserContext, Page } from 'playwright';
 import { capturePage as captureOpenPage, GENERIC_CONSENT, readPagePrice, readSearchCards } from 'shop-teacher/browser';
 import { parseRecipe, rankCards, type RecipeTestResult, type ScrapeRecipe, type ScrapedCard } from '../../../lib/scrapeRecipe';
-import type { PageCapture, PriceScraper } from '../../../lib/server-api';
+import type { PageCapture, PriceScraper, ScrapedPrice } from '../../../lib/server-api';
 import { builtinRecipeFor } from '../../../lib/builtinRecipes';
 
 // Close the browser after this long without work, so it is not left running
@@ -44,7 +44,7 @@ export class PlaywrightScraper implements PriceScraper {
   async scrapePrice(
     source: { id: string; urlTemplate: string; scraper?: unknown },
     setNumber: string
-  ): Promise<{ price: number; url: string | null } | null> {
+  ): Promise<ScrapedPrice | null> {
     const url = source.urlTemplate.replace('{setNumber}', encodeURIComponent(setNumber));
     // A taught recipe wins over a built-in one for the same host.
     const recipe = parseRecipe(source.scraper) ?? builtinRecipeFor(url);
@@ -53,7 +53,7 @@ export class PlaywrightScraper implements PriceScraper {
       return null;
     }
     const r = await this.enqueue((page) => this.runRecipe(page, url, setNumber, recipe));
-    return r.price != null ? { price: r.price, url: r.url } : null;
+    return r.price != null ? { price: r.price, url: r.url, title: r.title ?? null, image: r.image ?? null } : null;
   }
 
   /**
@@ -183,9 +183,13 @@ export class PlaywrightScraper implements PriceScraper {
       }
     };
 
+    // The listing's own title and image travel with the price, so the app can
+    // name and picture a set that LEGO.com and Brickset know nothing about.
+    const identity = (card: { title: string; image?: string | null }) => ({ title: card.title || null, image: card.image ?? null });
+
     let productPages = 0;
     for (const card of ranked) {
-      if (card.price != null) return { ...result, price: card.price, url: absolute(card.href) };
+      if (card.price != null) return { ...result, ...identity(card), price: card.price, url: absolute(card.href) };
       // The best match shows no price in the results: read its product page.
       const link = absolute(card.href);
       if (!recipe.productPagePriceSelector || !link || productPages >= MAX_PRODUCT_PAGES) continue;
@@ -194,7 +198,7 @@ export class PlaywrightScraper implements PriceScraper {
       await page.waitForSelector(recipe.productPagePriceSelector, { timeout: 8000 }).catch(() => {});
       // The first match that reads as a price: the first is often an empty placeholder.
       const price = await readPagePrice(page, recipe.productPagePriceSelector, recipe.decimalSeparator);
-      if (price != null) return { ...result, price, url: link };
+      if (price != null) return { ...result, ...identity(card), price, url: link };
     }
     return result;
   }

@@ -647,7 +647,9 @@ export function parseBricksetSetPage(html: string): { name: string; image: strin
   // Brickset titles leaked and unannounced sets "{?}" until the name is
   // known; that placeholder is how sets ended up named "{?}" in the app.
   const stripped = title ? title.replace(/^\d+\s/, '') : '';
-  const name = /^\{\?\}$/.test(stripped.trim()) ? '' : stripped;
+  // Items it has no name for at all are titled with the bare number
+  // ("633412-1"), which is no name either.
+  const name = /^\{\?\}$/.test(stripped.trim()) || /^\d+(-\d+)?$/.test(stripped.trim()) ? '' : stripped;
   const image =
     $('a.highslide img').attr('src') || $('img[src*="images.brickset.com/sets/images"]').attr('src') || null;
   const rrpText = $('dt:contains("RRP")').next('dd').text();
@@ -867,12 +869,23 @@ async function scrapeLegoInfo(
  * (Playwright); the web deployment never supplies one and uses Gemini.
  * Implementations must serialise their own page loads.
  */
+/** A browser-scraped price, with the listing's own title and image. */
+export interface ScrapedPrice {
+  /** In the source's own currency. */
+  price: number;
+  url: string | null;
+  /** The shop's title for the listing, as shown. */
+  title?: string | null;
+  /** The shop's image for the listing (absolute URL). */
+  image?: string | null;
+}
+
 export interface PriceScraper {
   /** Price in the source's own currency, or null when the page has none. */
   scrapePrice(
     source: { id: string; urlTemplate: string; scraper?: unknown },
     setNumber: string
-  ): Promise<{ price: number; url: string | null } | null>;
+  ): Promise<ScrapedPrice | null>;
   /**
    * The fully rendered HTML of a page, loaded in the browser. Replaces the
    * Gemini fallbacks for set details, images and minifigures on desktop.
@@ -942,6 +955,10 @@ async function scrapeSourcesWithBrowser(
         priceEur,
         store: typeof s.name === 'string' ? s.name : s.id,
         url: r.url || url,
+        // The client names and pictures a set from these when LEGO.com and
+        // Brickset have nothing for it (promotional items such as 633412).
+        ...(r.title ? { title: r.title.slice(0, 300) } : {}),
+        ...(r.image && /^https?:\/\//.test(r.image) ? { image: r.image.slice(0, 1000) } : {}),
       };
     }
   }

@@ -32,6 +32,8 @@ describe('page parsers', () => {
 
   it('treats Brickset\'s "{?}" placeholder as no name', () => {
     expect(parseBricksetSetPage('<h1>30750 {?}</h1>').name).toBe('');
+    // Items Brickset has no name for at all are titled with the bare number.
+    expect(parseBricksetSetPage('<h1>633412-1</h1>').name).toBe('');
   });
 
   it('reads a LEGO.com price from the price span, then meta, then JSON-LD', () => {

@@ -20,6 +20,6 @@
   },
   "dependencies": {
     "playwright": "1.64.1",
-    "shop-teacher": "https://github.com/zgyorkei/shop-teacher/archive/refs/tags/v1.0.0.tar.gz"
+    "shop-teacher": "https://github.com/zgyorkei/shop-teacher/archive/refs/tags/v1.2.0.tar.gz"
   }
 }

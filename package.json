@@ -29,7 +29,7 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "recharts": "^3.8.1",
-    "shop-teacher": "https://github.com/zgyorkei/shop-teacher/archive/refs/tags/v1.0.0.tar.gz"
+    "shop-teacher": "https://github.com/zgyorkei/shop-teacher/archive/refs/tags/v1.2.0.tar.gz"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

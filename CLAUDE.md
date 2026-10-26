@@ -118,7 +118,15 @@ exclusive.
   the browser (`fetchPageHtml`). None of them call Gemini. Keep the parsers
   HTML-in (`parseBricksetSetPage`, `parseLegoProductPage`, ...) so both fetch
   paths share them. `parseLegoProductPage().isProduct` guards against LEGO's
-  not-found page, and Brickset's "{?}" title means "no name yet".
+  not-found page, and Brickset's "{?}" title (or a bare "633412-1") means
+  "no name yet".
+- **Shop listings can name and picture a set** that LEGO.com and Brickset
+  do not know (promotional items such as 633412). Desktop price quotes carry
+  the listing's `title` and `image`; `identityFromQuotes`
+  (`src/lib/setIdentity.ts`) fills only a placeholder name
+  (`isPlaceholderName`) or a missing image, and `mergeLookupName` stops a
+  details lookup from replacing a real name with a placeholder. Never let
+  either overwrite a real name or image.
 - **BrickLink price = cheapest New lot that is sealed or complete.** It reads
   per-lot listings (`catalogifs.ajax`), not the price guide's aggregate Min,
   and also drops lots whose description admits missing parts or minifigures

@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import { formatPrice as formatPriceUtil, convertFromHuf } from '../lib/currency';
 import { Modal } from './Modal';
 import { isDesktopApp } from '../lib/platform';
+import { identityFromQuotes, mergeLookupName } from '../lib/setIdentity';
 
 // Lazy so recharts (~350 kB with its d3 deps) is only fetched when a user
 // actually opens the price-history panel.
@@ -217,7 +218,7 @@ const SetCardComponent: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, get
       const updates: Partial<LegoSet> = {};
       
       if (updateInfo) {
-         updates.name = data.name || set.name;
+         updates.name = mergeLookupName(data.name, set);
          updates.productImage = data.image || set.productImage;
          updates.hasFetchedLegoInfo = true;
          // Always save price if it came back when fetching info
@@ -300,7 +301,10 @@ const SetCardComponent: React.FC<SetCardProps> = ({ set, onUpdate, onDelete, get
       
       onUpdate(set.id, {
          marketPrices: data,
-         lastPricesRefreshTime: Date.now()
+         lastPricesRefreshTime: Date.now(),
+         // A shop's listing names and pictures a set LEGO.com and Brickset
+         // know nothing about; only fills what is still missing.
+         ...identityFromQuotes(set, data, priceSources),
       });
 
       if (set.status === 'planned') {

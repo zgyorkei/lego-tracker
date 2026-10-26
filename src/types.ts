@@ -54,6 +54,9 @@ export interface PriceQuote {
   priceEur?: number;
   store?: string;
   url?: string;
+  /** The shop's own title and image for the listing (desktop scraper only). */
+  title?: string;
+  image?: string;
 }
 
 export interface MarketPrices {
