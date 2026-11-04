@@ -5,7 +5,8 @@ import { firebaseConfig } from './firebaseConfig';
 
 // main.tsx shows the setup instructions instead of the app when no project is
 // configured, so this only runs once there is one.
-if (!firebaseConfig) throw new Error('No Firebase project is configured (see src/lib/firebaseConfig.ts).');
+if (!firebaseConfig)
+  throw new Error('No Firebase project is configured (see src/lib/firebaseConfig.ts).');
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);

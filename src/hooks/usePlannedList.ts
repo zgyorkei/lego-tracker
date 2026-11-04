@@ -77,7 +77,10 @@ export function usePlannedList(
 
   const payload = useMemo(() => buildPlannedListSets(sets, priceSources), [sets, priceSources]);
   const purchases = useMemo(() => buildPlannedListPurchases(sets), [sets]);
-  const payloadSig = useMemo(() => stableStringify({ sets: payload, purchases }), [payload, purchases]);
+  const payloadSig = useMemo(
+    () => stableStringify({ sets: payload, purchases }),
+    [payload, purchases]
+  );
 
   // Purchases go in a write of their own: a Firestore rule that predates them
   // rejects the field, and that must not stop the planned sets from syncing.
@@ -87,8 +90,13 @@ export function usePlannedList(
         await updateDoc(doc(db, PLANNED_LISTS_COLLECTION, listId), { purchases });
         return true;
       } catch (err) {
-        console.error('Publishing purchases failed (is the plannedLists rule in the Firebase store current?)', err);
-        setError('The planned sets are synced, but the purchases could not be published: the Firestore rules need updating.');
+        console.error(
+          'Publishing purchases failed (is the plannedLists rule in the Firebase store current?)',
+          err
+        );
+        setError(
+          'The planned sets are synced, but the purchases could not be published: the Firestore rules need updating.'
+        );
         return false;
       }
     },
@@ -125,7 +133,10 @@ export function usePlannedList(
   useEffect(() => {
     if (!list || !ready) return;
     if (lastSynced.current?.listId !== list.id) {
-      lastSynced.current = { listId: list.id, sig: stableStringify({ sets: list.sets ?? [], purchases: list.purchases ?? [] }) };
+      lastSynced.current = {
+        listId: list.id,
+        sig: stableStringify({ sets: list.sets ?? [], purchases: list.purchases ?? [] }),
+      };
     }
     if (lastSynced.current.sig === payloadSig) return;
 

@@ -37,24 +37,46 @@ describe('page parsers', () => {
   });
 
   it('reads a LEGO.com price from the price span, then meta, then JSON-LD', () => {
-    expect(parseLegoProductPage('<h1>Farkas</h1><span data-test="product-price">14 999 Ft</span>').priceHuf).toBe(14999);
-    expect(parseLegoProductPage('<meta property="product:price:amount" content="15999">').priceHuf).toBe(15999);
+    expect(
+      parseLegoProductPage('<h1>Farkas</h1><span data-test="product-price">14 999 Ft</span>')
+        .priceHuf
+    ).toBe(14999);
+    expect(
+      parseLegoProductPage('<meta property="product:price:amount" content="15999">').priceHuf
+    ).toBe(15999);
     const ld = `<h1 data-test="product-overview-name">Grey Wolf</h1><meta property="og:image" content="https://x/img.png">
       <script type="application/ld+json">{"@type":"Product","offers":{"@type":"Offer","price":"16999","priceCurrency":"HUF"}}</script>`;
-    expect(parseLegoProductPage(ld)).toEqual({ name: 'Grey Wolf', priceHuf: 16999, image: 'https://x/img.png', isProduct: true });
+    expect(parseLegoProductPage(ld)).toEqual({
+      name: 'Grey Wolf',
+      priceHuf: 16999,
+      image: 'https://x/img.png',
+      isProduct: true,
+    });
   });
 
-  it('does not take LEGO.com\'s not-found page for a product', () => {
+  it("does not take LEGO.com's not-found page for a product", () => {
     // Leaked and unannounced sets land on this page; its h1 is not a set name.
     const notFound = '<h1>OH BRICKS!</h1><meta property="og:image" content="https://x/404.png">';
-    expect(parseLegoProductPage(notFound)).toEqual({ name: '', priceHuf: 0, image: null, isProduct: false });
-    const listedNoPrice = '<link rel="canonical" href="https://www.lego.com/hu-hu/product/retired-set-12345"><h1>Retired Set</h1>';
-    expect(parseLegoProductPage(listedNoPrice)).toMatchObject({ name: 'Retired Set', priceHuf: 0, isProduct: true });
+    expect(parseLegoProductPage(notFound)).toEqual({
+      name: '',
+      priceHuf: 0,
+      image: null,
+      isProduct: false,
+    });
+    const listedNoPrice =
+      '<link rel="canonical" href="https://www.lego.com/hu-hu/product/retired-set-12345"><h1>Retired Set</h1>';
+    expect(parseLegoProductPage(listedNoPrice)).toMatchObject({
+      name: 'Retired Set',
+      priceHuf: 0,
+      isProduct: true,
+    });
   });
 
   it('reads Brickset minifigure lists', () => {
     const inSet = `<article class="set"><h1><a href="/minifigs/sw1234/cobb-vanth">Cobb <b>Vanth</b></a></h1><img src="https://img/fig.jpg"></article>`;
-    expect(parseBricksetMinifigs(inSet)).toEqual([{ id: 'sw1234', name: 'Cobb Vanth', image: 'https://img/fig.jpg' }]);
+    expect(parseBricksetMinifigs(inSet)).toEqual([
+      { id: 'sw1234', name: 'Cobb Vanth', image: 'https://img/fig.jpg' },
+    ]);
 
     const series = `<div class="set"><h1><a href="/sets/71055-2/Bat"><span>71055-2:</span>71055: Bat Costume Fan</a></h1><img src="https://img/small/a.jpg"></div>
       <div class="set"><h1><a href="/sets/71055-0/Box">71055: Sealed Box</a></h1></div>`;
@@ -77,12 +99,15 @@ describe('isIncompleteLotDescription', () => {
     expect(isIncompleteLotDescription(desc)).toBe(true);
   });
 
-  it.each(['', 'Sealed, box has minor dents', 'Only opened for inventory', 'no box, bags sealed', 'New, complete with instructions'])(
-    'keeps %j',
-    (desc) => {
-      expect(isIncompleteLotDescription(desc)).toBe(false);
-    }
-  );
+  it.each([
+    '',
+    'Sealed, box has minor dents',
+    'Only opened for inventory',
+    'no box, bags sealed',
+    'New, complete with instructions',
+  ])('keeps %j', (desc) => {
+    expect(isIncompleteLotDescription(desc)).toBe(false);
+  });
 });
 
 describe('pickCheapestNewLot', () => {
@@ -92,8 +117,18 @@ describe('pickCheapestNewLot', () => {
   it('skips incomplete, unstated, used and mislabelled lots', () => {
     const best = pickCheapestNewLot(
       [
-        { codeNew: 'N', codeComplete: 'B', strDesc: 'no minifigures', mDisplaySalePrice: 'HUF 2,031.27' },
-        { codeNew: 'N', codeComplete: 'C', strDesc: 'No Minifigures ONLY speeder', mDisplaySalePrice: 'HUF 2,566.22' },
+        {
+          codeNew: 'N',
+          codeComplete: 'B',
+          strDesc: 'no minifigures',
+          mDisplaySalePrice: 'HUF 2,031.27',
+        },
+        {
+          codeNew: 'N',
+          codeComplete: 'C',
+          strDesc: 'No Minifigures ONLY speeder',
+          mDisplaySalePrice: 'HUF 2,566.22',
+        },
         { codeNew: 'N', codeComplete: 'X', strDesc: '', mDisplaySalePrice: 'HUF 2,600.00' },
         { codeNew: 'U', codeComplete: 'C', strDesc: '', mDisplaySalePrice: 'HUF 2,700.00' },
         { codeNew: 'N', codeComplete: 'S', strDesc: '', mDisplaySalePrice: 'HUF 6,802.56' },
@@ -117,7 +152,12 @@ describe('pickCheapestNewLot', () => {
   });
 
   it('returns null when nothing qualifies', () => {
-    expect(pickCheapestNewLot([{ codeNew: 'N', codeComplete: 'B', mDisplaySalePrice: 'HUF 1.00' }], rates)).toBeNull();
+    expect(
+      pickCheapestNewLot(
+        [{ codeNew: 'N', codeComplete: 'B', mDisplaySalePrice: 'HUF 1.00' }],
+        rates
+      )
+    ).toBeNull();
     expect(pickCheapestNewLot([], rates)).toBeNull();
   });
 });
@@ -237,15 +277,11 @@ describe('assertSafeOutboundUrl', () => {
   });
 
   it('rejects the cloud metadata endpoint and loopback', async () => {
-    await expect(
-      assertSafeOutboundUrl('http://169.254.169.254/latest/meta-data/')
-    ).rejects.toThrow(/blocked host/i);
-    await expect(assertSafeOutboundUrl('http://127.0.0.1:3000/')).rejects.toThrow(
+    await expect(assertSafeOutboundUrl('http://169.254.169.254/latest/meta-data/')).rejects.toThrow(
       /blocked host/i
     );
-    await expect(assertSafeOutboundUrl('http://localhost/admin')).rejects.toThrow(
-      /blocked host/i
-    );
+    await expect(assertSafeOutboundUrl('http://127.0.0.1:3000/')).rejects.toThrow(/blocked host/i);
+    await expect(assertSafeOutboundUrl('http://localhost/admin')).rejects.toThrow(/blocked host/i);
   });
 
   it('rejects malformed input', async () => {
@@ -267,12 +303,16 @@ describe('mapWithConcurrency', () => {
   it('never exceeds the concurrency limit', async () => {
     let inFlight = 0;
     let peak = 0;
-    await mapWithConcurrency(Array.from({ length: 20 }, (_, i) => i), 3, async () => {
-      inFlight++;
-      peak = Math.max(peak, inFlight);
-      await new Promise((r) => setTimeout(r, 1));
-      inFlight--;
-    });
+    await mapWithConcurrency(
+      Array.from({ length: 20 }, (_, i) => i),
+      3,
+      async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 1));
+        inFlight--;
+      }
+    );
     expect(peak).toBeLessThanOrEqual(3);
   });
 

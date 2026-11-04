@@ -23,10 +23,14 @@ const NotConfigured = (
     <div className="max-w-lg border-2 border-black bg-white p-6 shadow-[4px_4px_0_0_rgba(0,0,0,1)]">
       <h1 className="text-xl font-black mb-3">Brick Tracker is not set up yet</h1>
       <p className="mb-3">
-        This copy has no Firebase project to keep your sets in. Set the <code>VITE_FIREBASE_*</code> variables
-        for the build (or add <code>firebase-applet-config.json</code>) and build it again.
+        This copy has no Firebase project to keep your sets in. Set the <code>VITE_FIREBASE_*</code>{' '}
+        variables for the build (or add <code>firebase-applet-config.json</code>) and build it
+        again.
       </p>
-      <a className="underline font-bold" href="https://zgyorkei.github.io/lego-tracker/#setup-firebase">
+      <a
+        className="underline font-bold"
+        href="https://zgyorkei.github.io/lego-tracker/#setup-firebase"
+      >
         Setup guide
       </a>
     </div>
@@ -57,5 +61,5 @@ createRoot(rootEl).render(
     <ErrorBoundary>
       <Suspense fallback={Fallback}>{Content}</Suspense>
     </ErrorBoundary>
-  </StrictMode>,
+  </StrictMode>
 );

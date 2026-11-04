@@ -2,7 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { scrapingStatus, toStoredSource, withUrlTemplate } from './priceSources';
 import type { PriceSource } from '../types';
 
-const recipe = { version: 1 as const, resultSelector: 'div.p', titleSelector: 'h2', priceSelector: '.price', decimalSeparator: ',' as const };
+const recipe = {
+  version: 1 as const,
+  resultSelector: 'div.p',
+  titleSelector: 'h2',
+  priceSelector: '.price',
+  decimalSeparator: ',' as const,
+};
 const shop: PriceSource = {
   id: 'shop',
   name: 'Shop',
@@ -14,7 +20,9 @@ const shop: PriceSource = {
 
 describe('withUrlTemplate', () => {
   it('keeps the recipe for an edit within the same shop', () => {
-    expect(withUrlTemplate(shop, 'https://shop.example/search?q=lego+{setNumber}').scraper).toEqual(recipe);
+    expect(withUrlTemplate(shop, 'https://shop.example/search?q=lego+{setNumber}').scraper).toEqual(
+      recipe
+    );
   });
 
   it('drops the recipe when the template moves to another host', () => {
@@ -40,7 +48,13 @@ describe('toStoredSource', () => {
 describe('scrapingStatus', () => {
   it('distinguishes taught, built-in and untaught sources', () => {
     expect(scrapingStatus(shop)).toBe('taught');
-    expect(scrapingStatus({ ...shop, scraper: undefined, urlTemplate: 'https://www.amazon.de/s?k=lego+{setNumber}' })).toBe('built-in');
+    expect(
+      scrapingStatus({
+        ...shop,
+        scraper: undefined,
+        urlTemplate: 'https://www.amazon.de/s?k=lego+{setNumber}',
+      })
+    ).toBe('built-in');
     expect(scrapingStatus({ ...shop, scraper: undefined })).toBe('not-taught');
   });
 });

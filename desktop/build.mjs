@@ -27,11 +27,23 @@ const common = {
   external: ['electron', 'playwright', 'playwright-core', 'shop-teacher'],
 };
 
-await build({ ...common, entryPoints: [path.join(here, 'src/main.ts')], outfile: path.join(out, 'main.cjs') });
-await build({ ...common, entryPoints: [path.join(here, 'src/preload.ts')], outfile: path.join(out, 'preload.cjs') });
+await build({
+  ...common,
+  entryPoints: [path.join(here, 'src/main.ts')],
+  outfile: path.join(out, 'main.cjs'),
+});
+await build({
+  ...common,
+  entryPoints: [path.join(here, 'src/preload.ts')],
+  outfile: path.join(out, 'preload.cjs'),
+});
 
 // The setup window (src/setup.ts): its preload, its page script and the page.
-await build({ ...common, entryPoints: [path.join(here, 'src/setupPreload.ts')], outfile: path.join(out, 'setupPreload.cjs') });
+await build({
+  ...common,
+  entryPoints: [path.join(here, 'src/setupPreload.ts')],
+  outfile: path.join(out, 'setupPreload.cjs'),
+});
 await build({
   ...common,
   platform: 'browser',
@@ -59,4 +71,6 @@ ico.writeUInt32LE(png256.length, 14);
 ico.writeUInt32LE(22, 18); // image data offset
 writeFileSync(path.join(out, 'icon.ico'), Buffer.concat([ico, png256]));
 
-console.log('desktop build: dist/main.cjs, dist/preload.cjs, dist/setup*, dist/icon.png, dist/icon.ico');
+console.log(
+  'desktop build: dist/main.cjs, dist/preload.cjs, dist/setup*, dist/icon.png, dist/icon.ico'
+);

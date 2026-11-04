@@ -76,9 +76,12 @@ export function usePriceSources(user: User | null, isDemoMode: boolean) {
     );
   }, [user, isDemoMode]);
 
-  useEffect(() => () => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    },
+    []
+  );
 
   const savePriceSources = useCallback(
     (newSources: PriceSource[]) => {

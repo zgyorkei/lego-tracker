@@ -1,6 +1,16 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { X, Check, Share2, ClipboardList, Link as LinkIcon, Plus, Edit2, Trash2, Gift } from 'lucide-react';
+import {
+  X,
+  Check,
+  Share2,
+  ClipboardList,
+  Link as LinkIcon,
+  Plus,
+  Edit2,
+  Trash2,
+  Gift,
+} from 'lucide-react';
 import { LegoSet, Registry, PriceSource } from '../types';
 import { collection, doc, setDoc, query, where, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
@@ -16,12 +26,18 @@ interface GiftRegistryDialogProps {
   displayCurrency: string;
 }
 
-export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchangeRates, displayCurrency }: GiftRegistryDialogProps) {
+export function GiftRegistryDialog({
+  onClose,
+  plannedSets,
+  priceSources,
+  exchangeRates,
+  displayCurrency,
+}: GiftRegistryDialogProps) {
   const [view, setView] = useState<'list' | 'create' | 'edit'>('list');
   const [registries, setRegistries] = useState<Registry[]>([]);
   const [editingRegistryId, setEditingRegistryId] = useState<string | null>(null);
-  
-  const [registryTitle, setRegistryTitle] = useState("My Lego Gift Registry");
+
+  const [registryTitle, setRegistryTitle] = useState('My Lego Gift Registry');
   const [selectedSetIds, setSelectedSetIds] = useState<Set<string>>(new Set());
   const [generating, setGenerating] = useState(false);
   const [createdLink, setCreatedLink] = useState<string | null>(null);
@@ -33,16 +49,16 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
     const q = query(collection(db, 'registries'), where('userId', '==', auth.currentUser.uid));
     const unsub = onSnapshot(q, (snap) => {
       const parts: Registry[] = [];
-      snap.forEach(d => {
+      snap.forEach((d) => {
         parts.push({ id: d.id, ...d.data() } as Registry);
       });
-      setRegistries(parts.sort((a,b) => b.createdAt.localeCompare(a.createdAt)));
+      setRegistries(parts.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
     });
     return () => unsub();
   }, []);
 
   const startCreate = () => {
-    setRegistryTitle("My Lego Gift Registry");
+    setRegistryTitle('My Lego Gift Registry');
     setSelectedSetIds(new Set());
     setCreatedLink(null);
     setView('create');
@@ -51,21 +67,21 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
   const [deletingRegistryId, setDeletingRegistryId] = useState<string | null>(null);
 
   const startEdit = (registry: Registry) => {
-     setRegistryTitle(registry.title || "My Lego Gift Registry");
-     setSelectedSetIds(new Set(registry.sets.map(s => s.id)));
-     setEditingRegistryId(registry.id);
-     setCreatedLink(null);
-     setView('edit');
+    setRegistryTitle(registry.title || 'My Lego Gift Registry');
+    setSelectedSetIds(new Set(registry.sets.map((s) => s.id)));
+    setEditingRegistryId(registry.id);
+    setCreatedLink(null);
+    setView('edit');
   };
 
   const confirmDelete = async (id: string) => {
-     try {
-        await deleteDoc(doc(db, 'registries', id));
-     } catch(e) {
-        console.error(e);
-     } finally {
-        setDeletingRegistryId(null);
-     }
+    try {
+      await deleteDoc(doc(db, 'registries', id));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDeletingRegistryId(null);
+    }
   };
 
   const toggleSet = (id: string) => {
@@ -76,35 +92,35 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
   };
 
   // Build a union of planned sets and existing registry sets so they can edit even if status changed
-  const editingRegistry = registries.find(r => r.id === editingRegistryId);
+  const editingRegistry = registries.find((r) => r.id === editingRegistryId);
   const allChoicesMap = new Map<string, LegoSet>();
   if (editingRegistry) {
-    editingRegistry.sets.forEach(s => allChoicesMap.set(s.id, s));
+    editingRegistry.sets.forEach((s) => allChoicesMap.set(s.id, s));
   }
-  plannedSets.forEach(s => allChoicesMap.set(s.id, s));
-  
+  plannedSets.forEach((s) => allChoicesMap.set(s.id, s));
+
   const availableSets = Array.from(allChoicesMap.values());
-  const selectedSets = availableSets.filter(s => selectedSetIds.has(s.id));
+  const selectedSets = availableSets.filter((s) => selectedSetIds.has(s.id));
 
   const saveRegistry = async () => {
     if (selectedSetIds.size === 0) return;
     if (!auth.currentUser) {
-       setSaveError("You must be signed in to create a registry.");
-       return;
+      setSaveError('You must be signed in to create a registry.');
+      return;
     }
     setGenerating(true);
     try {
-      const setNumbersToFetch = selectedSets.map(s => s.setNumber);
+      const setNumbersToFetch = selectedSets.map((s) => s.setNumber);
       const headers = { 'Content-Type': 'application/json' };
       const searchRes = await fetch('/api/batch-images', {
-         method: 'POST',
-         headers,
-         body: JSON.stringify({ setNumbers: setNumbersToFetch })
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ setNumbers: setNumbersToFetch }),
       });
-      
+
       let newImageMap: Record<string, string> = {};
       if (searchRes.ok) {
-         newImageMap = await searchRes.json();
+        newImageMap = await searchRes.json();
       }
 
       let token = editingRegistryId;
@@ -112,39 +128,43 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
         // Generate a crypto random token for new
         const array = new Uint8Array(12);
         window.crypto.getRandomValues(array);
-        token = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+        token = Array.from(array, (byte) => byte.toString(16).padStart(2, '0')).join('');
       }
-      
-      const setsData = selectedSets.map(s => {
-         // Prices are baked into the shared doc at creation time, rendered in
-         // the owner's chosen display currency.
-         const lowestPrices = getLowestPrices(s, priceSources, displayCurrency, exchangeRates)
-           .map(({ sourceName, url, priceText }) => ({ sourceName, url, priceText }));
 
+      const setsData = selectedSets.map((s) => {
+        // Prices are baked into the shared doc at creation time, rendered in
+        // the owner's chosen display currency.
+        const lowestPrices = getLowestPrices(s, priceSources, displayCurrency, exchangeRates).map(
+          ({ sourceName, url, priceText }) => ({ sourceName, url, priceText })
+        );
 
-         // Registry docs are world-readable by design (that is the share
-         // link), so project an explicit whitelist instead of spreading the
-         // whole set. Spreading leaked the owner's uid and their purchase
-         // history (orderedPriceHuf / orderedDate / orderedCurrency) to every
-         // recipient. These are exactly the fields RegistryView renders.
-         return {
-           id: s.id,
-           setNumber: s.setNumber,
-           name: s.name,
-           productImage: newImageMap[s.setNumber] || s.productImage || null,
-           minifigures: s.minifigures || [],
-           minifiguresStatus: s.minifiguresStatus || {},
-           lowestPrices
-         };
+        // Registry docs are world-readable by design (that is the share
+        // link), so project an explicit whitelist instead of spreading the
+        // whole set. Spreading leaked the owner's uid and their purchase
+        // history (orderedPriceHuf / orderedDate / orderedCurrency) to every
+        // recipient. These are exactly the fields RegistryView renders.
+        return {
+          id: s.id,
+          setNumber: s.setNumber,
+          name: s.name,
+          productImage: newImageMap[s.setNumber] || s.productImage || null,
+          minifigures: s.minifigures || [],
+          minifiguresStatus: s.minifiguresStatus || {},
+          lowestPrices,
+        };
       });
 
-      await setDoc(doc(db, 'registries', token!), {
-         userId: auth.currentUser.uid,
-         title: registryTitle,
-         sets: setsData,
-         createdAt: editingRegistry ? editingRegistry.createdAt : new Date().toISOString()
-      }, { merge: true });
-      
+      await setDoc(
+        doc(db, 'registries', token!),
+        {
+          userId: auth.currentUser.uid,
+          title: registryTitle,
+          sets: setsData,
+          createdAt: editingRegistry ? editingRegistry.createdAt : new Date().toISOString(),
+        },
+        { merge: true }
+      );
+
       setCreatedLink(registryUrl(token!));
     } catch (e) {
       console.error(e);
@@ -169,7 +189,10 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
         className="bg-white rounded-xl shadow-2xl p-6 w-full relative min-h-[300px]"
       >
         {saveError && (
-          <div role="alert" className="mb-4 bg-red-50 border-2 border-red-200 text-red-600 font-bold text-sm rounded-lg px-4 py-3">
+          <div
+            role="alert"
+            className="mb-4 bg-red-50 border-2 border-red-200 text-red-600 font-bold text-sm rounded-lg px-4 py-3"
+          >
             {saveError}
           </div>
         )}
@@ -186,78 +209,85 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
             <h2 className="text-2xl font-black text-gray-900 uppercase mb-4 flex items-center gap-2">
               <ClipboardList /> My Registries
             </h2>
-            <p className="text-gray-500 font-bold mb-6">Manage your gift registries and share them with others.</p>
-            
+            <p className="text-gray-500 font-bold mb-6">
+              Manage your gift registries and share them with others.
+            </p>
+
             <div className="space-y-4 mb-6">
-               {registries.length === 0 ? (
-                 <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                    <p className="text-gray-500 font-bold uppercase">No registries found</p>
-                 </div>
-               ) : (
-                 registries.map(reg => (
-                   <div key={reg.id} className="border-4 border-black p-4 rounded-lg flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
-                     <div>
-                       <h3 className="font-black text-lg uppercase">{reg.title || 'Untitled Registry'}</h3>
-                       <p className="text-gray-500 font-bold text-sm">{reg.sets.length} items</p>
-                     </div>
-                     <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                        <button 
-                          onClick={() => handleCopy(registryUrl(reg.id))}
-                          className="px-3 py-2 bg-gray-100 hover:bg-gray-200 border-2 border-black rounded font-black text-xs uppercase flex items-center gap-2 transition-colors"
-                        >
-                          <LinkIcon size={14} /> Copy Link
-                        </button>
-                        <a 
-                          href={registryUrl(reg.id)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-3 py-2 bg-white hover:bg-gray-50 border-2 border-black rounded font-black text-xs uppercase flex items-center gap-2 transition-colors"
-                        >
-                          <Share2 size={14} /> View
-                        </a>
-                        <button 
-                          onClick={() => startEdit(reg)}
-                          className="px-3 py-2 bg-lego-blue hover:brightness-110 text-white border-2 border-black rounded font-black text-xs uppercase flex items-center gap-2 transition-colors"
-                        >
-                          <Edit2 size={14} /> Edit
-                        </button>
-                        {deletingRegistryId === reg.id ? (
-                           <div className="flex items-center gap-2">
-                             <button
-                               onClick={() => setDeletingRegistryId(null)}
-                               className="px-3 py-2 bg-gray-200 hover:bg-gray-300 text-black border-2 border-black rounded font-black text-xs uppercase transition-colors"
-                             >
-                               Cancel
-                             </button>
-                             <button
-                               onClick={() => confirmDelete(reg.id)}
-                               className="px-3 py-2 bg-red-600 hover:brightness-110 text-white border-2 border-black rounded font-black text-xs uppercase transition-colors"
-                             >
-                               Confirm Delete
-                             </button>
-                           </div>
-                        ) : (
-                          <button 
-                            onClick={() => setDeletingRegistryId(reg.id)}
-                            className="px-3 py-2 bg-lego-red hover:brightness-110 text-white border-2 border-black rounded font-black text-xs uppercase flex items-center gap-2 transition-colors"
+              {registries.length === 0 ? (
+                <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                  <p className="text-gray-500 font-bold uppercase">No registries found</p>
+                </div>
+              ) : (
+                registries.map((reg) => (
+                  <div
+                    key={reg.id}
+                    className="border-4 border-black p-4 rounded-lg flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all"
+                  >
+                    <div>
+                      <h3 className="font-black text-lg uppercase">
+                        {reg.title || 'Untitled Registry'}
+                      </h3>
+                      <p className="text-gray-500 font-bold text-sm">{reg.sets.length} items</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                      <button
+                        onClick={() => handleCopy(registryUrl(reg.id))}
+                        className="px-3 py-2 bg-gray-100 hover:bg-gray-200 border-2 border-black rounded font-black text-xs uppercase flex items-center gap-2 transition-colors"
+                      >
+                        <LinkIcon size={14} /> Copy Link
+                      </button>
+                      <a
+                        href={registryUrl(reg.id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-2 bg-white hover:bg-gray-50 border-2 border-black rounded font-black text-xs uppercase flex items-center gap-2 transition-colors"
+                      >
+                        <Share2 size={14} /> View
+                      </a>
+                      <button
+                        onClick={() => startEdit(reg)}
+                        className="px-3 py-2 bg-lego-blue hover:brightness-110 text-white border-2 border-black rounded font-black text-xs uppercase flex items-center gap-2 transition-colors"
+                      >
+                        <Edit2 size={14} /> Edit
+                      </button>
+                      {deletingRegistryId === reg.id ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setDeletingRegistryId(null)}
+                            className="px-3 py-2 bg-gray-200 hover:bg-gray-300 text-black border-2 border-black rounded font-black text-xs uppercase transition-colors"
                           >
-                            <Trash2 size={14} />
+                            Cancel
                           </button>
-                        )}
-                     </div>
-                   </div>
-                 ))
-               )}
+                          <button
+                            onClick={() => confirmDelete(reg.id)}
+                            className="px-3 py-2 bg-red-600 hover:brightness-110 text-white border-2 border-black rounded font-black text-xs uppercase transition-colors"
+                          >
+                            Confirm Delete
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setDeletingRegistryId(reg.id)}
+                          className="px-3 py-2 bg-lego-red hover:brightness-110 text-white border-2 border-black rounded font-black text-xs uppercase flex items-center gap-2 transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
-            
+
             <div className="flex justify-between items-center mt-6">
-              <button 
+              <button
                 onClick={onClose}
                 className="px-6 py-3 font-black text-sm uppercase text-gray-500 hover:bg-gray-100 rounded-lg transition-colors border-2 border-transparent"
               >
                 Close
               </button>
-              <button 
+              <button
                 onClick={startCreate}
                 className="px-6 py-3 font-black text-sm uppercase bg-lego-blue text-white rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[4px_6px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2 active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] transition-all"
               >
@@ -273,66 +303,88 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
               <Gift /> {view === 'create' ? 'Create' : 'Edit'} Registry
             </h2>
             <div className="mb-4">
-               <label htmlFor="registry-title" className="block text-xs font-black uppercase text-gray-500 mb-1">Registry Title</label>
-               <input
-                 id="registry-title"
-                 type="text"
-                 value={registryTitle}
-                 onChange={(e) => setRegistryTitle(e.target.value)}
-                 className="w-full border-2 border-black p-2 font-bold focus:outline-none focus:border-lego-blue"
-                 placeholder="My Awesome Lego Wishlist"
-               />
+              <label
+                htmlFor="registry-title"
+                className="block text-xs font-black uppercase text-gray-500 mb-1"
+              >
+                Registry Title
+              </label>
+              <input
+                id="registry-title"
+                type="text"
+                value={registryTitle}
+                onChange={(e) => setRegistryTitle(e.target.value)}
+                className="w-full border-2 border-black p-2 font-bold focus:outline-none focus:border-lego-blue"
+                placeholder="My Awesome Lego Wishlist"
+              />
             </div>
-            <p className="text-gray-500 font-bold mb-4 text-sm">Select sets to include in this registry. Visitors can reserve sets to prevent duplicate gifts.</p>
+            <p className="text-gray-500 font-bold mb-4 text-sm">
+              Select sets to include in this registry. Visitors can reserve sets to prevent
+              duplicate gifts.
+            </p>
 
             {availableSets.length === 0 ? (
               <p className="text-gray-400 font-bold text-center py-8">No planned sets available.</p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6 max-h-[40vh] overflow-y-auto border-t border-b py-4">
-                {availableSets.map(set => {
-                   const isSelected = selectedSetIds.has(set.id);
-                   return (
-                     // A real checkbox role rather than a styled div, so this
-                     // is reachable by keyboard and announces its state.
-                     <div
-                       key={set.id}
-                       role="checkbox"
-                       aria-checked={isSelected}
-                       aria-label={`${set.name} (${set.setNumber})`}
-                       tabIndex={0}
-                       onClick={() => toggleSet(set.id)}
-                       onKeyDown={(e) => {
-                         if (e.key === 'Enter' || e.key === ' ') {
-                           e.preventDefault();
-                           toggleSet(set.id);
-                         }
-                       }}
-                       className={`border-4 rounded-lg p-3 cursor-pointer transition-all flex gap-3 items-center focus:outline-none focus:ring-4 focus:ring-lego-yellow ${isSelected ? 'border-lego-blue bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}
-                     >
-                       <div aria-hidden="true" className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 ${isSelected ? 'bg-lego-blue border-lego-blue text-white' : 'border-gray-300'}`}>
-                         {isSelected && <Check size={16} />}
-                       </div>
-                       <div className="w-16 h-16 bg-white rounded shadow-sm border border-gray-100 flex items-center justify-center shrink-0 overflow-hidden">
-                         {set.productImage ? <img src={set.productImage} alt={set.name} className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" /> : <div className="text-gray-300 text-xs">No img</div>}
-                       </div>
-                       <div className="flex-1 min-w-0">
-                         <p className="font-bold text-xs truncate">{set.setNumber}</p>
-                         <p className="font-black text-sm uppercase truncate" title={set.name}>{set.name}</p>
-                       </div>
-                     </div>
-                   );
+                {availableSets.map((set) => {
+                  const isSelected = selectedSetIds.has(set.id);
+                  return (
+                    // A real checkbox role rather than a styled div, so this
+                    // is reachable by keyboard and announces its state.
+                    <div
+                      key={set.id}
+                      role="checkbox"
+                      aria-checked={isSelected}
+                      aria-label={`${set.name} (${set.setNumber})`}
+                      tabIndex={0}
+                      onClick={() => toggleSet(set.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          toggleSet(set.id);
+                        }
+                      }}
+                      className={`border-4 rounded-lg p-3 cursor-pointer transition-all flex gap-3 items-center focus:outline-none focus:ring-4 focus:ring-lego-yellow ${isSelected ? 'border-lego-blue bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}
+                    >
+                      <div
+                        aria-hidden="true"
+                        className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 ${isSelected ? 'bg-lego-blue border-lego-blue text-white' : 'border-gray-300'}`}
+                      >
+                        {isSelected && <Check size={16} />}
+                      </div>
+                      <div className="w-16 h-16 bg-white rounded shadow-sm border border-gray-100 flex items-center justify-center shrink-0 overflow-hidden">
+                        {set.productImage ? (
+                          <img
+                            src={set.productImage}
+                            alt={set.name}
+                            className="max-w-full max-h-full object-contain"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="text-gray-300 text-xs">No img</div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-xs truncate">{set.setNumber}</p>
+                        <p className="font-black text-sm uppercase truncate" title={set.name}>
+                          {set.name}
+                        </p>
+                      </div>
+                    </div>
+                  );
                 })}
               </div>
             )}
 
             <div className="flex justify-end gap-3 mt-4">
-              <button 
+              <button
                 onClick={() => setView('list')}
                 className="px-6 py-3 font-black text-sm uppercase text-gray-500 hover:bg-gray-100 rounded-lg transition-colors border-2 border-transparent"
               >
                 Back
               </button>
-              <button 
+              <button
                 onClick={saveRegistry}
                 disabled={selectedSetIds.size === 0 || generating}
                 className="px-6 py-3 font-black text-sm uppercase bg-lego-blue text-white rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[4px_6px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2 active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -349,16 +401,17 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
               <Share2 /> Registry {view === 'create' ? 'Created' : 'Updated'}!
             </h2>
             <p className="text-gray-500 font-bold mb-6 text-center max-w-md">
-              Your gift registry is ready. Share this link with friends and family. They do not need an account to view and reserve sets.
+              Your gift registry is ready. Share this link with friends and family. They do not need
+              an account to view and reserve sets.
             </p>
-            
+
             <div className="flex w-full max-w-lg items-center bg-gray-100 rounded-lg border-2 border-gray-300 p-2 mb-8">
-              <input 
-                readOnly 
-                value={createdLink} 
+              <input
+                readOnly
+                value={createdLink}
                 className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-mono text-gray-700 outline-none px-2 cursor-text"
               />
-              <button 
+              <button
                 onClick={() => handleCopy(createdLink)}
                 className="ml-2 px-4 py-2 bg-black text-white font-black text-xs uppercase rounded hover:bg-gray-800 transition-colors flex items-center gap-2"
               >
@@ -368,15 +421,18 @@ export function GiftRegistryDialog({ onClose, plannedSets, priceSources, exchang
             </div>
 
             <div className="flex justify-center gap-3">
-              <button 
-                onClick={() => { setCreatedLink(null); setView('list'); }}
+              <button
+                onClick={() => {
+                  setCreatedLink(null);
+                  setView('list');
+                }}
                 className="px-6 py-3 font-black text-sm uppercase text-gray-500 hover:bg-gray-100 rounded-lg transition-colors border-2 border-transparent"
               >
                 Back to Registries
               </button>
-              <a 
-                href={createdLink} 
-                target="_blank" 
+              <a
+                href={createdLink}
+                target="_blank"
                 rel="noopener noreferrer"
                 className="px-6 py-3 font-black text-sm uppercase bg-lego-blue text-white rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[4px_6px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2 active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] transition-all"
               >

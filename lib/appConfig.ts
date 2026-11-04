@@ -39,7 +39,8 @@ const OPTIONAL = ['storageBucket', 'messagingSenderId'] as const;
  */
 export function parseFirebaseConfigText(text: string): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const m of text.matchAll(/["']?([A-Za-z]+)["']?\s*:\s*(["'])([^"'\r\n]*)\2/g)) out[m[1]] = m[3].trim();
+  for (const m of text.matchAll(/["']?([A-Za-z]+)["']?\s*:\s*(["'])([^"'\r\n]*)\2/g))
+    out[m[1]] = m[3].trim();
   return out;
 }
 
@@ -59,7 +60,9 @@ export function normalisePublicUrl(value: string): string | null {
 }
 
 /** Checks a stored or submitted config; returns the cleaned config, or what is wrong with it. */
-export function validateAppConfig(input: unknown): { config: DesktopAppConfig } | { error: string } {
+export function validateAppConfig(
+  input: unknown
+): { config: DesktopAppConfig } | { error: string } {
   const raw = (input ?? {}) as { firebase?: Record<string, unknown>; publicAppUrl?: unknown };
   const fb = raw.firebase ?? {};
   const missing = REQUIRED.filter((k) => typeof fb[k] !== 'string' || !(fb[k] as string).trim());
@@ -71,14 +74,22 @@ export function validateAppConfig(input: unknown): { config: DesktopAppConfig } 
     projectId: (fb.projectId as string).trim(),
     appId: (fb.appId as string).trim(),
     firestoreDatabaseId:
-      typeof fb.firestoreDatabaseId === 'string' && fb.firestoreDatabaseId.trim() ? fb.firestoreDatabaseId.trim() : '(default)',
+      typeof fb.firestoreDatabaseId === 'string' && fb.firestoreDatabaseId.trim()
+        ? fb.firestoreDatabaseId.trim()
+        : '(default)',
   };
   for (const k of OPTIONAL) {
-    if (typeof fb[k] === 'string' && (fb[k] as string).trim()) firebase[k] = (fb[k] as string).trim();
+    if (typeof fb[k] === 'string' && (fb[k] as string).trim())
+      firebase[k] = (fb[k] as string).trim();
   }
 
-  const publicAppUrl = typeof raw.publicAppUrl === 'string' ? normalisePublicUrl(raw.publicAppUrl) : null;
-  if (!publicAppUrl) return { error: 'The website address must be a full https:// address, such as https://bricks.example.com.' };
+  const publicAppUrl =
+    typeof raw.publicAppUrl === 'string' ? normalisePublicUrl(raw.publicAppUrl) : null;
+  if (!publicAppUrl)
+    return {
+      error:
+        'The website address must be a full https:// address, such as https://bricks.example.com.',
+    };
 
   return { config: { firebase, publicAppUrl } };
 }

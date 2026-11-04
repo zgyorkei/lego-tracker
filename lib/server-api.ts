@@ -260,7 +260,9 @@ function getFirestoreTarget(): { projectId: string; databaseId: string } | null 
     };
   }
   try {
-    const cfg = JSON.parse(readFileSync(join(process.cwd(), 'firebase-applet-config.json'), 'utf8'));
+    const cfg = JSON.parse(
+      readFileSync(join(process.cwd(), 'firebase-applet-config.json'), 'utf8')
+    );
     if (typeof cfg.projectId === 'string' && cfg.projectId) {
       return { projectId: cfg.projectId, databaseId: cfg.firestoreDatabaseId || '(default)' };
     }
@@ -299,8 +301,7 @@ const userAgents = [
 
 const getCommonHeaders = () => ({
   'User-Agent': userAgents[Math.floor(Math.random() * userAgents.length)],
-  Accept:
-    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
   'Accept-Language': 'en-US,en;q=0.5',
   'Sec-Fetch-Dest': 'document',
   'Sec-Fetch-Mode': 'navigate',
@@ -350,7 +351,9 @@ async function callGeminiWithFallback(opts: GeminiCallOptions): Promise<string> 
     let advanceModel = false;
     for (let attempt = 1; attempt <= attemptsPerModel && !advanceModel; attempt++) {
       if (Date.now() - startedAt > overallBudgetMs) {
-        console.warn(`[${label}] Gemini fallback budget (${overallBudgetMs}ms) exhausted; giving up.`);
+        console.warn(
+          `[${label}] Gemini fallback budget (${overallBudgetMs}ms) exhausted; giving up.`
+        );
         throw lastError ?? new Error('Gemini fallback time budget exhausted');
       }
       try {
@@ -535,10 +538,13 @@ const brickLinkItemIds = new Map<string, number>();
 async function getBrickLinkItemId(setNumber: string): Promise<number | null> {
   const cached = brickLinkItemIds.get(setNumber);
   if (cached) return cached;
-  const r = await axios.get(`https://www.bricklink.com/v2/catalog/catalogitem.page?S=${setNumber}-1`, {
-    headers: getCommonHeaders(),
-    timeout: 8000,
-  });
+  const r = await axios.get(
+    `https://www.bricklink.com/v2/catalog/catalogitem.page?S=${setNumber}-1`,
+    {
+      headers: getCommonHeaders(),
+      timeout: 8000,
+    }
+  );
   const m = String(r.data).match(/idItem:\s*(\d+)/);
   if (!m) return null;
   const id = Number(m[1]);
@@ -554,7 +560,10 @@ async function getBrickLinkItemId(setNumber: string): Promise<number | null> {
  * Used. The listing endpoint exposes per-lot completeness, so lots are filtered
  * individually instead. Returns null if nothing qualifies.
  */
-async function fetchBrickLinkPrices(setNumber: string, rates: Rates): Promise<BrickLinkPrices | null> {
+async function fetchBrickLinkPrices(
+  setNumber: string,
+  rates: Rates
+): Promise<BrickLinkPrices | null> {
   try {
     const itemId = await getBrickLinkItemId(setNumber);
     if (!itemId) return null;
@@ -603,7 +612,9 @@ async function scrapeSetImage(
     return hu ? parseLegoProductPage(hu).image : null;
   };
   // The browser (desktop) can read LEGO.com's own, larger product image.
-  return legoFirst ? (await fromLego()) ?? (await fromBrickset()) : (await fromBrickset()) ?? (await fromLego());
+  return legoFirst
+    ? ((await fromLego()) ?? (await fromBrickset()))
+    : ((await fromBrickset()) ?? (await fromLego()));
 }
 
 // ---------------------------------------------------------------------------
@@ -617,7 +628,10 @@ async function scrapeSetImage(
 // ---------------------------------------------------------------------------
 
 /** Resolves with page HTML, or null on any failure. */
-export type HtmlFetcher = (url: string, opts?: { headers?: Record<string, string>; timeout?: number }) => Promise<string | null>;
+export type HtmlFetcher = (
+  url: string,
+  opts?: { headers?: Record<string, string>; timeout?: number }
+) => Promise<string | null>;
 
 // Only ever called with fixed brickset.com / lego.com URLs built from a
 // validated set number, so no outbound-URL check is needed here.
@@ -641,7 +655,11 @@ export interface MinifigureInfo {
 }
 
 /** A Brickset set page: English name, main image, RRP in EUR (0 if none). */
-export function parseBricksetSetPage(html: string): { name: string; image: string | null; priceEur: number } {
+export function parseBricksetSetPage(html: string): {
+  name: string;
+  image: string | null;
+  priceEur: number;
+} {
   const $ = cheerio.load(html);
   const title = $('h1').first().text().trim();
   // Brickset titles leaked and unannounced sets "{?}" until the name is
@@ -649,9 +667,12 @@ export function parseBricksetSetPage(html: string): { name: string; image: strin
   const stripped = title ? title.replace(/^\d+\s/, '') : '';
   // Items it has no name for at all are titled with the bare number
   // ("633412-1"), which is no name either.
-  const name = /^\{\?\}$/.test(stripped.trim()) || /^\d+(-\d+)?$/.test(stripped.trim()) ? '' : stripped;
+  const name =
+    /^\{\?\}$/.test(stripped.trim()) || /^\d+(-\d+)?$/.test(stripped.trim()) ? '' : stripped;
   const image =
-    $('a.highslide img').attr('src') || $('img[src*="images.brickset.com/sets/images"]').attr('src') || null;
+    $('a.highslide img').attr('src') ||
+    $('img[src*="images.brickset.com/sets/images"]').attr('src') ||
+    null;
   const rrpText = $('dt:contains("RRP")').next('dd').text();
   const eur = rrpText.match(/€([\d.]+)/);
   const usd = rrpText.match(/\$([\d.]+)/);
@@ -665,13 +686,19 @@ export function parseBricksetSetPage(html: string): { name: string; image: strin
  * ("OH BRICKS!" / "A kockába!") must never be taken for a set name; leaked
  * and unannounced sets land there.
  */
-export function parseLegoProductPage(html: string): { name: string; priceHuf: number; image: string | null; isProduct: boolean } {
+export function parseLegoProductPage(html: string): {
+  name: string;
+  priceHuf: number;
+  image: string | null;
+  isProduct: boolean;
+} {
   const $ = cheerio.load(html);
   const canonical = $('link[rel="canonical"]').attr('href') || '';
   let hasProductLd = false;
   const priceText = $('span[data-test="product-price"]').first().text().trim();
   let priceHuf = parseInt(priceText.replace(/[^0-9]/g, ''), 10) || 0;
-  if (!priceHuf) priceHuf = parseInt($('meta[property="product:price:amount"]').attr('content') || '0', 10) || 0;
+  if (!priceHuf)
+    priceHuf = parseInt($('meta[property="product:price:amount"]').attr('content') || '0', 10) || 0;
   // The rendered page (what the desktop browser returns) also carries
   // schema.org Product data, which survives markup changes better.
   $('script[type="application/ld+json"]').each((_i, el) => {
@@ -690,10 +717,13 @@ export function parseLegoProductPage(html: string): { name: string; priceHuf: nu
   });
   const isProduct = priceHuf > 0 || hasProductLd || /\/product\//.test(canonical);
   const image = isProduct
-    ? $('meta[property="og:image"]').attr('content') || $('img[class*="ProductImage"]').first().attr('src') || null
+    ? $('meta[property="og:image"]').attr('content') ||
+      $('img[class*="ProductImage"]').first().attr('src') ||
+      null
     : null;
   const name = isProduct
-    ? $('h1[data-test="product-overview-name"]').first().text().trim() || $('h1').first().text().trim()
+    ? $('h1[data-test="product-overview-name"]').first().text().trim() ||
+      $('h1').first().text().trim()
     : '';
   return { name, priceHuf, image, isProduct };
 }
@@ -708,7 +738,14 @@ export function parseBricksetMinifigs(html: string): MinifigureInfo[] {
     const name = $(el).find('h1 a').html();
     const match = href.match(/\/minifigs\/([^/]+)\//);
     if (match && name) {
-      out.push({ id: match[1], name: name.toString().replace(/<[^>]*>?/gm, '').trim(), image: img || null });
+      out.push({
+        id: match[1],
+        name: name
+          .toString()
+          .replace(/<[^>]*>?/gm, '')
+          .trim(),
+        image: img || null,
+      });
     }
   });
   return out;
@@ -730,18 +767,30 @@ export function parseBricksetSeriesSearch(html: string, setNumber: string): Mini
     const name = heading.replace(`${setNumber}:`, '').trim();
     if (name.startsWith('LEGO Minifigures')) return;
     const lower = name.toLowerCase();
-    if (parseInt(subId) > 0 && !lower.includes('random pack') && !lower.includes('sealed box') && !lower.includes('complete')) {
+    if (
+      parseInt(subId) > 0 &&
+      !lower.includes('random pack') &&
+      !lower.includes('sealed box') &&
+      !lower.includes('complete')
+    ) {
       out.push({ id: `${setNumber}-${subId}`, name, image: image || null });
     }
   });
   return out.sort((a, b) => parseInt(a.id.split('-')[1]) - parseInt(b.id.split('-')[1]));
 }
 
-async function scrapeMinifigures(setNumber: string, fetchHtml: HtmlFetcher): Promise<MinifigureInfo[]> {
-  const inSet = await fetchHtml(`https://brickset.com/minifigs/in-${setNumber}-1`, { timeout: 10000 });
+async function scrapeMinifigures(
+  setNumber: string,
+  fetchHtml: HtmlFetcher
+): Promise<MinifigureInfo[]> {
+  const inSet = await fetchHtml(`https://brickset.com/minifigs/in-${setNumber}-1`, {
+    timeout: 10000,
+  });
   const figures = inSet ? parseBricksetMinifigs(inSet) : [];
   if (figures.length) return figures;
-  const search = await fetchHtml(`https://brickset.com/sets?query=${setNumber}`, { timeout: 10000 });
+  const search = await fetchHtml(`https://brickset.com/sets?query=${setNumber}`, {
+    timeout: 10000,
+  });
   return search ? parseBricksetSeriesSearch(search, setNumber) : [];
 }
 
@@ -780,7 +829,8 @@ async function scrapeLegoInfoViaBrowser(
     // Brickset only for gaps: an English name, an image, or the RRP of a set
     // LEGO.com lists without a price (sold out, retired).
     if (!name || (!skipImage && !image) || !priceHuf) {
-      const bsHtml = (await axiosHtml(`https://brickset.com/sets/${setNumber}-1`, { timeout: 7000 })) ??
+      const bsHtml =
+        (await axiosHtml(`https://brickset.com/sets/${setNumber}-1`, { timeout: 7000 })) ??
         (await browserHtml(`https://brickset.com/sets/${setNumber}-1`));
       const bs = bsHtml ? parseBricksetSetPage(bsHtml) : null;
       if (bs) {
@@ -793,7 +843,11 @@ async function scrapeLegoInfoViaBrowser(
         }
       }
     }
-    return { result: { name: name || hu.name, priceHuf, image, url }, name: name || hu.name, image };
+    return {
+      result: { name: name || hu.name, priceHuf, image, url },
+      name: name || hu.name,
+      image,
+    };
   }
 
   // Not on LEGO.com: Brickset by plain request, then through the browser.
@@ -834,11 +888,18 @@ async function scrapeLegoInfo(
       } catch (e: any) {
         // Previously fell back to a hardcoded 395 HUF/EUR silently, so a broken
         // rate source looked identical to a working one. Leave priceHuf at 0.
-        console.warn(`Exchange-rate lookup failed for ${setNumber}, leaving priceHuf unset:`, e?.message || e);
+        console.warn(
+          `Exchange-rate lookup failed for ${setNumber}, leaving priceHuf unset:`,
+          e?.message || e
+        );
       }
     }
     if (priceHuf > 0 || bs.name) {
-      return { result: { name: bs.name, priceHuf, image: skipImage ? null : bs.image, url }, name, image };
+      return {
+        result: { name: bs.name, priceHuf, image: skipImage ? null : bs.image, url },
+        name,
+        image,
+      };
     }
   }
 
@@ -858,7 +919,11 @@ async function scrapeLegoInfo(
       });
       const enName = enHtml ? parseLegoProductPage(enHtml).name : '';
       const finalName = enName || hu.name || `Lego Set ${setNumber}`;
-      return { result: { name: finalName, priceHuf: hu.priceHuf, image: skipImage ? null : hu.image, url }, name, image };
+      return {
+        result: { name: finalName, priceHuf: hu.priceHuf, image: skipImage ? null : hu.image, url },
+        name,
+        image,
+      };
     }
   }
   return { name, image };
@@ -972,8 +1037,12 @@ export function registerApiRoutes(app: Express, options: ApiOptions = {}): void 
   // Baseline limit for every /api route, then a much tighter bucket on the
   // handlers that can trigger a Gemini call or a burst of outbound scrapes.
   const limited = options.rateLimit !== false;
-  const generalLimit = limited ? rateLimit({ windowMs: 60_000, max: 120, name: 'general' }) : noLimit;
-  const expensiveLimit = limited ? rateLimit({ windowMs: 60_000, max: 12, name: 'expensive' }) : noLimit;
+  const generalLimit = limited
+    ? rateLimit({ windowMs: 60_000, max: 120, name: 'general' })
+    : noLimit;
+  const expensiveLimit = limited
+    ? rateLimit({ windowMs: 60_000, max: 12, name: 'expensive' })
+    : noLimit;
 
   app.use('/api', generalLimit);
 
@@ -1068,7 +1137,9 @@ export function registerApiRoutes(app: Express, options: ApiOptions = {}): void 
 
       // 2b. Web: Gemini fallback only for the sets scraping could not resolve.
       if (missing.length > 0 && !browserHtml && process.env.GEMINI_API_KEY) {
-        console.log(`Scraping found ${Object.keys(results).length}/${setNumbers.length} images; querying Gemini for ${missing.length} missing.`);
+        console.log(
+          `Scraping found ${Object.keys(results).length}/${setNumbers.length} images; querying Gemini for ${missing.length} missing.`
+        );
         const queryList = missing.map((n) => `"Lego ${n}"`).join(', ');
         const prompt = `Find the main high-quality product image URL for the following Lego sets: ${queryList}.
 Return ONLY a JSON object mapping each set number to its image URL. Example format: { "75192": "https://example.com/image1.jpg", "10294": "https://example.com/image2.png" }. Use the googleSearch tool to perform standard Google searches. Find direct image links if possible (e.g., from retailer sites, wikis, or brickset). Ensure the URLs are absolute.`;
@@ -1181,23 +1252,14 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       }
 
       if (!response || !response.ok) {
-        console.error(
-          'Image proxy fetch error:',
-          response?.status,
-          response?.statusText,
-          imageUrl
-        );
+        console.error('Image proxy fetch error:', response?.status, response?.statusText, imageUrl);
         return sendTransparent();
       }
 
       const contentType = response.headers.get('content-type');
       // SVG is scriptable and this is served same-origin, so an allowlisted
       // host serving image/svg+xml would otherwise be a stored-XSS vector.
-      if (
-        !contentType ||
-        !contentType.startsWith('image/') ||
-        contentType.includes('svg')
-      ) {
+      if (!contentType || !contentType.startsWith('image/') || contentType.includes('svg')) {
         console.warn('Image proxy blocked content-type:', contentType, imageUrl);
         return res.status(415).send('Not a supported image type');
       }
@@ -1261,11 +1323,15 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
           releaseDate: null,
         });
       }
-      return res.status(404).json({ error: `Set ${setNumber} was not found on Brickset or LEGO.com.` });
+      return res
+        .status(404)
+        .json({ error: `Set ${setNumber} was not found on Brickset or LEGO.com.` });
     }
 
     // 3b. Web: Gemini search.
-    console.warn(`Scraping Brickset and LEGO.com failed for ${setNumber}, attempting Gemini Search fallback...`);
+    console.warn(
+      `Scraping Brickset and LEGO.com failed for ${setNumber}, attempting Gemini Search fallback...`
+    );
     try {
       const imagePrompt = skipImage ? '' : 'and the main product image URL. ';
       const imageJsonFormat = skipImage ? '' : ', "imageUrl": "string"';
@@ -1292,10 +1358,13 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
     } catch (fallbackError: any) {
       console.error('Gemini failed:', fallbackError);
       if (fallbackError?.isRateLimit) {
-        return res.status(429).json({ error: 'Rate limit exceeded.', retryAfter: fallbackError.retryAfter });
+        return res
+          .status(429)
+          .json({ error: 'Rate limit exceeded.', retryAfter: fallbackError.retryAfter });
       }
       res.status(500).json({
-        error: 'Failed to fetch LEGO set info from all sources. Make sure your GEMINI_API_KEY is valid.',
+        error:
+          'Failed to fetch LEGO set info from all sources. Make sure your GEMINI_API_KEY is valid.',
       });
     }
   });
@@ -1332,7 +1401,12 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
 
       // 1a. Desktop app: a local browser reads each source page instead of Gemini.
       if (geminiSources.length > 0 && options.scraper) {
-        const scraped = await scrapeSourcesWithBrowser(options.scraper, setNumbers, geminiSources, rates);
+        const scraped = await scrapeSourcesWithBrowser(
+          options.scraper,
+          setNumbers,
+          geminiSources,
+          rates
+        );
         for (const setNumber of setNumbers) Object.assign(result[setNumber], scraped[setNumber]);
       }
 
@@ -1345,7 +1419,10 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
           expectedJsonFormat[setNumber] = {};
           for (const s of geminiSources) {
             prompt += `- "${s.id}": ${s.urlTemplate.replace('{setNumber}', setNumber)} (Expected currency: ${s.currency})\n`;
-            expectedJsonFormat[setNumber][s.id] = { price: 0, store: `string (name of the specific store)` };
+            expectedJsonFormat[setNumber][s.id] = {
+              price: 0,
+              store: `string (name of the specific store)`,
+            };
           }
         }
         prompt += `\nReturn ONLY a JSON object mapping each setNumber to its sources in this exact format:\n${JSON.stringify(expectedJsonFormat, null, 2)}`;
@@ -1409,7 +1486,9 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
     } catch (error: any) {
       console.error('Batch Price Error:', error);
       if (error?.isRateLimit) {
-        return res.status(429).json({ error: 'Rate limit exceeded.', retryAfter: error.retryAfter });
+        return res
+          .status(429)
+          .json({ error: 'Rate limit exceeded.', retryAfter: error.retryAfter });
       }
       res.status(500).json({
         error: 'Failed to fetch batch market prices. Make sure your GEMINI_API_KEY is valid.',
@@ -1444,7 +1523,12 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
 
       // 1a. Desktop app: a local browser reads each source page instead of Gemini.
       if (geminiSources.length > 0 && options.scraper) {
-        const scraped = await scrapeSourcesWithBrowser(options.scraper, [setNumber], geminiSources, rates);
+        const scraped = await scrapeSourcesWithBrowser(
+          options.scraper,
+          [setNumber],
+          geminiSources,
+          rates
+        );
         Object.assign(responseData, scraped[setNumber]);
       }
 
@@ -1552,7 +1636,9 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
     } catch (error: any) {
       console.error('Error fetching market prices:', error);
       if (error?.isRateLimit) {
-        return res.status(429).json({ error: 'Rate limit exceeded.', retryAfter: error.retryAfter });
+        return res
+          .status(429)
+          .json({ error: 'Rate limit exceeded.', retryAfter: error.retryAfter });
       }
       res.status(500).json({
         error: 'Failed to fetch market prices. Make sure your GEMINI_API_KEY is valid.',
@@ -1597,7 +1683,9 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
   app.post('/api/teach-source', expensiveLimit, async (req, res) => {
     const scraper = options.scraper;
     if (!scraper?.capturePage || !scraper.testRecipe) {
-      return res.status(404).json({ error: 'Teaching sources is available in the desktop app only' });
+      return res
+        .status(404)
+        .json({ error: 'Teaching sources is available in the desktop app only' });
     }
     const { source, setNumbers } = req.body ?? {};
     if (
@@ -1608,7 +1696,9 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       !source.urlTemplate.includes('{setNumber}') ||
       source.urlTemplate.length > 500
     ) {
-      return res.status(400).json({ error: 'source needs a name, a currency and a URL template containing {setNumber}' });
+      return res.status(400).json({
+        error: 'source needs a name, a currency and a URL template containing {setNumber}',
+      });
     }
     if (
       !Array.isArray(setNumbers) ||
@@ -1616,7 +1706,9 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       setNumbers.length > MAX_TEACH_SAMPLES ||
       !setNumbers.every(isValidSetNumber)
     ) {
-      return res.status(400).json({ error: `setNumbers must be 1-${MAX_TEACH_SAMPLES} valid set numbers` });
+      return res
+        .status(400)
+        .json({ error: `setNumbers must be 1-${MAX_TEACH_SAMPLES} valid set numbers` });
     }
     try {
       await assertSafeOutboundUrl(source.urlTemplate.replace('{setNumber}', setNumbers[0]));
@@ -1626,7 +1718,11 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
 
     try {
       const result = await teachSource(
-        { name: source.name.slice(0, 100), urlTemplate: source.urlTemplate, currency: source.currency.slice(0, 3) },
+        {
+          name: source.name.slice(0, 100),
+          urlTemplate: source.urlTemplate,
+          currency: source.currency.slice(0, 3),
+        },
         setNumbers,
         {
           capture: (url, setNumber) => scraper.capturePage!(url, setNumber),
@@ -1646,9 +1742,15 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
     } catch (error: any) {
       console.error('Teaching source failed:', error);
       if (error?.isRateLimit) {
-        return res.status(429).json({ error: 'Gemini rate limit reached. Try again in a minute.', retryAfter: error.retryAfter });
+        return res.status(429).json({
+          error: 'Gemini rate limit reached. Try again in a minute.',
+          retryAfter: error.retryAfter,
+        });
       }
-      res.status(500).json({ error: 'Teaching failed. Check that a Gemini key is set (enter it in BrickBudget, or run npx shop-teacher key set).' });
+      res.status(500).json({
+        error:
+          'Teaching failed. Check that a Gemini key is set (enter it in BrickBudget, or run npx shop-teacher key set).',
+      });
     }
   });
 

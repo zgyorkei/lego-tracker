@@ -27,7 +27,13 @@ describe('parseFirebaseConfigText', () => {
   });
 
   it('reads JSON such as firebase-applet-config.json', () => {
-    const json = JSON.stringify({ apiKey: 'k', authDomain: 'a', projectId: 'p', appId: 'i', firestoreDatabaseId: 'named-db' });
+    const json = JSON.stringify({
+      apiKey: 'k',
+      authDomain: 'a',
+      projectId: 'p',
+      appId: 'i',
+      firestoreDatabaseId: 'named-db',
+    });
     expect(parseFirebaseConfigText(json)).toEqual({
       apiKey: 'k',
       authDomain: 'a',
@@ -67,7 +73,10 @@ describe('validateAppConfig', () => {
   const firebase = parseFirebaseConfigText(consoleSnippet);
 
   it('cleans a complete config and defaults the database name', () => {
-    const result = validateAppConfig({ firebase: { ...firebase, extra: 'ignored' }, publicAppUrl: 'https://bricks.example.com/' });
+    const result = validateAppConfig({
+      firebase: { ...firebase, extra: 'ignored' },
+      publicAppUrl: 'https://bricks.example.com/',
+    });
     expect(result).toEqual({
       config: {
         firebase: {
@@ -85,7 +94,9 @@ describe('validateAppConfig', () => {
   });
 
   it('names the missing Firebase fields', () => {
-    expect(validateAppConfig({ firebase: { apiKey: 'k' }, publicAppUrl: 'https://x.example' })).toEqual({
+    expect(
+      validateAppConfig({ firebase: { apiKey: 'k' }, publicAppUrl: 'https://x.example' })
+    ).toEqual({
       error: 'The Firebase config is missing authDomain, projectId, appId.',
     });
   });

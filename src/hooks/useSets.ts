@@ -1,16 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
-import { 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
+import {
+  collection,
+  query,
+  where,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
   serverTimestamp,
   orderBy,
-  getDocs
+  getDocs,
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { LegoSet, PriceHistory } from '../types';
@@ -73,36 +73,40 @@ export function useSets() {
     if (!user) return;
 
     const q = query(
-      collection(db, 'sets'), 
+      collection(db, 'sets'),
       where('userId', '==', user.uid),
       orderBy('createdAt', 'desc')
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const setsData: LegoSet[] = [];
-      snapshot.forEach((doc) => {
-        setsData.push({ id: doc.id, ...doc.data() } as LegoSet);
-      });
-      setSets(setsData);
-      setError(null);
-      setLoading(false);
-    }, (err) => {
-      // Fallback to cached sets if the live query fails.
-      try {
-        const cached = localStorage.getItem('cachedSets');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setSets(parsed);
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const setsData: LegoSet[] = [];
+        snapshot.forEach((doc) => {
+          setsData.push({ id: doc.id, ...doc.data() } as LegoSet);
+        });
+        setSets(setsData);
+        setError(null);
+        setLoading(false);
+      },
+      (err) => {
+        // Fallback to cached sets if the live query fails.
+        try {
+          const cached = localStorage.getItem('cachedSets');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setSets(parsed);
+            }
           }
+        } catch (e) {
+          console.warn('Could not restore cached sets', e);
         }
-      } catch (e) {
-        console.warn('Could not restore cached sets', e);
-      }
 
-      setLoading(false);
-      setError(handleFirestoreError(err, OperationType.LIST, 'sets'));
-    });
+        setLoading(false);
+        setError(handleFirestoreError(err, OperationType.LIST, 'sets'));
+      }
+    );
 
     return () => unsubscribe();
   }, [user]);
@@ -114,22 +118,25 @@ export function useSets() {
   // They surface a message via setError and then re-throw, so an awaiting
   // caller can branch on failure while the UI still gets something to display.
 
-  const addSet = useCallback(async (setData: Partial<LegoSet>) => {
-    if (!user) return;
-    try {
-      await addDoc(collection(db, 'sets'), {
-        ...setData,
-        userId: user.uid,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      setError(null);
-    } catch (err) {
-      const message = handleFirestoreError(err, OperationType.CREATE, 'sets');
-      setError(message);
-      throw new Error(message);
-    }
-  }, [user]);
+  const addSet = useCallback(
+    async (setData: Partial<LegoSet>) => {
+      if (!user) return;
+      try {
+        await addDoc(collection(db, 'sets'), {
+          ...setData,
+          userId: user.uid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        setError(null);
+      } catch (err) {
+        const message = handleFirestoreError(err, OperationType.CREATE, 'sets');
+        setError(message);
+        throw new Error(message);
+      }
+    },
+    [user]
+  );
 
   const updateSet = useCallback(async (id: string, updates: Partial<LegoSet>) => {
     try {
@@ -161,14 +168,10 @@ export function useSets() {
     try {
       await addDoc(collection(db, 'sets', setId, 'priceHistory'), {
         ...history,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
       });
     } catch (err) {
-      const message = handleFirestoreError(
-        err,
-        OperationType.CREATE,
-        `sets/${setId}/priceHistory`
-      );
+      const message = handleFirestoreError(err, OperationType.CREATE, `sets/${setId}/priceHistory`);
       setError(message);
       throw new Error(message);
     }
@@ -176,12 +179,9 @@ export function useSets() {
 
   const getPriceHistory = useCallback(async (setId: string): Promise<PriceHistory[]> => {
     try {
-      const q = query(
-        collection(db, 'sets', setId, 'priceHistory'),
-        orderBy('date', 'asc')
-      );
+      const q = query(collection(db, 'sets', setId, 'priceHistory'), orderBy('date', 'asc'));
       const snapshot = await getDocs(q);
-      return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as PriceHistory));
+      return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as PriceHistory);
     } catch (err) {
       // Read-only and non-critical: surface it but return empty rather than
       // throwing, so a history-fetch failure cannot break the card.

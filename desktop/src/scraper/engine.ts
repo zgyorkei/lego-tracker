@@ -1,6 +1,17 @@
 import type { BrowserContext, Page } from 'playwright';
-import { capturePage as captureOpenPage, GENERIC_CONSENT, readPagePrice, readSearchCards } from 'shop-teacher/browser';
-import { parseRecipe, rankCards, type RecipeTestResult, type ScrapeRecipe, type ScrapedCard } from '../../../lib/scrapeRecipe';
+import {
+  capturePage as captureOpenPage,
+  GENERIC_CONSENT,
+  readPagePrice,
+  readSearchCards,
+} from 'shop-teacher/browser';
+import {
+  parseRecipe,
+  rankCards,
+  type RecipeTestResult,
+  type ScrapeRecipe,
+  type ScrapedCard,
+} from '../../../lib/scrapeRecipe';
 import type { PageCapture, PriceScraper, ScrapedPrice } from '../../../lib/server-api';
 import { builtinRecipeFor } from '../../../lib/builtinRecipes';
 
@@ -11,7 +22,6 @@ const NAV_TIMEOUT_MS = 30_000;
 // Cloudflare's interstitial (Arukereso) usually clears in a few seconds.
 const CHALLENGE_TIMEOUT_MS = 40_000;
 const MAX_PRODUCT_PAGES = 2;
-
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // A person-paced gap between page loads.
@@ -53,7 +63,9 @@ export class PlaywrightScraper implements PriceScraper {
       return null;
     }
     const r = await this.enqueue((page) => this.runRecipe(page, url, setNumber, recipe));
-    return r.price != null ? { price: r.price, url: r.url, title: r.title ?? null, image: r.image ?? null } : null;
+    return r.price != null
+      ? { price: r.price, url: r.url, title: r.title ?? null, image: r.image ?? null }
+      : null;
   }
 
   /**
@@ -117,25 +129,27 @@ export class PlaywrightScraper implements PriceScraper {
       // location when the module loads, and the packaged app points
       // PLAYWRIGHT_BROWSERS_PATH at its bundled Chromium only after start.
       this.context = import('playwright')
-        .then(({ chromium }) => chromium.launchPersistentContext(this.profileDir, {
-          headless: false,
-          // Sets Accept-Language and navigator.languages together.
-          locale: 'en-US',
-          // Real window size rather than an emulated viewport, which is an
-          // automation tell in a headed browser.
-          viewport: null,
-          args: [
-            '--window-position=-32000,-32000',
-            '--window-size=1280,900',
-            '--disable-blink-features=AutomationControlled',
-            '--no-first-run',
-            '--no-default-browser-check',
-            '--mute-audio',
-          ],
-          // Without this the browser sets navigator.webdriver and shows the
-          // "controlled by automated software" bar.
-          ignoreDefaultArgs: ['--enable-automation'],
-        }))
+        .then(({ chromium }) =>
+          chromium.launchPersistentContext(this.profileDir, {
+            headless: false,
+            // Sets Accept-Language and navigator.languages together.
+            locale: 'en-US',
+            // Real window size rather than an emulated viewport, which is an
+            // automation tell in a headed browser.
+            viewport: null,
+            args: [
+              '--window-position=-32000,-32000',
+              '--window-size=1280,900',
+              '--disable-blink-features=AutomationControlled',
+              '--no-first-run',
+              '--no-default-browser-check',
+              '--mute-audio',
+            ],
+            // Without this the browser sets navigator.webdriver and shows the
+            // "controlled by automated software" bar.
+            ignoreDefaultArgs: ['--enable-automation'],
+          })
+        )
         .catch((e) => {
           this.context = null;
           throw e;
@@ -144,8 +158,20 @@ export class PlaywrightScraper implements PriceScraper {
     return this.context;
   }
 
-  private async runRecipe(page: Page, url: string, setNumber: string, recipe: ScrapeRecipe): Promise<RecipeTestResult> {
-    const result: RecipeTestResult = { price: null, url: null, cardsFound: 0, matched: 0, titles: [], blocked: false };
+  private async runRecipe(
+    page: Page,
+    url: string,
+    setNumber: string,
+    recipe: ScrapeRecipe
+  ): Promise<RecipeTestResult> {
+    const result: RecipeTestResult = {
+      price: null,
+      url: null,
+      cardsFound: 0,
+      matched: 0,
+      titles: [],
+      blocked: false,
+    };
 
     if (recipe.cookies?.length) {
       const fresh = recipe.cookies.filter((c) => !this.cookiesSet.has(`${c.domain}|${c.name}`));
@@ -163,13 +189,18 @@ export class PlaywrightScraper implements PriceScraper {
       cards = await readSearchCards(page, recipe);
     } catch (e) {
       // A taught recipe can carry a selector the browser rejects outright.
-      return { ...result, titles: [`selector error: ${String((e as Error)?.message || e).slice(0, 160)}`] };
+      return {
+        ...result,
+        titles: [`selector error: ${String((e as Error)?.message || e).slice(0, 160)}`],
+      };
     }
 
     const ranked = rankCards(cards, setNumber, recipe);
     result.cardsFound = cards.length;
     result.matched = ranked.length;
-    result.titles = cards.slice(0, 8).map((c) => `${c.priceText ?? 'no price'} | ${c.title.slice(0, 100)}`);
+    result.titles = cards
+      .slice(0, 8)
+      .map((c) => `${c.priceText ?? 'no price'} | ${c.title.slice(0, 100)}`);
     if (process.env.SCRAPER_DEBUG) {
       console.log(`[scraper] ${url}: ${cards.length} cards, ${ranked.length} matched`);
       for (const t of result.titles) console.log(`  ${t}`);
@@ -185,19 +216,29 @@ export class PlaywrightScraper implements PriceScraper {
 
     // The listing's own title and image travel with the price, so the app can
     // name and picture a set that LEGO.com and Brickset know nothing about.
-    const identity = (card: { title: string; image?: string | null }) => ({ title: card.title || null, image: card.image ?? null });
+    const identity = (card: { title: string; image?: string | null }) => ({
+      title: card.title || null,
+      image: card.image ?? null,
+    });
 
     let productPages = 0;
     for (const card of ranked) {
-      if (card.price != null) return { ...result, ...identity(card), price: card.price, url: absolute(card.href) };
+      if (card.price != null)
+        return { ...result, ...identity(card), price: card.price, url: absolute(card.href) };
       // The best match shows no price in the results: read its product page.
       const link = absolute(card.href);
       if (!recipe.productPagePriceSelector || !link || productPages >= MAX_PRODUCT_PAGES) continue;
       productPages++;
       if (!(await this.open(page, link, recipe.consentSelector))) continue;
-      await page.waitForSelector(recipe.productPagePriceSelector, { timeout: 8000 }).catch(() => {});
+      await page
+        .waitForSelector(recipe.productPagePriceSelector, { timeout: 8000 })
+        .catch(() => {});
       // The first match that reads as a price: the first is often an empty placeholder.
-      const price = await readPagePrice(page, recipe.productPagePriceSelector, recipe.decimalSeparator);
+      const price = await readPagePrice(
+        page,
+        recipe.productPagePriceSelector,
+        recipe.decimalSeparator
+      );
       if (price != null) return { ...result, ...identity(card), price, url: link };
     }
     return result;
@@ -206,17 +247,21 @@ export class PlaywrightScraper implements PriceScraper {
   /** Navigates and waits out cookie banners and Cloudflare. False if blocked. */
   private async open(page: Page, url: string, consentSelector?: string): Promise<boolean> {
     await politePause();
-    const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS }).catch((e) => {
-      console.warn(`Could not load ${url}:`, e?.message || e);
-      return null;
-    });
+    const resp = await page
+      .goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS })
+      .catch((e) => {
+        console.warn(`Could not load ${url}:`, e?.message || e);
+        return null;
+      });
     if (!resp) return false;
     // The challenge page is served as a 403, and that stays the response
     // status after it clears, so the status check below must skip it.
     const challenged = /just a moment/i.test(await page.title());
     if (challenged) {
       await page
-        .waitForFunction(() => !/just a moment/i.test(document.title), null, { timeout: CHALLENGE_TIMEOUT_MS })
+        .waitForFunction(() => !/just a moment/i.test(document.title), null, {
+          timeout: CHALLENGE_TIMEOUT_MS,
+        })
         .catch(() => {});
       await page.waitForLoadState('domcontentloaded').catch(() => {});
     }
@@ -226,7 +271,10 @@ export class PlaywrightScraper implements PriceScraper {
     }
     const title = await page.title();
     const status = resp.status();
-    if (/just a moment/i.test(title) || (await page.locator('form[action*="validateCaptcha"]').count())) {
+    if (
+      /just a moment/i.test(title) ||
+      (await page.locator('form[action*="validateCaptcha"]').count())
+    ) {
       console.warn(`Blocked by a bot check on ${new URL(url).hostname}`);
       return false;
     }

@@ -32,9 +32,13 @@ function resolveFirebaseConfig(): FirebaseWebConfig | null {
   }
 
   // A glob rather than an import, so a build without the file still compiles.
-  const files = import.meta.glob<{ default: FirebaseWebConfig }>('../../firebase-applet-config.json', { eager: true });
+  const files = import.meta.glob<{ default: FirebaseWebConfig }>(
+    '../../firebase-applet-config.json',
+    { eager: true }
+  );
   const file = files['../../firebase-applet-config.json']?.default;
-  if (file?.apiKey && file.projectId) return { ...file, firestoreDatabaseId: file.firestoreDatabaseId || '(default)' };
+  if (file?.apiKey && file.projectId)
+    return { ...file, firestoreDatabaseId: file.firestoreDatabaseId || '(default)' };
 
   return null;
 }

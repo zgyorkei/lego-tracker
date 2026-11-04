@@ -15,8 +15,19 @@ export interface Minifigure {
 // ten wrote a value the type said was impossible. Single-sourced here so the
 // <option> list and the type cannot drift apart again.
 export const SUPPORTED_CURRENCIES = [
-  'HUF', 'EUR', 'USD', 'GBP', 'CHF', 'PLN', 'CZK',
-  'DKK', 'SEK', 'NOK', 'RON', 'BGN', 'ISK',
+  'HUF',
+  'EUR',
+  'USD',
+  'GBP',
+  'CHF',
+  'PLN',
+  'CZK',
+  'DKK',
+  'SEK',
+  'NOK',
+  'RON',
+  'BGN',
+  'ISK',
 ] as const;
 
 export type Currency = (typeof SUPPORTED_CURRENCIES)[number];
@@ -35,9 +46,27 @@ export interface PriceSource {
 }
 
 export const DEFAULT_PRICE_SOURCES: PriceSource[] = [
-  { id: 'amazon', name: 'Amazon EU', urlTemplate: 'https://www.amazon.de/s?k=lego+{setNumber}', currency: 'EUR', color: '#2563eb' },
-  { id: 'bricklink', name: 'BrickLink', urlTemplate: 'https://www.bricklink.com/v2/catalog/catalogitem.page?S={setNumber}-1', currency: 'EUR', color: '#D4A017' },
-  { id: 'arukereso', name: 'Arukereso', urlTemplate: 'https://www.arukereso.hu/CategorySearch.php?st={setNumber}', currency: 'HUF', color: '#10b981' }
+  {
+    id: 'amazon',
+    name: 'Amazon EU',
+    urlTemplate: 'https://www.amazon.de/s?k=lego+{setNumber}',
+    currency: 'EUR',
+    color: '#2563eb',
+  },
+  {
+    id: 'bricklink',
+    name: 'BrickLink',
+    urlTemplate: 'https://www.bricklink.com/v2/catalog/catalogitem.page?S={setNumber}-1',
+    currency: 'EUR',
+    color: '#D4A017',
+  },
+  {
+    id: 'arukereso',
+    name: 'Arukereso',
+    urlTemplate: 'https://www.arukereso.hu/CategorySearch.php?st={setNumber}',
+    currency: 'HUF',
+    color: '#10b981',
+  },
 ];
 
 // Sources that are always present and cannot be edited/removed in the UI. The
@@ -69,11 +98,7 @@ export interface MarketPrices {
 
 /** Narrows a MarketPrices entry to a real quote, skipping the metadata keys. */
 export function isPriceQuote(v: unknown): v is PriceQuote {
-  return (
-    typeof v === 'object' &&
-    v !== null &&
-    typeof (v as PriceQuote).priceHuf === 'number'
-  );
+  return typeof v === 'object' && v !== null && typeof (v as PriceQuote).priceHuf === 'number';
 }
 
 export interface PriceHistory {
@@ -181,6 +206,6 @@ export interface LegoSet {
   minifiguresStatus?: Record<string, MinifigureStatus>;
   marketPrices?: MarketPrices;
   prices?: Record<string, number>;
-  lowestPrices?: { sourceName: string, url: string, priceText: string }[];
+  lowestPrices?: { sourceName: string; url: string; priceText: string }[];
   legoPriceError?: boolean;
 }

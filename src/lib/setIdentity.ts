@@ -82,8 +82,14 @@ export function identityFromQuotes(
  * placeholder and the set already has a real name (which may have come from
  * a shop listing on an earlier refresh).
  */
-export function mergeLookupName(lookupName: string | null | undefined, set: Pick<LegoSet, 'name' | 'setNumber'>): string {
-  if (!lookupName || (isPlaceholderName(lookupName, set.setNumber) && !isPlaceholderName(set.name, set.setNumber))) {
+export function mergeLookupName(
+  lookupName: string | null | undefined,
+  set: Pick<LegoSet, 'name' | 'setNumber'>
+): string {
+  if (
+    !lookupName ||
+    (isPlaceholderName(lookupName, set.setNumber) && !isPlaceholderName(set.name, set.setNumber))
+  ) {
     return set.name;
   }
   return lookupName;

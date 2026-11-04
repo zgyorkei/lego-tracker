@@ -32,7 +32,7 @@ export function getLowestPrices(
     if (sourceId === 'error' || sourceId === 'exchangeRate') continue;
     if (!isPriceQuote(quote)) continue;
 
-    const source = priceSources.find(ps => ps.id === sourceId);
+    const source = priceSources.find((ps) => ps.id === sourceId);
     if (!source) continue;
 
     const costValueHuf = quote.priceHuf;

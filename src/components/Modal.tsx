@@ -57,9 +57,9 @@ export function Modal({
       }
       if (e.key !== 'Tab' || !panelRef.current) return;
 
-      const items = Array.from(
-        panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)
-      ).filter(el => el.offsetParent !== null);
+      const items = Array.from(panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => el.offsetParent !== null
+      );
       if (items.length === 0) return;
 
       const first = items[0];
@@ -92,11 +92,15 @@ export function Modal({
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 overflow-y-auto"
-      onMouseDown={closeOnBackdrop ? (e) => {
-        // mouseDown on the backdrop itself, so a drag that ends outside the
-        // panel does not count as a dismiss.
-        if (e.target === e.currentTarget) onClose();
-      } : undefined}
+      onMouseDown={
+        closeOnBackdrop
+          ? (e) => {
+              // mouseDown on the backdrop itself, so a drag that ends outside the
+              // panel does not count as a dismiss.
+              if (e.target === e.currentTarget) onClose();
+            }
+          : undefined
+      }
     >
       <div
         ref={panelRef}

@@ -30,7 +30,8 @@ export function TeachSourcePanel({ source, sampleSetNumbers, onSave }: TeachSour
   const [error, setError] = useState<string | null>(null);
 
   const status = STATUS_LABEL[scrapingStatus(source)];
-  const urlOk = source.urlTemplate.includes('{setNumber}') && /^https?:\/\//.test(source.urlTemplate);
+  const urlOk =
+    source.urlTemplate.includes('{setNumber}') && /^https?:\/\//.test(source.urlTemplate);
   const found = result?.samples.filter((s) => s.result?.price != null).length ?? 0;
 
   const teach = async () => {
@@ -62,7 +63,9 @@ export function TeachSourcePanel({ source, sampleSetNumbers, onSave }: TeachSour
   return (
     <div className="mt-3 pt-3 border-t border-gray-200">
       <div className="flex items-center justify-between gap-2">
-        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${status.cls}`}>{status.text}</span>
+        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${status.cls}`}>
+          {status.text}
+        </span>
         <button
           type="button"
           onClick={() => void teach()}
@@ -77,7 +80,8 @@ export function TeachSourcePanel({ source, sampleSetNumbers, onSave }: TeachSour
 
       {running && (
         <p className="mt-2 text-xs font-bold text-gray-500" role="status">
-          Reading {source.name} for sets {sampleSetNumbers.join(', ')} and writing instructions. This takes a minute or two.
+          Reading {source.name} for sets {sampleSetNumbers.join(', ')} and writing instructions.
+          This takes a minute or two.
         </p>
       )}
 

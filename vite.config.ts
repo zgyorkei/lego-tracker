@@ -1,8 +1,8 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import {existsSync} from 'fs';
+import { existsSync } from 'fs';
 import path from 'path';
-import {defineConfig, loadEnv} from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 
 /**
  * Stops a website build that has no Firebase project: it would deploy fine
@@ -26,7 +26,7 @@ function checkFirebaseConfig(mode: string) {
   throw new Error(message);
 }
 
-export default defineConfig(({command, mode}) => {
+export default defineConfig(({ command, mode }) => {
   if (command === 'build') checkFirebaseConfig(mode);
   // NOTE: GEMINI_API_KEY is intentionally NOT exposed to the client bundle.
   // It is a billable secret and must only be used server-side (see server.ts / api/index.ts).

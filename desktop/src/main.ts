@@ -20,7 +20,8 @@ const startHidden = process.argv.includes('--hidden');
 // The installer ships Playwright's Chromium in resources/ms-playwright, so a
 // fresh machine needs no separate browser download. Dev runs use the
 // per-user Playwright cache instead.
-if (app.isPackaged) process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(process.resourcesPath, 'ms-playwright');
+if (app.isPackaged)
+  process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(process.resourcesPath, 'ms-playwright');
 
 // Secrets are never packaged: the installer must be safe to copy around. A
 // packaged app reads them from its data folder (%APPDATA%\Brick Tracker);
@@ -41,12 +42,17 @@ const sharedGeminiKey = storedGeminiKey();
 if (sharedGeminiKey) process.env.GEMINI_API_KEY = sharedGeminiKey;
 
 // The packaged web app sits in resources/web; dev runs use the repo build.
-const webDir = app.isPackaged ? path.join(process.resourcesPath, 'web') : path.resolve(__dirname, '../../dist');
+const webDir = app.isPackaged
+  ? path.join(process.resourcesPath, 'web')
+  : path.resolve(__dirname, '../../dist');
 
 // Which Firebase project and website this install uses. Not built in, so the
 // installer works for anybody: the setup window asks on first start and saves
 // it here (lib/appConfig.ts), next to the sign-in client file.
-const setupFiles = { configFile: secretFile('app-config.json'), oauthFile: secretFile('oauth-client.json') };
+const setupFiles = {
+  configFile: secretFile('app-config.json'),
+  oauthFile: secretFile('oauth-client.json'),
+};
 let appConfig: DesktopAppConfig | null = null;
 
 let win: BrowserWindow | null = null;
@@ -120,9 +126,14 @@ function createTray() {
             {
               label: 'Start with Windows',
               type: 'checkbox' as const,
-              checked: app.getLoginItemSettings({ path: process.execPath, args: ['--hidden'] }).openAtLogin,
+              checked: app.getLoginItemSettings({ path: process.execPath, args: ['--hidden'] })
+                .openAtLogin,
               click: (item: Electron.MenuItem) =>
-                app.setLoginItemSettings({ openAtLogin: item.checked, path: process.execPath, args: ['--hidden'] }),
+                app.setLoginItemSettings({
+                  openAtLogin: item.checked,
+                  path: process.execPath,
+                  args: ['--hidden'],
+                }),
             },
           ]
         : []),
@@ -144,7 +155,11 @@ const setupIcon = () => path.join(__dirname, 'icon.png');
 /** The tray's "Settings...": the same window as the first-run setup; saving restarts the app. */
 async function openSettings() {
   if (setupWin) return showWindow();
-  const saved = await runSetup(setupFiles, { current: appConfig, icon: setupIcon(), onWindow: (w) => (setupWin = w) });
+  const saved = await runSetup(setupFiles, {
+    current: appConfig,
+    icon: setupIcon(),
+    onWindow: (w) => (setupWin = w),
+  });
   if (!saved) return;
   app.relaunch({ args: process.argv.slice(1).filter((a) => a !== '--hidden') });
   quitting = true;
@@ -155,7 +170,12 @@ async function start() {
   const stored = readAppConfig(setupFiles.configFile);
   appConfig =
     stored.config ??
-    (await runSetup(setupFiles, { current: null, problem: stored.problem, icon: setupIcon(), onWindow: (w) => (setupWin = w) }));
+    (await runSetup(setupFiles, {
+      current: null,
+      problem: stored.problem,
+      icon: setupIcon(),
+      onWindow: (w) => (setupWin = w),
+    }));
   if (!appConfig) {
     // Closed without saving: there is nothing to connect to yet.
     quitting = true;
@@ -180,7 +200,9 @@ async function start() {
     if (!event.senderFrame?.url.startsWith(APP_ORIGIN)) throw new Error('Unexpected sender');
     const clientFile = setupFiles.oauthFile;
     if (!existsSync(clientFile)) {
-      throw new Error('Sign-in is not set up yet: choose the Google sign-in client in the tray menu, Settings...');
+      throw new Error(
+        'Sign-in is not set up yet: choose the Google sign-in client in the tray menu, Settings...'
+      );
     }
     return googleSignIn(loadOAuthClient(clientFile));
   });

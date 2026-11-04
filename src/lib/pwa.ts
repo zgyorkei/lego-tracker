@@ -12,7 +12,10 @@ export function registerServiceWorker(): void {
   if (!import.meta.env.PROD || isDesktopApp || !('serviceWorker' in navigator)) return;
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch((err) => {
-      console.warn('Service worker registration failed; the site still works, but cannot be installed', err);
+      console.warn(
+        'Service worker registration failed; the site still works, but cannot be installed',
+        err
+      );
     });
   });
 }

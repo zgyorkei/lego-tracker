@@ -11,7 +11,18 @@ interface PlannedListDialogProps {
 }
 
 export function PlannedListDialog({ onClose, state }: PlannedListDialogProps) {
-  const { list, loading, busy, error, ready, plannedCount, purchaseCount, createList, deleteList, syncNow } = state;
+  const {
+    list,
+    loading,
+    busy,
+    error,
+    ready,
+    plannedCount,
+    purchaseCount,
+    createList,
+    deleteList,
+    syncNow,
+  } = state;
   const [copied, setCopied] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -50,7 +61,10 @@ export function PlannedListDialog({ onClose, state }: PlannedListDialogProps) {
         </p>
 
         {error && (
-          <div role="alert" className="mb-4 bg-red-50 border-2 border-red-200 text-red-600 font-bold text-sm rounded-lg px-4 py-3">
+          <div
+            role="alert"
+            className="mb-4 bg-red-50 border-2 border-red-200 text-red-600 font-bold text-sm rounded-lg px-4 py-3"
+          >
             {error}
           </div>
         )}
@@ -70,7 +84,10 @@ export function PlannedListDialog({ onClose, state }: PlannedListDialogProps) {
           </div>
         ) : (
           <div>
-            <label htmlFor="planned-list-url" className="block text-xs font-black uppercase text-gray-500 mb-1">
+            <label
+              htmlFor="planned-list-url"
+              className="block text-xs font-black uppercase text-gray-500 mb-1"
+            >
               Endpoint (GET)
             </label>
             <div className="flex w-full items-center bg-gray-100 rounded-lg border-2 border-gray-300 p-2 mb-3">
@@ -89,8 +106,8 @@ export function PlannedListDialog({ onClose, state }: PlannedListDialogProps) {
               </button>
             </div>
             <p className="text-gray-500 font-bold text-xs mb-6">
-              {list.sets?.length ?? 0} of {plannedCount} planned sets and {list.purchases?.length ?? 0} of {purchaseCount} purchases
-              published, last synced{' '}
+              {list.sets?.length ?? 0} of {plannedCount} planned sets and{' '}
+              {list.purchases?.length ?? 0} of {purchaseCount} purchases published, last synced{' '}
               {new Date(list.updatedAt).toLocaleString()}.
             </p>
 

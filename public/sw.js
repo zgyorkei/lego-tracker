@@ -27,7 +27,9 @@ self.addEventListener('activate', (event) => {
 async function trim(cache) {
   const keys = await cache.keys();
   const assets = keys.filter((r) => new URL(r.url).pathname.startsWith('/assets/'));
-  await Promise.all(assets.slice(0, Math.max(0, assets.length - MAX_ASSETS)).map((r) => cache.delete(r)));
+  await Promise.all(
+    assets.slice(0, Math.max(0, assets.length - MAX_ASSETS)).map((r) => cache.delete(r))
+  );
 }
 
 self.addEventListener('fetch', (event) => {
@@ -60,7 +62,9 @@ self.addEventListener('fetch', (event) => {
           fetch(request).then((response) => {
             if (response.ok) {
               const copy = response.clone();
-              event.waitUntil(caches.open(CACHE).then((c) => c.put(request, copy).then(() => trim(c))));
+              event.waitUntil(
+                caches.open(CACHE).then((c) => c.put(request, copy).then(() => trim(c)))
+              );
             }
             return response;
           })

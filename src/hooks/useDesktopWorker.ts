@@ -42,7 +42,11 @@ export type RunRefresh = (kind: RefreshKind, setIds: string[]) => Promise<void>;
  * with several machines signed in it runs once. "done" means some desktop
  * finished today's run and the caller can stop checking for the day.
  */
-export async function scheduleDailyRun(uid: string, day: string, setIds: string[]): Promise<DailyRunAction> {
+export async function scheduleDailyRun(
+  uid: string,
+  day: string,
+  setIds: string[]
+): Promise<DailyRunAction> {
   const ref = doc(db, REFRESH_REQUESTS_COLLECTION, dailyRequestId(uid, day));
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
@@ -79,8 +83,13 @@ export function useDesktopWorker(user: User | null, isDemoMode: boolean, run?: R
     if (!active || !isDesktopApp || !uid) return;
 
     const beat = () =>
-      setDoc(doc(db, DESKTOP_STATUS_COLLECTION, uid), { lastSeenAt: new Date().toISOString() }).catch((err) =>
-        console.warn('Desktop heartbeat failed (is the desktopStatus rule in the Firebase store?)', err)
+      setDoc(doc(db, DESKTOP_STATUS_COLLECTION, uid), {
+        lastSeenAt: new Date().toISOString(),
+      }).catch((err) =>
+        console.warn(
+          'Desktop heartbeat failed (is the desktopStatus rule in the Firebase store?)',
+          err
+        )
       );
     void beat();
     const timer = setInterval(() => void beat(), HEARTBEAT_MS);
@@ -91,34 +100,36 @@ export function useDesktopWorker(user: User | null, isDemoMode: boolean, run?: R
 
     const handle = (id: string) => {
       const ref = doc(db, REFRESH_REQUESTS_COLLECTION, id);
-      queue = queue.then(async () => {
-        let claimed: RefreshRequest | null = null;
-        try {
-          claimed = await runTransaction(db, async (tx) => {
-            const snap = await tx.get(ref);
-            const req = snap.data() as RefreshRequest | undefined;
-            if (!shouldClaim(req)) return null;
-            tx.update(ref, { status: 'running', claimedAt: new Date().toISOString() });
-            return req!;
-          });
-        } catch (err) {
-          console.warn('Could not claim refresh request', id, err);
-        }
-        if (!claimed) return;
+      queue = queue
+        .then(async () => {
+          let claimed: RefreshRequest | null = null;
+          try {
+            claimed = await runTransaction(db, async (tx) => {
+              const snap = await tx.get(ref);
+              const req = snap.data() as RefreshRequest | undefined;
+              if (!shouldClaim(req)) return null;
+              tx.update(ref, { status: 'running', claimedAt: new Date().toISOString() });
+              return req!;
+            });
+          } catch (err) {
+            console.warn('Could not claim refresh request', id, err);
+          }
+          if (!claimed) return;
 
-        try {
-          if (!runRef.current) throw new Error('The desktop app is not ready to refresh');
-          await runRef.current(claimed.kind, claimed.setIds);
-          await updateDoc(ref, { status: 'done', finishedAt: new Date().toISOString() });
-        } catch (err) {
-          console.error('Refresh request failed', id, err);
-          await updateDoc(ref, {
-            status: 'failed',
-            finishedAt: new Date().toISOString(),
-            error: String((err as Error)?.message || err).slice(0, 300),
-          }).catch(() => {});
-        }
-      }).finally(() => inFlight.delete(id));
+          try {
+            if (!runRef.current) throw new Error('The desktop app is not ready to refresh');
+            await runRef.current(claimed.kind, claimed.setIds);
+            await updateDoc(ref, { status: 'done', finishedAt: new Date().toISOString() });
+          } catch (err) {
+            console.error('Refresh request failed', id, err);
+            await updateDoc(ref, {
+              status: 'failed',
+              finishedAt: new Date().toISOString(),
+              error: String((err as Error)?.message || err).slice(0, 300),
+            }).catch(() => {});
+          }
+        })
+        .finally(() => inFlight.delete(id));
     };
 
     const pending = query(
@@ -135,7 +146,11 @@ export function useDesktopWorker(user: User | null, isDemoMode: boolean, run?: R
           handle(d.id);
         });
       },
-      (err) => console.warn('Refresh request subscription failed (is the refreshRequests rule in the Firebase store?)', err)
+      (err) =>
+        console.warn(
+          'Refresh request subscription failed (is the refreshRequests rule in the Firebase store?)',
+          err
+        )
     );
 
     return () => {
@@ -173,7 +188,8 @@ export function useDesktopWorker(user: User | null, isDemoMode: boolean, run?: R
   // Stable identity: SetCard is memoised and receives this as a prop.
   const delegate = useCallback(
     async (kind: RefreshKind, setIds: string[]): Promise<DelegateOutcome> => {
-      if (!uid || isDesktopApp || setIds.length === 0 || !isDesktopOnline(lastSeenRef.current)) return 'unavailable';
+      if (!uid || isDesktopApp || setIds.length === 0 || !isDesktopOnline(lastSeenRef.current))
+        return 'unavailable';
 
       const ref = doc(db, REFRESH_REQUESTS_COLLECTION, newRequestId());
       try {

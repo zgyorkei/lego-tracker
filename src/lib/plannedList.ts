@@ -1,4 +1,11 @@
-import { LegoSet, PlannedListPrice, PlannedListPurchase, PlannedListSet, PriceSource, isPriceQuote } from '../types';
+import {
+  LegoSet,
+  PlannedListPrice,
+  PlannedListPurchase,
+  PlannedListSet,
+  PriceSource,
+  isPriceQuote,
+} from '../types';
 import { publicAppUrl } from './appUrl';
 
 export const PLANNED_LISTS_COLLECTION = 'plannedLists';
@@ -13,7 +20,7 @@ export const plannedListApiUrl = (token: string): string =>
 export function generatePlannedListToken(): string {
   const bytes = new Uint8Array(12);
   window.crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -28,8 +35,8 @@ export function buildPlannedListSets(
   priceSources: PriceSource[]
 ): PlannedListSet[] {
   return sets
-    .filter(s => s.status === 'planned')
-    .map(s => {
+    .filter((s) => s.status === 'planned')
+    .map((s) => {
       const prices: PlannedListPrice[] = [];
       for (const source of priceSources) {
         const quote = s.marketPrices?.[source.id];
@@ -73,11 +80,14 @@ export function buildPlannedListSets(
  */
 export function buildPlannedListPurchases(sets: LegoSet[]): PlannedListPurchase[] {
   return sets
-    .filter(s => s.status === 'ordered' && s.orderedDate && (s.orderedPriceHuf ?? 0) > 0)
-    .map(s => {
+    .filter((s) => s.status === 'ordered' && s.orderedDate && (s.orderedPriceHuf ?? 0) > 0)
+    .map((s) => {
       // The order dialog stores the chosen day as UTC midnight
       const purchasedOn = String(s.orderedDate).slice(0, 10);
-      const hasOriginal = Number.isFinite(s.orderedOriginalPrice) && (s.orderedOriginalPrice ?? 0) > 0 && !!s.orderedCurrency;
+      const hasOriginal =
+        Number.isFinite(s.orderedOriginalPrice) &&
+        (s.orderedOriginalPrice ?? 0) > 0 &&
+        !!s.orderedCurrency;
       return {
         id: s.id,
         setNumber: s.setNumber,
@@ -90,8 +100,10 @@ export function buildPlannedListPurchases(sets: LegoSet[]): PlannedListPurchase[
         legoPriceHuf: s.legoPriceHuf > 0 ? s.legoPriceHuf : null,
       };
     })
-    .filter(p => /^\d{4}-\d{2}-\d{2}$/.test(p.purchasedOn))
-    .sort((a, b) => a.purchasedOn.localeCompare(b.purchasedOn) || a.setNumber.localeCompare(b.setNumber));
+    .filter((p) => /^\d{4}-\d{2}-\d{2}$/.test(p.purchasedOn))
+    .sort(
+      (a, b) => a.purchasedOn.localeCompare(b.purchasedOn) || a.setNumber.localeCompare(b.setNumber)
+    );
 }
 
 /**
@@ -105,7 +117,7 @@ export function stableStringify(value: unknown): string {
   if (value && typeof value === 'object') {
     const entries = Object.keys(value as Record<string, unknown>)
       .sort()
-      .map(k => `${JSON.stringify(k)}:${stableStringify((value as Record<string, unknown>)[k])}`);
+      .map((k) => `${JSON.stringify(k)}:${stableStringify((value as Record<string, unknown>)[k])}`);
     return `{${entries.join(',')}}`;
   }
   return JSON.stringify(value ?? null);

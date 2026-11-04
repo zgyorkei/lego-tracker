@@ -2,7 +2,11 @@ import { BrowserWindow, dialog, ipcMain } from 'electron';
 import path from 'node:path';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { geminiKeyStatus, setGeminiKey } from 'shop-teacher/gemini';
-import { parseFirebaseConfigText, validateAppConfig, type DesktopAppConfig } from '../../lib/appConfig';
+import {
+  parseFirebaseConfigText,
+  validateAppConfig,
+  type DesktopAppConfig,
+} from '../../lib/appConfig';
 import { loadOAuthClient } from './oauth';
 
 /**
@@ -54,7 +58,12 @@ const IPC = ['setup:load', 'setup:pickOAuthClient', 'setup:save'] as const;
  */
 export function runSetup(
   files: SetupFiles,
-  opts: { current: DesktopAppConfig | null; problem?: string; icon: string; onWindow?: (w: BrowserWindow | null) => void }
+  opts: {
+    current: DesktopAppConfig | null;
+    problem?: string;
+    icon: string;
+    onWindow?: (w: BrowserWindow | null) => void;
+  }
 ): Promise<DesktopAppConfig | null> {
   const win = new BrowserWindow({
     width: 680,
@@ -62,7 +71,11 @@ export function runSetup(
     title: 'Brick Tracker setup',
     icon: opts.icon,
     autoHideMenuBar: true,
-    webPreferences: { preload: path.join(__dirname, 'setupPreload.cjs'), contextIsolation: true, sandbox: true },
+    webPreferences: {
+      preload: path.join(__dirname, 'setupPreload.cjs'),
+      contextIsolation: true,
+      sandbox: true,
+    },
   });
   opts.onWindow?.(win);
   // Nothing in the page is meant to navigate or open windows.
@@ -74,7 +87,9 @@ export function runSetup(
   const fromThisWindow = (e: Electron.IpcMainInvokeEvent) => {
     if (e.sender !== win.webContents) throw new Error('Unexpected sender');
   };
-  const { firestoreDatabaseId, ...firebase } = opts.current?.firebase ?? { firestoreDatabaseId: '' };
+  const { firestoreDatabaseId, ...firebase } = opts.current?.firebase ?? {
+    firestoreDatabaseId: '',
+  };
 
   return new Promise((resolve) => {
     let saved: DesktopAppConfig | null = null;
@@ -120,7 +135,9 @@ export function runSetup(
       });
       if ('error' in result) return { error: result.error };
       if (!pickedClient && !existsSync(files.oauthFile)) {
-        return { error: 'Choose the Google sign-in client file (the "Desktop app" OAuth client JSON).' };
+        return {
+          error: 'Choose the Google sign-in client file (the "Desktop app" OAuth client JSON).',
+        };
       }
 
       const key = String(form?.geminiKey ?? '').trim();
@@ -129,7 +146,9 @@ export function runSetup(
           setGeminiKey(key);
           process.env.GEMINI_API_KEY = key;
         } catch (err) {
-          return { error: `Gemini key not saved: ${err instanceof Error ? err.message : String(err)}` };
+          return {
+            error: `Gemini key not saved: ${err instanceof Error ? err.message : String(err)}`,
+          };
         }
       }
 

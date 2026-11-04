@@ -26,15 +26,18 @@ void api.load().then((state) => {
   el<HTMLInputElement>('database').value = state.databaseId === '(default)' ? '' : state.databaseId;
   el<HTMLInputElement>('url').value = state.publicAppUrl;
   showClient(state.oauthClient);
-  if (state.problem) el('problem').textContent = `The saved settings could not be used: ${state.problem}`;
+  if (state.problem)
+    el('problem').textContent = `The saved settings could not be used: ${state.problem}`;
   if (!state.firstRun) {
     el('intro').textContent = 'Saving restarts Brick Tracker with the new settings.';
     el('save').textContent = 'Save and restart';
   }
   if (state.gemini.hasKey) {
-    el('geminiHint').textContent = 'A key is already stored. Enter one only to replace it (for BrickBudget too).';
+    el('geminiHint').textContent =
+      'A key is already stored. Enter one only to replace it (for BrickBudget too).';
   } else if (!state.gemini.storeAvailable) {
-    el('geminiHint').textContent = 'Windows Credential Manager is not available here, so a key cannot be saved.';
+    el('geminiHint').textContent =
+      'Windows Credential Manager is not available here, so a key cannot be saved.';
     el<HTMLInputElement>('gemini').disabled = true;
   }
   el<HTMLTextAreaElement>('firebase').focus();

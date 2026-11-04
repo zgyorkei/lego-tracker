@@ -5,13 +5,13 @@ import { builtinRecipeFor } from '../../lib/builtinRecipes';
 // Ensures the permanent BrickLink source is always present and bricklink-new is
 // removed (migration for existing users). Idempotent.
 export const ensureBrickLinkSources = (sources: PriceSource[]): PriceSource[] => {
-  const result = sources.filter(s => s.id !== 'bricklink-new');
-  const amazonIdx = result.findIndex(s => s.id === 'amazon');
+  const result = sources.filter((s) => s.id !== 'bricklink-new');
+  const amazonIdx = result.findIndex((s) => s.id === 'amazon');
   let insertAt = amazonIdx >= 0 ? amazonIdx + 1 : 0;
   for (const id of PERMANENT_SOURCE_IDS) {
-    const existingIdx = result.findIndex(s => s.id === id);
+    const existingIdx = result.findIndex((s) => s.id === id);
     if (existingIdx === -1) {
-      const def = DEFAULT_PRICE_SOURCES.find(s => s.id === id);
+      const def = DEFAULT_PRICE_SOURCES.find((s) => s.id === id);
       if (def) {
         result.splice(insertAt, 0, def);
         insertAt++;
@@ -19,7 +19,7 @@ export const ensureBrickLinkSources = (sources: PriceSource[]): PriceSource[] =>
     } else {
       // Permanent sources are locked, so keep them canonical (e.g. picks up
       // URL-template changes) rather than leaving stale stored values.
-      const def = DEFAULT_PRICE_SOURCES.find(s => s.id === id);
+      const def = DEFAULT_PRICE_SOURCES.find((s) => s.id === id);
       if (def) result[existingIdx] = { ...def };
       insertAt = existingIdx + 1;
     }
@@ -65,4 +65,8 @@ export type ScrapingStatus = 'taught' | 'built-in' | 'not-taught';
 
 /** How the desktop app will read a source: its own recipe, a built-in one, or not at all. */
 export const scrapingStatus = (s: PriceSource): ScrapingStatus =>
-  parseRecipe(s.scraper) ? 'taught' : builtinRecipeFor(s.urlTemplate.replace('{setNumber}', '0')) ? 'built-in' : 'not-taught';
+  parseRecipe(s.scraper)
+    ? 'taught'
+    : builtinRecipeFor(s.urlTemplate.replace('{setNumber}', '0'))
+      ? 'built-in'
+      : 'not-taught';

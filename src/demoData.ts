@@ -1,4 +1,11 @@
-import { LegoSet, MarketPrices, PriceHistory, PriceQuote, Registry, RegistryReservation } from './types';
+import {
+  LegoSet,
+  MarketPrices,
+  PriceHistory,
+  PriceQuote,
+  Registry,
+  RegistryReservation,
+} from './types';
 
 // ---------------------------------------------------------------------------
 // Demo Mode's data: made-up prices on real sets, so a visitor sees every
@@ -21,10 +28,16 @@ function eur(price: number, store: string, url: string): PriceQuote {
 function huf(price: number, store: string, url: string): PriceQuote {
   return { price, priceEur: Math.round((price / RATE) * 100) / 100, priceHuf: price, store, url };
 }
-const amazon = (n: string, price: number) => eur(price, 'Amazon EU', `https://www.amazon.de/s?k=lego+${n}`);
+const amazon = (n: string, price: number) =>
+  eur(price, 'Amazon EU', `https://www.amazon.de/s?k=lego+${n}`);
 const bricklink = (n: string, price: number, condition: 'sealed' | 'complete') =>
-  eur(price, `New (${condition})`, `https://www.bricklink.com/v2/catalog/catalogitem.page?S=${n}-1`);
-const arukereso = (n: string, price: number) => huf(price, 'Arukereso', `https://www.arukereso.hu/CategorySearch.php?st=${n}`);
+  eur(
+    price,
+    `New (${condition})`,
+    `https://www.bricklink.com/v2/catalog/catalogitem.page?S=${n}-1`
+  );
+const arukereso = (n: string, price: number) =>
+  huf(price, 'Arukereso', `https://www.arukereso.hu/CategorySearch.php?st=${n}`);
 
 function prices(quotes: Record<string, PriceQuote>): MarketPrices {
   return { ...quotes, exchangeRate: RATE };
@@ -58,7 +71,11 @@ export const DEMO_SETS: LegoSet[] = [
     orderedPriceHuf: 129990,
     orderedOriginalPrice: 129990,
     orderedCurrency: 'HUF',
-    marketPrices: prices({ amazon: amazon('10305', 349.99), bricklink: bricklink('10305', 389, 'sealed'), arukereso: arukereso('10305', 139990) }),
+    marketPrices: prices({
+      amazon: amazon('10305', 349.99),
+      bricklink: bricklink('10305', 389, 'sealed'),
+      arukereso: arukereso('10305', 139990),
+    }),
   },
   {
     ...base('21348', 95),
@@ -71,7 +88,11 @@ export const DEMO_SETS: LegoSet[] = [
     priority: 'high',
     isTemporary: false,
     releaseDate: null,
-    marketPrices: prices({ amazon: amazon('21348', 289.99), bricklink: bricklink('21348', 315, 'sealed'), arukereso: arukereso('21348', 129990) }),
+    marketPrices: prices({
+      amazon: amazon('21348', 289.99),
+      bricklink: bricklink('21348', 315, 'sealed'),
+      arukereso: arukereso('21348', 129990),
+    }),
   },
   {
     ...base('10333', 80),
@@ -85,7 +106,11 @@ export const DEMO_SETS: LegoSet[] = [
     isTemporary: false,
     releaseDate: null,
     // Over 30% below the official price: shown as a great deal.
-    marketPrices: prices({ amazon: amazon('10333', 349), bricklink: bricklink('10333', 399, 'sealed'), arukereso: arukereso('10333', 159990) }),
+    marketPrices: prices({
+      amazon: amazon('10333', 349),
+      bricklink: bricklink('10333', 399, 'sealed'),
+      arukereso: arukereso('10333', 159990),
+    }),
   },
   {
     ...base('31393', 40),
@@ -98,7 +123,11 @@ export const DEMO_SETS: LegoSet[] = [
     priority: 'medium',
     isTemporary: false,
     releaseDate: null,
-    marketPrices: prices({ amazon: amazon('31393', 41.99), bricklink: bricklink('31393', 38, 'complete'), arukereso: arukereso('31393', 14998) }),
+    marketPrices: prices({
+      amazon: amazon('31393', 41.99),
+      bricklink: bricklink('31393', 38, 'complete'),
+      arukereso: arukereso('31393', 14998),
+    }),
   },
   {
     ...base('71047', 60),
@@ -119,7 +148,13 @@ export const DEMO_SETS: LegoSet[] = [
       { id: '71047-5', name: 'Halfling Druid', image: brickset('71047-5') },
       { id: '71047-6', name: 'Aarakocra Ranger', image: brickset('71047-6') },
     ],
-    minifiguresStatus: { '71047-1': 'got', '71047-2': 'wanted', '71047-3': 'got', '71047-4': 'wanted', '71047-6': 'wanted' },
+    minifiguresStatus: {
+      '71047-1': 'got',
+      '71047-2': 'wanted',
+      '71047-3': 'got',
+      '71047-4': 'wanted',
+      '71047-6': 'wanted',
+    },
     marketPrices: prices({ amazon: amazon('71047', 4.29), arukereso: arukereso('71047', 1490) }),
   },
   {
@@ -165,15 +200,23 @@ function noise(seed: string): number {
  */
 export function demoPriceHistory(set: Pick<LegoSet, 'setNumber' | 'marketPrices'>): PriceHistory[] {
   const quotes = Object.entries(set.marketPrices ?? {}).filter(
-    (e): e is [string, PriceQuote] => typeof e[1] === 'object' && e[1] !== null && typeof (e[1] as PriceQuote).priceHuf === 'number'
+    (e): e is [string, PriceQuote] =>
+      typeof e[1] === 'object' && e[1] !== null && typeof (e[1] as PriceQuote).priceHuf === 'number'
   );
   if (quotes.length === 0) return [];
   const weeks = 12;
   return Array.from({ length: weeks }, (_, i) => {
     const weeksAgo = weeks - 1 - i;
-    const entry: PriceHistory = { id: `demo-${set.setNumber}-${i}`, date: isoDay(weeksAgo * 7), exchangeRate: RATE };
+    const entry: PriceHistory = {
+      id: `demo-${set.setNumber}-${i}`,
+      date: isoDay(weeksAgo * 7),
+      exchangeRate: RATE,
+    };
     for (const [id, q] of quotes) {
-      const factor = 1 + 0.09 * (weeksAgo / (weeks - 1)) + (weeksAgo === 0 ? 0 : 0.025 * noise(`${set.setNumber}${id}${i}`));
+      const factor =
+        1 +
+        0.09 * (weeksAgo / (weeks - 1)) +
+        (weeksAgo === 0 ? 0 : 0.025 * noise(`${set.setNumber}${id}${i}`));
       entry[`${id}Price`] = Math.round(q.price * factor * 100) / 100;
       entry[`${id}PriceHuf`] = Math.round(q.priceHuf * factor);
     }

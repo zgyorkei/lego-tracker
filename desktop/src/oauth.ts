@@ -19,7 +19,8 @@ export interface OAuthClient {
 
 const SIGN_IN_TIMEOUT_MS = 5 * 60 * 1000;
 
-const base64url = (buf: Buffer) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const base64url = (buf: Buffer) =>
+  buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
 /** Reads the "Desktop app" client JSON downloaded from the Google Cloud console. */
 export function loadOAuthClient(file: string): OAuthClient {
@@ -64,13 +65,21 @@ export async function googleSignIn(client: OAuthClient): Promise<string> {
         const gotCode = url.searchParams.get('code');
         // The state check stops another local page from injecting its own code.
         if (url.searchParams.get('state') !== state || (!gotCode && !error)) {
-          res.writeHead(400, { 'Content-Type': 'text/html' }).end(PAGE('Invalid sign-in response.'));
+          res
+            .writeHead(400, { 'Content-Type': 'text/html' })
+            .end(PAGE('Invalid sign-in response.'));
           return;
         }
         clearTimeout(timer);
         if (error || !gotCode) {
-          res.writeHead(200, { 'Content-Type': 'text/html' }).end(PAGE('Sign-in was cancelled. You can close this tab.'));
-          reject(new Error(error === 'access_denied' ? 'Sign-in was cancelled' : `Sign-in failed: ${error}`));
+          res
+            .writeHead(200, { 'Content-Type': 'text/html' })
+            .end(PAGE('Sign-in was cancelled. You can close this tab.'));
+          reject(
+            new Error(
+              error === 'access_denied' ? 'Sign-in was cancelled' : `Sign-in failed: ${error}`
+            )
+          );
           return;
         }
         res

@@ -3,9 +3,27 @@ import { getLowestPrices } from './prices';
 import { PriceSource, LegoSet } from '../types';
 
 const sources: PriceSource[] = [
-  { id: 'amazon', name: 'Amazon EU', urlTemplate: 'https://a.test/{setNumber}', currency: 'EUR', color: '#000' },
-  { id: 'bricklink', name: 'BrickLink', urlTemplate: 'https://b.test/{setNumber}', currency: 'EUR', color: '#111' },
-  { id: 'arukereso', name: 'Arukereso', urlTemplate: 'https://c.test/{setNumber}', currency: 'HUF', color: '#222' },
+  {
+    id: 'amazon',
+    name: 'Amazon EU',
+    urlTemplate: 'https://a.test/{setNumber}',
+    currency: 'EUR',
+    color: '#000',
+  },
+  {
+    id: 'bricklink',
+    name: 'BrickLink',
+    urlTemplate: 'https://b.test/{setNumber}',
+    currency: 'EUR',
+    color: '#111',
+  },
+  {
+    id: 'arukereso',
+    name: 'Arukereso',
+    urlTemplate: 'https://c.test/{setNumber}',
+    currency: 'HUF',
+    color: '#222',
+  },
 ];
 
 const makeSet = (marketPrices: LegoSet['marketPrices']) =>
@@ -27,7 +45,7 @@ describe('getLowestPrices', () => {
       'HUF',
       null
     );
-    expect(result.map(r => r.sourceName)).toEqual(['BrickLink', 'Arukereso']);
+    expect(result.map((r) => r.sourceName)).toEqual(['BrickLink', 'Arukereso']);
     expect(result[0].costValueHuf).toBe(4000);
   });
 

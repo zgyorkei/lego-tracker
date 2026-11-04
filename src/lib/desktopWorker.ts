@@ -73,14 +73,18 @@ export function isDesktopOnline(lastSeenAt: string | null | undefined, now = Dat
 }
 
 /** Whether the desktop should claim this request now. */
-export function shouldClaim(req: Pick<RefreshRequest, 'status' | 'requestedAt'> | undefined, now = Date.now()): boolean {
+export function shouldClaim(
+  req: Pick<RefreshRequest, 'status' | 'requestedAt'> | undefined,
+  now = Date.now()
+): boolean {
   if (!req || req.status !== 'pending') return false;
   const asked = ms(req.requestedAt);
   return asked != null && now - asked < STALE_PENDING_MS;
 }
 
 /** Whether a website that stopped waiting may cancel the request. */
-export const canCancel = (req: Pick<RefreshRequest, 'status'> | undefined): boolean => req?.status === 'pending';
+export const canCancel = (req: Pick<RefreshRequest, 'status'> | undefined): boolean =>
+  req?.status === 'pending';
 
 /** The outcome a website waiter reports for a request's current state, or null to keep waiting. */
 export function outcomeFor(status: RequestStatus | undefined): DelegateOutcome | null {
@@ -91,7 +95,12 @@ export function outcomeFor(status: RequestStatus | undefined): DelegateOutcome |
 }
 
 /** A new request document; set ids are de-duplicated and capped. */
-export function newRequest(userId: string, kind: RefreshKind, setIds: string[], now = new Date()): RefreshRequest {
+export function newRequest(
+  userId: string,
+  kind: RefreshKind,
+  setIds: string[],
+  now = new Date()
+): RefreshRequest {
   return {
     userId,
     kind,

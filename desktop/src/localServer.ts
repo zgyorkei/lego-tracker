@@ -16,7 +16,11 @@ import { registerApiRoutes, type PriceScraper } from '../../lib/server-api';
  * (http://localhost:PORT) keys the Firebase sign-in and localStorage; a
  * random port would sign the user out on every launch.
  */
-export function startLocalServer(opts: { port: number; distDir: string; scraper: PriceScraper }): Promise<http.Server> {
+export function startLocalServer(opts: {
+  port: number;
+  distDir: string;
+  scraper: PriceScraper;
+}): Promise<http.Server> {
   const app = express();
   // No rate limits on loopback: they exist to protect the public deployment's
   // Gemini quota, and here they would stop "Update all" after 12 sets.
