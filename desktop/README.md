@@ -156,20 +156,37 @@ npm run dist
 
 This builds the desktop bundle and the web app (`build:desktop`, so without
 a Firebase project), stages Playwright's Chromium
-(copied from the local Playwright cache, or downloaded), and packages with
-`@electron/packager` into `release/`:
+(copied from the local Playwright cache, or downloaded), and builds an NSIS
+installer with electron-builder into `release/<version>-<date>/`:
 
-- `Brick Tracker-win32-x64/`: the app, with Chromium in `resources/ms-playwright`
-  and the web app in `resources/web`;
-- `install.cmd`;
-- `Brick-Tracker-<version>-win-x64.zip`: both of the above (about 350 MB).
+- `Brick-Tracker-Setup.exe`: the installer (about 240 MB);
+- `win-unpacked/`: the app it installs, with Chromium in
+  `resources/ms-playwright` and the web app in `resources/web`.
 
-There is no NSIS or Squirrel installer on purpose: both need 7-Zip, which is
-blocked on this machine. `install.cmd` (no admin rights) copies the app to
-`%LOCALAPPDATA%\Programs\Brick Tracker` and starts it once with `--install`,
-which adds a Start menu shortcut and the start-with-Windows entry. The tray
-menu's "Start with Windows" toggle turns that entry off or on again. To
-update, quit from the tray and run the new `install.cmd`.
+The installer is one click and per user (no admin rights). It installs to
+`%LOCALAPPDATA%\Programs\Brick Tracker`, adds a Start menu shortcut and an
+entry in Windows' list of apps, and starts the app. A fresh install also adds
+the start-with-Windows entry (`installer/installer.nsh`); the tray menu's
+"Start with Windows" toggle turns it off or on again, and an upgrade leaves
+that choice alone. To update, run the newer `Brick-Tracker-Setup.exe`: it
+offers to close the running app and replaces it in place. Uninstalling keeps
+`%APPDATA%\Brick Tracker`.
+
+**7-Zip.** electron-builder compresses the installer with 7-Zip, and only
+the installed 7-Zip **26.03 or newer** passes this machine's security check.
+`package.mjs` therefore finds `C:\Program Files\7-Zip\7z.exe` (or
+`SEVENZIP_PATH`), refuses anything older than 26.03, and passes it as
+`ELECTRON_BUILDER_7ZIP_PATH`, so electron-builder never downloads its own.
+The newer NSIS and rcedit toolsets (`toolsets` in `package.mjs`) are
+`.tar.gz`/`.zip`, so no 7z-packed download is involved, and
+`electron-winstaller` (Squirrel, which vendors 7-Zip 16.04) is replaced by an
+empty stub through `overrides` in `package.json`. Compression is level 7
+(`ELECTRON_BUILDER_COMPRESSION_LEVEL`): the default 9 runs out of memory with
+one 64 MB dictionary per core.
+
+Builds made before the installer (a zip with `install.cmd`) installed to the
+same folder and wrote the same start-with-Windows entry, so the setup simply
+replaces them.
 
 **The installer is not tied to anybody's project, and secrets are never
 packaged.** `package.mjs` fails the build if the web build contains a
@@ -193,4 +210,4 @@ The exe is not code-signed, so Windows SmartScreen may warn on first start.
 
 ## Not done yet
 
-- Auto-update (re-run `install.cmd` with a new build for now).
+- Auto-update (run a newer `Brick-Tracker-Setup.exe` for now).

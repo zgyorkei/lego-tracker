@@ -146,7 +146,7 @@ async function openSettings() {
   if (setupWin) return showWindow();
   const saved = await runSetup(setupFiles, { current: appConfig, icon: setupIcon(), onWindow: (w) => (setupWin = w) });
   if (!saved) return;
-  app.relaunch({ args: process.argv.slice(1).filter((a) => a !== '--install' && a !== '--hidden') });
+  app.relaunch({ args: process.argv.slice(1).filter((a) => a !== '--hidden') });
   quitting = true;
   app.quit();
 }
@@ -185,30 +185,11 @@ async function start() {
     return googleSignIn(loadOAuthClient(clientFile));
   });
 
+  // The Start menu shortcut and the start-with-Windows entry come from the
+  // installer (installer/installer.nsh), so running the packaged app from a
+  // build folder (or a test) never leaves either behind.
   createWindow();
   createTray();
-
-  // install.cmd copies the app into place and starts it once with --install.
-  // Only then does it register itself, so running the packaged app from a
-  // build folder (or a test) never leaves a login item behind.
-  if (app.isPackaged && process.argv.includes('--install')) registerInstall();
-}
-
-/**
- * Start with Windows, straight into the tray, so the 4AM refresh happens
- * without anyone opening the app; plus a Start menu shortcut, since there is
- * no installer to create one (installer builders need 7-Zip, which is
- * blocked on this machine).
- */
-function registerInstall() {
-  app.setLoginItemSettings({ openAtLogin: true, path: process.execPath, args: ['--hidden'] });
-  const link = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Brick Tracker.lnk');
-  shell.writeShortcutLink(link, existsSync(link) ? 'replace' : 'create', {
-    target: process.execPath,
-    description: 'Brick Tracker',
-    icon: process.execPath,
-    iconIndex: 0,
-  });
 }
 
 if (!app.requestSingleInstanceLock()) {

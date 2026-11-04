@@ -142,16 +142,28 @@ exclusive.
   (`lib/appConfig.ts`), and the preload hands it to the page synchronously.
   `package.mjs` refuses a web build that contains a Firebase API key or the
   builder's project. Never bake a project or domain into the desktop build.
-  Releases go to GitHub Releases as `Brick-Tracker-win-x64.zip` (a fixed
+  Releases go to GitHub Releases as `Brick-Tracker-Setup.exe` (a fixed
   asset name, so the intro page's `releases/latest/download/...` link keeps
-  working); upload the `desktop/release` zip only, never a bundle with
-  secrets.
+  working); upload that one file from `desktop/release`, never
+  `win-unpacked/`, `builder-debug.yml` or a bundle with secrets.
 - **Desktop secrets and setup** (`desktop/.env`, `desktop/oauth-client.json`,
   `desktop/app-config.json`) are gitignored and must never be committed or
   packaged. A packaged app reads them from `%APPDATA%\Brick Tracker`.
-- **Never use 7-Zip.** It is blocked on the build machine. That rules out
-  electron-builder's NSIS/7z/portable targets and Squirrel; packaging is
-  `@electron/packager` + `Compress-Archive` + `install.cmd` (`npm run dist`).
+- **7-Zip: only the installed 26.03 or newer.** Older and bundled copies
+  fail the build machine's security check. `npm run dist` builds a per-user
+  NSIS installer with electron-builder 26 (`desktop/scripts/package.mjs`),
+  which finds `C:\Program Files\7-Zip\7z.exe`, refuses anything below 26.03,
+  and passes it as `ELECTRON_BUILDER_7ZIP_PATH` so electron-builder never
+  downloads its own. Keep the `toolsets` (NSIS/rcedit as `.tar.gz`/`.zip`,
+  no 7z-packed downloads) and the `electron-winstaller` stub in
+  `desktop/package.json` `overrides` (Squirrel vendors 7-Zip 16.04). Never
+  run a `7za`/`7z` from `node_modules` or electron-builder's cache. The
+  installer's start-with-Windows entry (`desktop/installer/installer.nsh`)
+  must keep Electron's value name `electron.app.Brick Tracker` and
+  `--hidden`, or the tray's toggle stops seeing it. Its `preInit` pins the
+  install folder to `Programs\Brick Tracker`: a one-click per-user NSIS
+  installer would otherwise use the package name (`lego-tracker-desktop`)
+  and leave older copies beside the new one.
 - On desktop the set-details route reads LEGO.com first in the browser
   (`scrapeLegoInfoViaBrowser`: official HUF price, image, en-us name), with
   Brickset for gaps; image and minifigure routes retry failed requests through
