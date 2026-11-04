@@ -1,97 +1,37 @@
 import { useState, useEffect, useCallback } from 'react';
-import {
-  collection,
-  query,
-  where,
-  onSnapshot,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  serverTimestamp,
-  orderBy,
-  getDocs,
-} from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
 import { withSetDates } from '../lib/setDates';
+import type { DataBackend, SessionUser } from '../data/types';
 import { LegoSet, PriceHistory } from '../types';
-import { withIsoDates } from '../../lib/data/timestamps';
 
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
+const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /**
- * Logs a Firestore failure and returns a plain-language message for the UI.
- *
- * Deliberately does NOT throw. The previous version threw a JSON blob, which
- * (a) embedded the user's email and uid into an Error message that could reach
- * any log sink, and (b) was thrown from inside an onSnapshot error callback,
- * where nothing can catch it -- it became an unhandled rejection that the
- * ErrorBoundary cannot intercept either, since boundaries only catch errors
- * raised during render/lifecycle.
+ * The signed-in user's sets, through `backend` (null while nobody is signed
+ * in). `loading` stays true until the session is known and, for a signed-in
+ * user, until the first list has arrived: usePlannedList's ready gate relies
+ * on that, so an empty list is never published.
  */
-function handleFirestoreError(
-  error: unknown,
-  operationType: OperationType,
-  path: string | null
-): string {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error('Firestore error', { operationType, path, message });
-
-  const code = (error as { code?: string } | null)?.code;
-  if (code === 'permission-denied') {
-    return 'You do not have access to this data. Try signing out and back in.';
-  }
-  if (code === 'unavailable' || code === 'deadline-exceeded') {
-    return 'Cannot reach the database right now. Showing cached data if available.';
-  }
-  return `Something went wrong while trying to ${operationType} data. Please try again.`;
-}
-
-export function useSets() {
+export function useSets(user: SessionUser, backend: DataBackend | null) {
   const [sets, setSets] = useState<LegoSet[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [user, setUser] = useState(auth.currentUser);
+
+  const signedOut = user === null;
 
   useEffect(() => {
-    return auth.onAuthStateChanged((u) => {
-      setUser(u);
-      if (!u) {
+    if (!backend) {
+      if (signedOut) {
         setSets([]);
         setError(null);
         setLoading(false);
       }
-    });
-  }, []);
+      return;
+    }
 
-  useEffect(() => {
-    if (!user) return;
-
-    const q = query(
-      collection(db, 'sets'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const setsData: LegoSet[] = [];
-        snapshot.forEach((doc) => {
-          // createdAt/updatedAt arrive as Timestamps; the app works with ISO
-          // strings. 'estimate' gives a set that was just added its local time
-          // until the server's lands, rather than null.
-          const data = doc.data({ serverTimestamps: 'estimate' });
-          setsData.push(withSetDates({ id: doc.id, ...data } as LegoSet));
-        });
-        setSets(setsData);
+    setLoading(true);
+    return backend.subscribeSets(
+      (next) => {
+        setSets(next);
         setError(null);
         setLoading(false);
       },
@@ -111,12 +51,10 @@ export function useSets() {
         }
 
         setLoading(false);
-        setError(handleFirestoreError(err, OperationType.LIST, 'sets'));
+        setError(err.message);
       }
     );
-
-    return () => unsubscribe();
-  }, [user]);
+  }, [backend, signedOut]);
 
   // All CRUD wrappers are useCallback'd so they keep a stable identity across
   // renders. Without this, memoising SetCard achieves nothing: every render of
@@ -127,78 +65,77 @@ export function useSets() {
 
   const addSet = useCallback(
     async (setData: Partial<LegoSet>) => {
-      if (!user) return;
+      if (!backend) return;
       try {
-        await addDoc(collection(db, 'sets'), {
-          ...setData,
-          userId: user.uid,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+        await backend.addSet(setData);
         setError(null);
       } catch (err) {
-        const message = handleFirestoreError(err, OperationType.CREATE, 'sets');
+        const message = messageOf(err);
         setError(message);
         throw new Error(message);
       }
     },
-    [user]
+    [backend]
   );
 
-  const updateSet = useCallback(async (id: string, updates: Partial<LegoSet>) => {
-    try {
-      const setRef = doc(db, 'sets', id);
-      await updateDoc(setRef, {
-        ...updates,
-        updatedAt: serverTimestamp(),
-      });
-      setError(null);
-    } catch (err) {
-      const message = handleFirestoreError(err, OperationType.UPDATE, `sets/${id}`);
-      setError(message);
-      throw new Error(message);
-    }
-  }, []);
+  const updateSet = useCallback(
+    async (id: string, updates: Partial<LegoSet>) => {
+      try {
+        if (!backend) throw new Error('Sign in to save changes.');
+        await backend.updateSet(id, updates);
+        setError(null);
+      } catch (err) {
+        const message = messageOf(err);
+        setError(message);
+        throw new Error(message);
+      }
+    },
+    [backend]
+  );
 
-  const deleteSet = useCallback(async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'sets', id));
-      setError(null);
-    } catch (err) {
-      const message = handleFirestoreError(err, OperationType.DELETE, `sets/${id}`);
-      setError(message);
-      throw new Error(message);
-    }
-  }, []);
+  const deleteSet = useCallback(
+    async (id: string) => {
+      try {
+        if (!backend) throw new Error('Sign in to delete sets.');
+        await backend.deleteSet(id);
+        setError(null);
+      } catch (err) {
+        const message = messageOf(err);
+        setError(message);
+        throw new Error(message);
+      }
+    },
+    [backend]
+  );
 
-  const addPriceHistory = useCallback(async (setId: string, history: PriceHistory) => {
-    try {
-      await addDoc(collection(db, 'sets', setId, 'priceHistory'), {
-        ...history,
-        createdAt: serverTimestamp(),
-      });
-    } catch (err) {
-      const message = handleFirestoreError(err, OperationType.CREATE, `sets/${setId}/priceHistory`);
-      setError(message);
-      throw new Error(message);
-    }
-  }, []);
+  const addPriceHistory = useCallback(
+    async (setId: string, history: PriceHistory) => {
+      try {
+        if (!backend) throw new Error('Sign in to record prices.');
+        await backend.addPriceHistory(setId, history);
+      } catch (err) {
+        const message = messageOf(err);
+        setError(message);
+        throw new Error(message);
+      }
+    },
+    [backend]
+  );
 
-  const getPriceHistory = useCallback(async (setId: string): Promise<PriceHistory[]> => {
-    try {
-      const q = query(collection(db, 'sets', setId, 'priceHistory'), orderBy('date', 'asc'));
-      const snapshot = await getDocs(q);
-      // createdAt is a serverTimestamp(); 'date' is already a string.
-      return snapshot.docs.map(
-        (d) => withIsoDates({ id: d.id, ...d.data() }, ['createdAt']) as PriceHistory
-      );
-    } catch (err) {
-      // Read-only and non-critical: surface it but return empty rather than
-      // throwing, so a history-fetch failure cannot break the card.
-      setError(handleFirestoreError(err, OperationType.GET, `sets/${setId}/priceHistory`));
-      return [];
-    }
-  }, []);
+  const getPriceHistory = useCallback(
+    async (setId: string): Promise<PriceHistory[]> => {
+      if (!backend) return [];
+      try {
+        return await backend.getPriceHistory(setId);
+      } catch (err) {
+        // Read-only and non-critical: surface it but return empty rather than
+        // throwing, so a history-fetch failure cannot break the card.
+        setError(messageOf(err));
+        return [];
+      }
+    },
+    [backend]
+  );
 
   return {
     sets,

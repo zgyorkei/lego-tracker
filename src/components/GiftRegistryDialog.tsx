@@ -13,12 +13,15 @@ import {
 } from 'lucide-react';
 import { LegoSet, Registry, PriceSource } from '../types';
 import { collection, doc, setDoc, query, where, deleteDoc, onSnapshot } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+import { getDb } from '../lib/firebase';
 import { getLowestPrices } from '../lib/prices';
 import { Modal } from './Modal';
 import { registryUrl } from '../lib/appUrl';
+import type { AuthUser } from '../data/types';
 
 interface GiftRegistryDialogProps {
+  /** Null when signed out: the list stays empty and saving explains why. */
+  user: AuthUser | null;
   onClose: () => void;
   plannedSets: LegoSet[];
   priceSources: PriceSource[];
@@ -27,6 +30,7 @@ interface GiftRegistryDialogProps {
 }
 
 export function GiftRegistryDialog({
+  user,
   onClose,
   plannedSets,
   priceSources,
@@ -44,9 +48,10 @@ export function GiftRegistryDialog({
   const [copied, setCopied] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const uid = user?.uid ?? null;
   useEffect(() => {
-    if (!auth.currentUser) return;
-    const q = query(collection(db, 'registries'), where('userId', '==', auth.currentUser.uid));
+    if (!uid) return;
+    const q = query(collection(getDb(), 'registries'), where('userId', '==', uid));
     const unsub = onSnapshot(q, (snap) => {
       const parts: Registry[] = [];
       snap.forEach((d) => {
@@ -55,7 +60,7 @@ export function GiftRegistryDialog({
       setRegistries(parts.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
     });
     return () => unsub();
-  }, []);
+  }, [uid]);
 
   const startCreate = () => {
     setRegistryTitle('My Lego Gift Registry');
@@ -76,7 +81,7 @@ export function GiftRegistryDialog({
 
   const confirmDelete = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'registries', id));
+      await deleteDoc(doc(getDb(), 'registries', id));
     } catch (e) {
       console.error(e);
     } finally {
@@ -104,7 +109,7 @@ export function GiftRegistryDialog({
 
   const saveRegistry = async () => {
     if (selectedSetIds.size === 0) return;
-    if (!auth.currentUser) {
+    if (!uid) {
       setSaveError('You must be signed in to create a registry.');
       return;
     }
@@ -155,9 +160,9 @@ export function GiftRegistryDialog({
       });
 
       await setDoc(
-        doc(db, 'registries', token!),
+        doc(getDb(), 'registries', token!),
         {
-          userId: auth.currentUser.uid,
+          userId: uid,
           title: registryTitle,
           sets: setsData,
           createdAt: editingRegistry ? editingRegistry.createdAt : new Date().toISOString(),

@@ -249,7 +249,7 @@ export function decodeFirestoreFields(fields: any): Record<string, unknown> {
 
 /**
  * Project/database ids for the Firestore REST API. Same sources as the client
- * config in src/lib/firebase.ts: VITE_FIREBASE_* env vars (present at runtime
+ * config in src/lib/firebaseConfig.ts: VITE_FIREBASE_* env vars (present at runtime
  * on Vercel too), else the gitignored firebase-applet-config.json.
  */
 function getFirestoreTarget(): { projectId: string; databaseId: string } | null {

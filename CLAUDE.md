@@ -40,6 +40,18 @@ explicit `.js` extension, which Vercel's ESM resolution requires.
 layer never touches Firestore and never verifies an ID token, so *all* data
 authorisation lives in `firestore.rules`. Treat that file as security-critical.
 
+**Client data goes through `src/data/`.** `useSets` and `usePriceSources` talk
+to a `DataBackend` (today only `createFirestoreBackend(uid)`, memoised on the
+uid in `App`), and the signed-in user comes from a `SessionProvider`
+(`firebaseSession`) through `useSession` as an `AuthUser`, never Firebase's
+`User`. `useSession`'s user is `undefined` until the session is restored, then
+the user or `null`; `useSets` stays `loading` until then, which
+`usePlannedList`'s ready gate depends on. Registries, the planned list and the
+desktop hand-off still use Firestore directly through `getDb()`. Firebase
+starts lazily (`getDb()` / `getFirebaseAuth()` in `src/lib/firebase.ts`), so
+importing a module never throws when no project is configured. This is the
+seam the local-storage plan builds on.
+
 **Routing is hand-rolled** in `src/main.tsx` by matching `window.location.pathname`.
 There is no router library. `App` and `RegistryView` are lazy-loaded and mutually
 exclusive.
@@ -71,15 +83,15 @@ exclusive.
   alongside `exchangeRate` (number) and `error` (boolean). Narrow with
   `isPriceQuote` from `src/types.ts` rather than indexing and casting.
 - **`getMockSets()` seeds Demo Mode from `localStorage.cachedSets`**, which also
-  holds the signed-in user's real sets. `signOut` in `src/lib/firebase.ts`
-  clears that key; keep it that way or the next person on the machine sees the
+  holds the signed-in user's real sets. `firebaseSession.signOut`
+  (`src/data/firebaseSession.ts`) clears that key; keep it that way or the next person on the machine sees the
   previous user's collection pre-login.
 - **Sign-in can be limited to listed accounts.** `isSignedIn()` in
   `firestore.rules` also requires `isAllowedUser()`: when the
   `access/allowlist` doc exists (console-only, `emails` in lower case), other
   Google accounts authenticate but reach no data. Every owner-only rule must
   keep going through `isSignedIn()`/`isOwner()`, never `request.auth` alone.
-  `hasAccess` (`src/lib/firebase.ts`) probes the user's own `userSettings`
+  `firebaseSession.hasAccess` (`src/data/firebaseSession.ts`) probes the user's own `userSettings`
   doc so the app can sign a refused account out with a message.
 - **Registry docs are world-readable** (`allow get: if true`) because the share
   link is the feature. `GiftRegistryDialog` therefore writes an explicit field

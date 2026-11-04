@@ -17,8 +17,10 @@ import {
   Webhook,
 } from 'lucide-react';
 import { useSets } from './hooks/useSets';
+import { useSession } from './hooks/useSession';
 import { usePlannedList } from './hooks/usePlannedList';
-import { hasAccess, signInWithGoogle, signOut } from './lib/firebase';
+import { firebaseSession } from './data/firebaseSession';
+import { createFirestoreBackend } from './data/firestoreBackend';
 import { formatPrice as formatPriceUtil } from './lib/currency';
 import { ClassicSpaceLogo } from './components/ClassicSpaceLogo';
 import { SetCard } from './components/SetCard';
@@ -110,6 +112,12 @@ const AVAILABLE_THEMES = [
 ];
 
 export default function App() {
+  // undefined while a remembered session is being restored, then the user or null.
+  const { user } = useSession(firebaseSession);
+  const uid = user?.uid ?? null;
+  // One backend per signed-in account, so the data hooks resubscribe only
+  // when the account changes.
+  const backend = useMemo(() => (uid ? createFirestoreBackend(uid) : null), [uid]);
   const {
     sets,
     loading,
@@ -119,8 +127,7 @@ export default function App() {
     deleteSet,
     addPriceHistory,
     getPriceHistory,
-    user,
-  } = useSets();
+  } = useSets(user, backend);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [mockSets, setMockSets] = useState<LegoSet[]>(() => getMockSets());
 
@@ -153,12 +160,12 @@ export default function App() {
   const [showPlannedList, setShowPlannedList] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
 
-  // The click handler used to be signInWithGoogle itself, so a failure (on a
+  // The click handler used to be the sign-in call itself, so a failure (on a
   // phone, typically a blocked sign-in pop-up) did nothing visible at all.
   const handleSignIn = async () => {
     setSignInError(null);
     try {
-      await signInWithGoogle();
+      await firebaseSession.signIn();
     } catch (err) {
       const code = (err as { code?: string } | null)?.code;
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return;
@@ -178,9 +185,9 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    void hasAccess(user.uid).then(async (ok) => {
+    void firebaseSession.hasAccess(user).then(async (ok) => {
       if (ok || cancelled) return;
-      await signOut();
+      await firebaseSession.signOut();
       setSignInError(
         `This Brick Tracker is private: ${user.email ?? 'this Google account'} cannot sign in here.`
       );
@@ -220,7 +227,7 @@ export default function App() {
     priceSources,
     savePriceSources,
     error: priceSourcesError,
-  } = usePriceSources(user, isDemoMode);
+  } = usePriceSources(backend, isDemoMode);
 
   // Sets a new source is taught with: planned sets that some shop already
   // prices first (likely to be stocked), then any other planned set.
@@ -237,7 +244,7 @@ export default function App() {
   // whenever the app is open, not only while the dialog is showing. Held back
   // while sets are loading or failed, so an empty/cached array is never synced.
   const plannedList = usePlannedList(
-    isDemoMode ? null : user,
+    isDemoMode ? null : (user ?? null),
     sets,
     priceSources,
     !isDemoMode && !loading && !setsError
@@ -277,7 +284,7 @@ export default function App() {
   // The desktop app as the website's scraper: on the website `delegate` hands a
   // refresh to it, in the desktop app this works through those requests.
   const { desktopOnline, delegate } = useDesktopWorker(
-    user,
+    user ?? null,
     isDemoMode,
     isDesktopApp ? runDesktopRequest : undefined
   );
@@ -544,7 +551,6 @@ export default function App() {
   useEffect(() => {
     filteredSetsRef.current = filteredSets;
   });
-  const uid = user?.uid ?? null;
   useEffect(() => {
     if (!isDesktopApp || !uid || isDemoMode) return;
     let running = false;
@@ -797,7 +803,7 @@ export default function App() {
               </button>
             ) : (
               <button
-                onClick={signOut}
+                onClick={() => void firebaseSession.signOut()}
                 className="p-2 hover:bg-black/5 rounded-full transition-colors flex items-center gap-2 font-black text-xs uppercase"
               >
                 <span className="hidden sm:inline">{user?.displayName?.split(' ')[0]}</span>
@@ -1341,6 +1347,7 @@ export default function App() {
       <AnimatePresence>
         {showGiftRegistry && (
           <GiftRegistryDialog
+            user={user ?? null}
             onClose={() => setShowGiftRegistry(false)}
             plannedSets={activeSets.filter((s) => s.status === 'planned')}
             priceSources={priceSources}

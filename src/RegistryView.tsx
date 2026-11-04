@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { db } from './lib/firebase';
+import { getDb } from './lib/firebase';
 import { doc, getDoc, collection, onSnapshot, setDoc } from 'firebase/firestore';
 import { Registry, RegistryReservation, DEFAULT_PRICE_SOURCES } from './types';
 import { getLowestPrices } from './lib/prices';
@@ -23,6 +23,7 @@ export default function RegistryView({ registryId }: { registryId: string }) {
 
   useEffect(() => {
     if (isDemo) return;
+    const db = getDb();
     const fetchRegistry = async () => {
       try {
         const docRef = doc(db, 'registries', registryId);
@@ -70,7 +71,7 @@ export default function RegistryView({ registryId }: { registryId: string }) {
       return;
     }
     try {
-      const resRef = doc(db, 'registries', registryId, 'reservations', setId);
+      const resRef = doc(getDb(), 'registries', registryId, 'reservations', setId);
       await setDoc(resRef, {
         setId,
         reservedBy: visitorName.trim(),

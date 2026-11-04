@@ -10,8 +10,8 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import type { User } from 'firebase/auth';
-import { db } from '../lib/firebase';
+import type { AuthUser } from '../data/types';
+import { getDb } from '../lib/firebase';
 import { isDesktopApp } from '../lib/platform';
 import {
   CLAIM_TIMEOUT_MS,
@@ -47,6 +47,7 @@ export async function scheduleDailyRun(
   day: string,
   setIds: string[]
 ): Promise<DailyRunAction> {
+  const db = getDb();
   const ref = doc(db, REFRESH_REQUESTS_COLLECTION, dailyRequestId(uid, day));
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
@@ -68,7 +69,7 @@ export async function scheduleDailyRun(
  *
  * Inert in Demo Mode and when signed out.
  */
-export function useDesktopWorker(user: User | null, isDemoMode: boolean, run?: RunRefresh) {
+export function useDesktopWorker(user: AuthUser | null, isDemoMode: boolean, run?: RunRefresh) {
   const active = Boolean(user) && !isDemoMode;
   const uid = user?.uid ?? null;
 
@@ -81,6 +82,7 @@ export function useDesktopWorker(user: User | null, isDemoMode: boolean, run?: R
 
   useEffect(() => {
     if (!active || !isDesktopApp || !uid) return;
+    const db = getDb();
 
     const beat = () =>
       setDoc(doc(db, DESKTOP_STATUS_COLLECTION, uid), {
@@ -171,7 +173,7 @@ export function useDesktopWorker(user: User | null, isDemoMode: boolean, run?: R
       return;
     }
     return onSnapshot(
-      doc(db, DESKTOP_STATUS_COLLECTION, uid),
+      doc(getDb(), DESKTOP_STATUS_COLLECTION, uid),
       (snap) => {
         const seen = (snap.data()?.lastSeenAt as string | undefined) ?? null;
         lastSeenRef.current = seen;
@@ -191,6 +193,7 @@ export function useDesktopWorker(user: User | null, isDemoMode: boolean, run?: R
       if (!uid || isDesktopApp || setIds.length === 0 || !isDesktopOnline(lastSeenRef.current))
         return 'unavailable';
 
+      const db = getDb();
       const ref = doc(db, REFRESH_REQUESTS_COLLECTION, newRequestId());
       try {
         await setDoc(ref, newRequest(uid, kind, setIds));

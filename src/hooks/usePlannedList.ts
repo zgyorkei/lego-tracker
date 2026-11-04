@@ -10,8 +10,8 @@ import {
   updateDoc,
   deleteDoc,
 } from 'firebase/firestore';
-import type { User } from 'firebase/auth';
-import { db } from '../lib/firebase';
+import type { AuthUser } from '../data/types';
+import { getDb } from '../lib/firebase';
 import {
   PLANNED_LISTS_COLLECTION,
   buildPlannedListPurchases,
@@ -38,7 +38,7 @@ const SYNC_DEBOUNCE_MS = 3000;
  * empty initial array would be synced and wipe the published list.
  */
 export function usePlannedList(
-  user: User | null,
+  user: AuthUser | null,
   sets: LegoSet[],
   priceSources: PriceSource[],
   ready: boolean
@@ -56,7 +56,7 @@ export function usePlannedList(
     }
     setLoading(true);
     const q = query(
-      collection(db, PLANNED_LISTS_COLLECTION),
+      collection(getDb(), PLANNED_LISTS_COLLECTION),
       where('userId', '==', user.uid),
       limit(1)
     );
@@ -87,7 +87,7 @@ export function usePlannedList(
   const writePurchases = useCallback(
     async (listId: string) => {
       try {
-        await updateDoc(doc(db, PLANNED_LISTS_COLLECTION, listId), { purchases });
+        await updateDoc(doc(getDb(), PLANNED_LISTS_COLLECTION, listId), { purchases });
         return true;
       } catch (err) {
         console.error(
@@ -113,7 +113,7 @@ export function usePlannedList(
     async (listId: string) => {
       setBusy(true);
       try {
-        await updateDoc(doc(db, PLANNED_LISTS_COLLECTION, listId), {
+        await updateDoc(doc(getDb(), PLANNED_LISTS_COLLECTION, listId), {
           sets: payload,
           updatedAt: new Date().toISOString(),
         });
@@ -150,7 +150,7 @@ export function usePlannedList(
     try {
       const token = generatePlannedListToken();
       const now = new Date().toISOString();
-      await setDoc(doc(db, PLANNED_LISTS_COLLECTION, token), {
+      await setDoc(doc(getDb(), PLANNED_LISTS_COLLECTION, token), {
         userId: user.uid,
         title: 'Planned sets',
         sets: payload,
@@ -172,7 +172,7 @@ export function usePlannedList(
     if (!list) return;
     setBusy(true);
     try {
-      await deleteDoc(doc(db, PLANNED_LISTS_COLLECTION, list.id));
+      await deleteDoc(doc(getDb(), PLANNED_LISTS_COLLECTION, list.id));
       lastSynced.current = null;
       setError(null);
     } catch (err) {
