@@ -12,21 +12,15 @@ interface ErrorBoundaryState {
 /**
  * Top-level error boundary so a render/runtime error in one part of the tree
  * shows a recoverable fallback instead of a blank white screen.
- *
- * NOTE: `props`/`state` are declared explicitly because this project does not
- * currently install @types/react, so the React.Component base resolves to
- * `any` and would not otherwise expose them. Adding @types/react (tracked as a
- * type-safety follow-up) would let these declarations be removed.
  */
 export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  declare props: ErrorBoundaryProps;
   state: ErrorBoundaryState = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, info: unknown) {
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('Uncaught error in React tree:', error, info);
   }
 
