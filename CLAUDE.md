@@ -19,7 +19,9 @@ npm run format     # prettier --write .  (format:check is the CI variant)
 ```
 
 CI (`.github/workflows/ci.yml`) gates typecheck, lint, format:check, test and
-build, so run `npm run format` before committing. Prettier covers `desktop/`
+build, plus `npm --prefix desktop ci` and the desktop typecheck (no Electron
+or Playwright binaries; tsc comes from the root install). Run
+`npm run format` before committing. Prettier covers `desktop/`
 too; `docs/`, `scripts/` and `*.md` are ignored (`.prettierignore`).
 `endOfLine` is `auto` because Windows checkouts here are CRLF (`core.autocrlf`)
 and CI's are LF; do not change it to `lf`. The one-time format pass is listed
@@ -162,7 +164,11 @@ exclusive.
   and passes it as `ELECTRON_BUILDER_7ZIP_PATH` so electron-builder never
   downloads its own. Keep the `toolsets` (NSIS/rcedit as `.tar.gz`/`.zip`,
   no 7z-packed downloads) and the `electron-winstaller` stub in
-  `desktop/package.json` `overrides` (Squirrel vendors 7-Zip 16.04). Never
+  `desktop/package.json` (Squirrel vendors 7-Zip 16.04): a devDependency
+  `file:./stubs/electron-winstaller` plus the override `"$electron-winstaller"`.
+  Do not put the `file:` path in `overrides` itself: npm resolves it against
+  the dependent package's folder, the lock gets a broken entry, and
+  `npm ci` (CI's desktop typecheck) refuses to install. Never
   run a `7za`/`7z` from `node_modules` or electron-builder's cache. The
   installer's start-with-Windows entry (`desktop/installer/installer.nsh`)
   must keep Electron's value name `electron.app.Brick Tracker` and

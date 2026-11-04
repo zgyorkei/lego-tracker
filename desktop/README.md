@@ -180,7 +180,8 @@ the installed 7-Zip **26.03 or newer** passes this machine's security check.
 The newer NSIS and rcedit toolsets (`toolsets` in `package.mjs`) are
 `.tar.gz`/`.zip`, so no 7z-packed download is involved, and
 `electron-winstaller` (Squirrel, which vendors 7-Zip 16.04) is replaced by an
-empty stub through `overrides` in `package.json`. Compression is level 7
+empty stub: `package.json` lists `stubs/electron-winstaller` as a
+devDependency and `overrides` points at it with `"$electron-winstaller"`. Compression is level 7
 (`ELECTRON_BUILDER_COMPRESSION_LEVEL`): the default 9 runs out of memory with
 one 64 MB dictionary per core.
 

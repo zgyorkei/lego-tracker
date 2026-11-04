@@ -16,12 +16,29 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
       - name: Typecheck
         run: npm run typecheck
+
+      # desktop/ is its own npm package (Electron, Playwright), so the root
+      # install does not reach it. Typechecking needs neither binary: Electron
+      # and Playwright download nothing at install today, and these flags keep
+      # it that way if a version starts to. Its tsc and @types/node come from
+      # the root install above.
+      - name: Install desktop dependencies
+        run: npm --prefix desktop ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+      - name: Typecheck desktop
+        run: npm --prefix desktop run typecheck
 
       - name: Lint
         run: npm run lint
