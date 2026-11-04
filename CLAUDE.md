@@ -15,10 +15,16 @@ npm run build      # client build -> dist/
 npm run typecheck  # tsc --noEmit, strict mode
 npm run lint       # eslint
 npm test           # vitest run
+npm run format     # prettier --write .  (format:check is the CI variant)
 ```
 
-CI (`.github/workflows/ci.yml`) gates typecheck, lint, test and build.
-`format:check` is deliberately **not** gated pending a one-time format pass.
+CI (`.github/workflows/ci.yml`) gates typecheck, lint, format:check, test and
+build, so run `npm run format` before committing. Prettier covers `desktop/`
+too; `docs/`, `scripts/` and `*.md` are ignored (`.prettierignore`).
+`endOfLine` is `auto` because Windows checkouts here are CRLF (`core.autocrlf`)
+and CI's are LF; do not change it to `lf`. The one-time format pass is listed
+in `.git-blame-ignore-revs` (GitHub applies it; locally run
+`git config blame.ignoreRevsFile .git-blame-ignore-revs`).
 
 ## Architecture
 
