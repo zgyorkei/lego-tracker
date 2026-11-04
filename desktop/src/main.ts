@@ -199,6 +199,12 @@ async function start() {
 
   localStore = new LocalStore(path.join(app.getPath('userData'), 'data'));
   registerStoreIpc(localStore, APP_ORIGIN, () => win);
+  // The sync state under the tray icon ("Brick Tracker: 3 changes waiting").
+  ipcMain.on('tray:status', (event, text: unknown) => {
+    if (!event.senderFrame?.url.startsWith(APP_ORIGIN) || typeof text !== 'string') return;
+    const line = text.replace(/[\r\n]+/g, ' ').slice(0, 100);
+    tray?.setToolTip(line ? `Brick Tracker: ${line}` : 'Brick Tracker');
+  });
 
   scraper = new PlaywrightScraper(path.join(app.getPath('userData'), 'scraper-profile'));
   await startLocalServer({ port: PORT, distDir: webDir, scraper });

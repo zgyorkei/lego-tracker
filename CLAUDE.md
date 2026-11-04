@@ -52,19 +52,29 @@ starts lazily (`getDb()` / `getFirebaseAuth()` in `src/lib/firebase.ts`), so
 importing a module never throws when no project is configured. This is the
 seam the local-storage plan builds on.
 
-**The desktop app keeps a copy on the PC** (local-storage plan, Phase 2, pull
-only): `src/data/firestoreMirror.ts` copies the account's Firestore data into
-`<userData>/data/<googleSub>/` through the `store` IPC bridge
-(`lib/data/storeBridge.ts`, `desktop/src/store/`). The reducer
-`lib/data/store.ts` holds the guards: removals only from server-confirmed
-snapshots, a held snapshot (asked about in the header's StorageStatus) when
-one would remove more than max(3, 10%) of the synced sets, empty the copy, or
-come from another project or account; `LocalStore` never writes an empty copy
-over a non-empty one and keeps 7 daily backups. Local data is never served
-over HTTP, the IPC answers only the app's own page, and nothing the page
-sends becomes a path (`isGoogleSub`, `isValidDocId`). `SET_UPDATABLE_FIELDS`
-(`lib/data/setFields.ts`) must match the sets update rule; its test reads
-`firestore.rules`.
+**The desktop app is local-first** (local-storage plan, Phases 2-3): it reads
+and writes its copy in `<userData>/data/<googleSub>/` through `LocalBackend`
+and the `store` IPC bridge (`lib/data/storeBridge.ts`, `desktop/src/store/`),
+and `src/data/firestoreSync.ts` keeps that copy and Firestore in step (pull
+live, push `planPush` with a few writes in flight, `ackPush` back). The
+website still uses `FirestoreBackend` directly. The reducer
+`lib/data/store.ts` holds the rules: field-level dirty tracking (an unsynced
+local edit wins per field), deletes win both ways, creates use Firestore-style
+ids and wait for a server snapshot, history waits for its set, `userId` is
+never stored (the pusher writes the uid); removals only from server-confirmed
+snapshots, and a snapshot that would remove more than max(3, 10%) of the
+synced sets, empty the copy, or come from another project or account is held
+(asked about in StorageStatus) with nothing pushed meanwhile. `LocalStore`
+never writes an empty copy over a non-empty one, keeps 7 daily backups, and
+checks local changes against the rules' shapes (a create needs `name`).
+`LocalBackend` holds the set list back until the copy is real, which
+`usePlannedList`'s ready gate relies on. Firebase problems are classified in
+`src/lib/dataHealth.ts` (offline is a pill, the rest a `DataStatusBanner`);
+on the desktop an allowlist refusal is a health state, not a sign-out. Local
+data is never served over HTTP, the IPC answers only the app's own page, and
+nothing the page sends becomes a path (`isGoogleSub`, `isValidDocId`).
+`SET_UPDATABLE_FIELDS` (`lib/data/setFields.ts`) must match the sets update
+rule; its test reads `firestore.rules`.
 
 **Routing is hand-rolled** in `src/main.tsx` by matching `window.location.pathname`.
 There is no router library. `App` and `RegistryView` are lazy-loaded and mutually

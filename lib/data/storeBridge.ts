@@ -2,7 +2,21 @@
 // exposes this as window.legoTrackerDesktop.store, and desktop/src/store/ipc.ts
 // answers it in the main process. Only the app's own page can reach it, and
 // the data is never served over HTTP.
-import type { HistoryCursor, HistoryRow, RemoteSetsSnapshot, StoreSummary } from './store';
+import type {
+  HistoryCursor,
+  HistoryRow,
+  LocalOp,
+  PushOp,
+  RemoteSetsSnapshot,
+  SetRecord,
+  StoreSummary,
+} from './store';
+
+/** A change from the page: the main process stamps the time. */
+export type LocalChange =
+  | Omit<Extract<LocalOp, { type: 'create' }>, 'at'>
+  | Omit<Extract<LocalOp, { type: 'update' }>, 'at'>
+  | Exclude<LocalOp, { type: 'create' } | { type: 'update' }>;
 
 export type BackupKind = 'registries' | 'plannedList';
 
@@ -50,6 +64,17 @@ export interface DesktopStoreBridge {
   resolveHeld(choice: 'delete' | 'keep'): Promise<StoreStatus>;
   /** Coalesced change events; returns the unsubscribe. */
   onChange(listener: (change: StoreChange) => void): () => void;
+
+  // Local-first (Phase 3): the app reads and writes the copy; firestoreSync
+  // pushes what changed.
+  /** The sets the app shows, newest first. */
+  sets(): Promise<SetRecord[]>;
+  /** A set's price history, oldest first, including rows not on the server yet. */
+  history(setId: string): Promise<HistoryRow[]>;
+  priceSources(): Promise<{ list: unknown[] | null; seen: boolean }>;
+  applyLocal(change: LocalChange): Promise<StoreStatus>;
+  planPush(): Promise<PushOp[]>;
+  ackPush(op: PushOp): Promise<StoreStatus>;
 }
 
 /** Google account ids are decimal digits; anything else never becomes a folder name. */

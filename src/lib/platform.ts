@@ -20,6 +20,8 @@ declare global {
       config: DesktopAppConfig;
       /** The account's copy on this PC (lib/data/storeBridge.ts). Absent in builds before it. */
       store?: DesktopStoreBridge;
+      /** The tray icon's tooltip line. Absent in builds before it. */
+      setTrayStatus?(text: string): void;
     };
   }
 }

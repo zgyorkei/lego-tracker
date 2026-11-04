@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { HardDrive } from 'lucide-react';
 import { Modal } from './Modal';
 import { backupPill, heldExplanation } from '../lib/localBackupText';
-import type { LocalBackupState } from '../hooks/useLocalBackup';
+import { stepsFor } from '../lib/dataHealth';
+import type { DesktopSyncState } from '../hooks/useDesktopSync';
 
 const TONE = {
   ok: 'bg-white text-black',
@@ -13,13 +14,14 @@ const TONE = {
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : 'not yet');
 
 /** Desktop app: the header pill for the copy on this PC, and its details. */
-export function StorageStatus({ backup }: { backup: LocalBackupState }) {
+export function StorageStatus({ backup }: { backup: DesktopSyncState }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   if (!backup.active) return null;
 
-  const { status, error } = backup;
-  const pill = backupPill(status, error);
+  const { status, health } = backup;
+  const pill = backupPill(status, health);
+  const healthLine = health.kind === 'ok' ? null : stepsFor(health.kind).title;
   const explanation = status ? heldExplanation(status) : null;
   const held = status?.held;
 
@@ -47,9 +49,9 @@ export function StorageStatus({ backup }: { backup: LocalBackupState }) {
           <div className="bg-white border-4 border-black rounded-xl p-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
             <h2 className="text-xl font-black uppercase mb-1">Copy on this PC</h2>
             <p className="text-sm text-gray-600 mb-4">
-              The desktop app keeps a copy of your sets, price history and settings on this PC, so
-              they are safe if something happens to the Firebase database. It only reads from
-              Firebase.
+              The desktop app keeps your sets, price history and settings on this PC and works from
+              that copy, so nothing is lost when Firebase is offline or broken. Changes made here go
+              to Firebase, and changes made elsewhere come back here.
             </p>
 
             {held && explanation && !held.dismissed && (
@@ -76,9 +78,9 @@ export function StorageStatus({ backup }: { backup: LocalBackupState }) {
               </div>
             )}
 
-            {(status?.error || error) && (
+            {(status?.error || healthLine) && (
               <p role="alert" className="mb-4 text-sm font-bold text-red-600">
-                {status?.error ?? error}
+                {status?.error ?? healthLine}
               </p>
             )}
 
@@ -86,6 +88,8 @@ export function StorageStatus({ backup }: { backup: LocalBackupState }) {
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
                 <dt className="font-bold">Sets</dt>
                 <dd>{status.sets}</dd>
+                <dt className="font-bold">Waiting to sync</dt>
+                <dd>{status.pending ? ` changes` : 'nothing'}</dd>
                 <dt className="font-bold">Price history</dt>
                 <dd>
                   {status.historiesComplete} of {status.historiesTotal} sets copied (

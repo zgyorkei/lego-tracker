@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ackPush,
+  applyLocal,
+  planPush,
+  pendingCount,
   applyRemote,
   applyRemotePriceSources,
   budgetLeft,
@@ -301,5 +305,219 @@ describe('history cursors and the read budget', () => {
       historyRows: 4,
       held: null,
     });
+  });
+});
+
+const AT = '2026-11-05T09:00:00.000Z';
+const update = (id: string, fields: Record<string, unknown>) =>
+  ({ type: 'update', id, fields, at: AT }) as const;
+
+describe('applyLocal', () => {
+  it('edits a set here first and marks only the fields it changed', () => {
+    const { state, changed } = applyLocal(
+      withSets(1),
+      update('1', { name: 'Mine', priority: 'high' })
+    );
+    expect(changed).toEqual(['1']);
+    expect(state.sets['1'].value).toMatchObject({ name: 'Mine', priority: 'high', updatedAt: AT });
+    expect(Object.keys(state.sets['1'].dirty).sort()).toEqual(['name', 'priority']);
+    expect(state.sets['1'].base).toMatchObject({ name: 'Set 1' });
+  });
+
+  it('ignores fields an update may not change, and never marks updatedAt', () => {
+    const r = applyLocal(
+      withSets(1),
+      update('1', { userId: 'x', createdAt: 'y', setNumber: 'z', updatedAt: 'w' })
+    );
+    expect(r.changed).toEqual([]);
+    expect(r.state.sets['1'].dirty).toEqual({});
+  });
+
+  it('creates a set that is not on the server, without userId', () => {
+    const { state } = applyLocal(withSets(1), {
+      type: 'create',
+      id: 'abcdefghij0123456789',
+      value: { setNumber: '10333', userId: 'u1', status: 'planned', priority: 'low' },
+      at: AT,
+    });
+    const s = state.sets.abcdefghij0123456789;
+    expect(s.base).toBeNull();
+    expect(s.value).not.toHaveProperty('userId');
+    expect(s.value).toMatchObject({ createdAt: AT, updatedAt: AT, addedAt: AT });
+    expect(pendingCount(state)).toBe(1);
+  });
+
+  it('keeps the addedAt of an uploaded set', () => {
+    const { state } = applyLocal(emptyState(), {
+      type: 'create',
+      id: 'x'.repeat(20),
+      value: { addedAt: '2024-01-01T00:00:00.000Z' },
+      at: AT,
+    });
+    expect(state.sets['x'.repeat(20)].value.addedAt).toBe('2024-01-01T00:00:00.000Z');
+  });
+
+  it('drops a set never on the server outright, and tombstones one that is', () => {
+    let s = applyLocal(withSets(1), {
+      type: 'create',
+      id: 'n'.repeat(20),
+      value: {},
+      at: AT,
+    }).state;
+    s = applyLocal(s, { type: 'delete', id: 'n'.repeat(20) }).state;
+    expect(s.sets['n'.repeat(20)]).toBeUndefined();
+    const t = applyLocal(s, { type: 'delete', id: '1' });
+    expect(t.removed).toEqual(['1']);
+    expect(t.state.sets['1'].deleted).toBe(true);
+    expect(visibleSets(t.state)).toEqual([]);
+  });
+
+  it('queues history rows and drops them with their set', () => {
+    let s = applyLocal(withSets(1), {
+      type: 'addHistory',
+      setId: '1',
+      row: { id: 'h1', date: AT },
+    });
+    expect(s.historyAppend).toEqual({ setId: '1', row: { id: 'h1', date: AT } });
+    s = applyLocal(s.state, { type: 'addHistory', setId: '1', row: { id: 'h1', date: AT } });
+    expect(s.state.pendingHistory['1']).toHaveLength(1);
+    expect(
+      applyLocal(s.state, { type: 'delete', id: '1' }).state.pendingHistory['1']
+    ).toBeUndefined();
+  });
+});
+
+describe('planPush and ackPush', () => {
+  it('sends only the dirty fields', () => {
+    const s = applyLocal(withSets(2), update('1', { name: 'Mine', releaseDate: undefined })).state;
+    expect(planPush(s)).toEqual([
+      {
+        kind: 'update',
+        id: '1',
+        fields: { name: 'Mine' },
+        removeFields: ['releaseDate'],
+        revs: { name: 1, releaseDate: 1 },
+      },
+    ]);
+  });
+
+  it('clears a field on acknowledgement only if it was not edited again in flight', () => {
+    let s = applyLocal(withSets(1), update('1', { name: 'A', priority: 'high' })).state;
+    const [op] = planPush(s);
+    s = applyLocal(s, update('1', { name: 'B' })).state;
+    s = ackPush(s, op);
+    expect(s.sets['1'].dirty).toEqual({ name: 2 });
+    expect(s.sets['1'].base).toMatchObject({ priority: 'high' });
+    expect(planPush(s)).toEqual([
+      { kind: 'update', id: '1', fields: { name: 'B' }, removeFields: [], revs: { name: 2 } },
+    ]);
+  });
+
+  it('waits with creates until the server has been seen, then sends the whole set', () => {
+    const local = applyLocal(emptyState(), {
+      type: 'create',
+      id: 'c'.repeat(20),
+      value: { setNumber: '1' },
+      at: AT,
+    }).state;
+    expect(planPush(local)).toEqual([]);
+    const seen = applyRemote(local, snap([])).state;
+    const [op] = planPush(seen);
+    expect(op).toMatchObject({
+      kind: 'create',
+      id: 'c'.repeat(20),
+      data: { setNumber: '1', addedAt: AT },
+    });
+    expect(op.kind === 'create' && op.data).not.toHaveProperty('id');
+    const acked = ackPush(seen, op);
+    expect(acked.sets['c'.repeat(20)].base).toMatchObject({ setNumber: '1' });
+    expect(planPush(acked)).toEqual([]);
+  });
+
+  it('settles a create that landed without an acknowledgement when the server shows it', () => {
+    const id = 'c'.repeat(20);
+    let s = applyRemote(
+      applyLocal(emptyState(), { type: 'create', id, value: { setNumber: '1', name: 'X' }, at: AT })
+        .state,
+      snap([])
+    ).state;
+    s = applyLocal(s, update(id, { name: 'Y' })).state;
+    // The server has the create (name X); the later edit (Y) is still to go.
+    s = applyRemote(
+      s,
+      snap([{ id, userId: 'u1', setNumber: '1', name: 'X', createdAt: 'server' }])
+    ).state;
+    expect(s.sets[id].base).toMatchObject({ name: 'X' });
+    expect(s.sets[id].value).toMatchObject({ name: 'Y', createdAt: 'server' });
+    expect(planPush(s)).toEqual([
+      { kind: 'update', id, fields: { name: 'Y' }, removeFields: [], revs: { name: 2 } },
+    ]);
+  });
+
+  it('treats an edit the server already holds as sent', () => {
+    let s = applyLocal(withSets(1), update('1', { name: 'Same' })).state;
+    s = applyRemote(s, snap([set('1', { name: 'Same' })])).state;
+    expect(s.sets['1'].dirty).toEqual({});
+    expect(planPush(s)).toEqual([]);
+  });
+
+  it('deletes win both ways', () => {
+    // Deleted here, edited there: stays deleted, and the delete is sent once.
+    let s = applyLocal(withSets(2), { type: 'delete', id: '1' }).state;
+    s = applyRemote(s, snap([set('1', { name: 'Edited there' }), set('2')])).state;
+    const ops = planPush(s);
+    expect(ops).toEqual([{ kind: 'delete', id: '1' }]);
+    s = ackPush(s, ops[0]);
+    expect(planPush(s)).toEqual([]);
+    expect(pendingCount(s)).toBe(0);
+    expect(applyRemote(s, snap([set('2')])).state.sets['1']).toBeUndefined();
+
+    // Edited here, deleted there: gone.
+    let t = applyLocal(withSets(3), update('1', { name: 'Mine' })).state;
+    t = applyRemote(t, snap([set('2'), set('3')])).state;
+    expect(t.sets['1']).toBeUndefined();
+  });
+
+  it('sends history rows once their set is on the server', () => {
+    const id = 'c'.repeat(20);
+    let s = applyRemote(
+      applyLocal(emptyState(), { type: 'create', id, value: {}, at: AT }).state,
+      snap([])
+    ).state;
+    s = applyLocal(s, { type: 'addHistory', setId: id, row: { id: 'h1', date: AT } }).state;
+    expect(planPush(s).map((o) => o.kind)).toEqual(['create']);
+    s = ackPush(s, planPush(s)[0]);
+    const [hist] = planPush(s);
+    expect(hist).toEqual({ kind: 'history', setId: id, row: { id: 'h1', date: AT } });
+    s = ackPush(s, hist);
+    expect(s.pendingHistory).toEqual({});
+  });
+
+  it('pushes a local price-source change, and the server holding it counts as sent', () => {
+    let s = applyRemotePriceSources(emptyState(), [{ id: 'a' }]);
+    expect(s.priceSourcesSeen).toBe(true);
+    s = applyLocal(s, { type: 'priceSources', list: [{ id: 'b' }] }).state;
+    // A stale server answer does not undo the local change.
+    s = applyRemotePriceSources(s, [{ id: 'a' }]);
+    expect(s.priceSources).toEqual([{ id: 'b' }]);
+    const [op] = planPush(s);
+    expect(op).toEqual({ kind: 'priceSources', list: [{ id: 'b' }], rev: 1 });
+    expect(ackPush(s, op).priceSourcesDirty).toBeNull();
+    expect(applyRemotePriceSources(s, [{ id: 'b' }]).priceSourcesDirty).toBeNull();
+  });
+
+  it('pushes nothing while a snapshot is held', () => {
+    let s = applyLocal(withSets(5), update('1', { name: 'Mine' })).state;
+    s = applyRemote(s, snap([set('1')])).state;
+    expect(s.held?.reason).toBe('mass-removal');
+    expect(planPush(s)).toEqual([]);
+    // Keeping them makes them sets to upload again.
+    const kept = resolveHeld(s, 'keep').state;
+    expect(
+      planPush(kept)
+        .filter((o) => o.kind === 'create')
+        .map((o) => (o as { id: string }).id)
+        .sort()
+    ).toEqual(['2', '3', '4', '5']);
   });
 });

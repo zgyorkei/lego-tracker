@@ -216,3 +216,88 @@ describe('LocalStore', () => {
     expect(Object.keys(stateOnDisk().sets)).toEqual(['a']);
   });
 });
+
+describe('LocalStore, local first', () => {
+  const NEW_ID = 'abcdefghij0123456789';
+  const newSet = { setNumber: '10333', status: 'planned', priority: 'high', name: 'New' };
+
+  it('checks changes against what the rules accept', async () => {
+    const s = store();
+    await s.open(SUB);
+    s.applySets(snap([set('a')]));
+    await expect(s.applyLocal({ type: 'create', id: 'short', value: newSet })).rejects.toThrow(
+      'Firestore-style id'
+    );
+    await expect(
+      s.applyLocal({ type: 'create', id: NEW_ID, value: { ...newSet, status: 'wanted' } })
+    ).rejects.toThrow('status');
+    await expect(
+      s.applyLocal({ type: 'create', id: NEW_ID, value: { ...newSet, setNumber: 'x'.repeat(21) } })
+    ).rejects.toThrow('set number');
+    await expect(
+      s.applyLocal({ type: 'update', id: 'missing', fields: { name: 'x' } })
+    ).rejects.toThrow('Unknown set');
+    await expect(
+      s.applyLocal({ type: 'update', id: 'a', fields: { priority: 'urgent' } })
+    ).rejects.toThrow('priority');
+    await expect(
+      s.applyLocal({ type: 'addHistory', setId: 'a', row: { id: '../x', date: 'd' } })
+    ).rejects.toThrow('history row');
+    await expect(
+      s.applyLocal({ type: 'priceSources', list: new Array(16).fill({}) })
+    ).rejects.toThrow('at most 15');
+    expect(() => s.ackPush({ kind: 'nope' } as never)).toThrow('Unknown push');
+  });
+
+  it('keeps local changes across a restart and plans their push', async () => {
+    const s = store();
+    await s.open(SUB);
+    s.applySets(snap([set('a'), set('b')]));
+    await s.applyLocal({ type: 'create', id: NEW_ID, value: newSet });
+    await s.applyLocal({ type: 'update', id: 'a', fields: { name: 'Renamed' } });
+    await s.applyLocal({ type: 'delete', id: 'b' });
+    await s.applyLocal({
+      type: 'addHistory',
+      setId: 'a',
+      row: { id: 'h-local', date: '2026-11-05' },
+    });
+    expect(s.status().pending).toBe(4);
+    await s.flush();
+
+    const again = store();
+    await again.open(SUB);
+    expect(
+      again
+        .sets()
+        .map((x) => x.id)
+        .sort()
+    ).toEqual(['a', NEW_ID].sort());
+    expect(again.sets().find((x) => x.id === 'a')?.name).toBe('Renamed');
+    expect((await again.history('a')).map((r) => r.id)).toEqual(['h-local']);
+    const kinds = again
+      .planPush()
+      .map((o) => o.kind)
+      .sort();
+    expect(kinds).toEqual(['create', 'delete', 'history', 'update']);
+  });
+
+  it('clears what Firestore acknowledged', async () => {
+    const s = store();
+    await s.open(SUB);
+    s.applySets(snap([set('a')]));
+    await s.applyLocal({ type: 'update', id: 'a', fields: { name: 'Renamed' } });
+    const [op] = s.planPush();
+    expect(s.ackPush(op).pending).toBe(0);
+    expect(s.planPush()).toEqual([]);
+  });
+
+  it('reports whether the server has said what price sources it holds', async () => {
+    const s = store();
+    await s.open(SUB);
+    expect(s.priceSources()).toEqual({ list: null, seen: false });
+    s.putPriceSources(null);
+    expect(s.priceSources()).toEqual({ list: null, seen: true });
+    await s.applyLocal({ type: 'priceSources', list: [{ id: 'x' }] });
+    expect(s.priceSources().list).toEqual([{ id: 'x' }]);
+  });
+});

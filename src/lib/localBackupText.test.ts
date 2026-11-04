@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { backupPill, heldExplanation } from './localBackupText';
+import { backupPill, heldExplanation, syncSummary } from './localBackupText';
 import type { StoreStatus } from '../../lib/data/storeBridge';
+import type { Health } from './dataHealth';
 
+const OK: Health = { kind: 'ok' };
 const status = (extra: Partial<StoreStatus> = {}): StoreStatus => ({
   sets: 57,
   historiesComplete: 57,
@@ -9,6 +11,7 @@ const status = (extra: Partial<StoreStatus> = {}): StoreStatus => ({
   historyRows: 1200,
   lastRemoteAt: '2026-11-04T10:00:00.000Z',
   held: null,
+  pending: 0,
   sub: '1',
   dir: 'C:\\data\\1',
   lastWrittenAt: null,
@@ -27,31 +30,43 @@ const held = (reason: 'mass-removal' | 'different-source', dismissed = false) =>
 });
 
 describe('backupPill', () => {
-  it('says it is starting before the first status', () => {
-    expect(backupPill(null, null)).toEqual({ label: 'Copying to this PC', tone: 'busy' });
+  it('says it is opening before the first status', () => {
+    expect(backupPill(null, OK)).toEqual({ label: 'Opening the copy on this PC', tone: 'busy' });
   });
 
-  it('puts a held snapshot first, then problems, then history progress', () => {
-    expect(backupPill(status({ held: held('mass-removal'), error: 'x' }), 'y').tone).toBe(
-      'problem'
-    );
-    expect(backupPill(status({ held: held('mass-removal') }), null).label).toBe(
-      'Backup paused: review'
-    );
-    expect(backupPill(status({ error: 'disk full' }), null).label).toBe('Backup problem');
-    expect(backupPill(status(), 'Copying price history failed').label).toBe('Backup problem');
-    expect(backupPill(status({ historiesComplete: 12 }), null)).toEqual({
-      label: 'Backup: 12/57 histories',
-      tone: 'busy',
-    });
-    expect(backupPill(status(), null)).toEqual({ label: 'Backup: 57 sets', tone: 'ok' });
+  it('puts a held snapshot first, then problems, offline, pending changes and history', () => {
     expect(
-      backupPill(status({ sets: 1, historiesComplete: 1, historiesTotal: 1 }), null).label
-    ).toBe('Backup: 1 set');
+      backupPill(status({ held: held('mass-removal') }), { kind: 'rules-outdated' }).label
+    ).toBe('Sync paused: review');
+    expect(backupPill(status(), { kind: 'database-missing' })).toEqual({
+      label: 'Sync problem',
+      tone: 'problem',
+    });
+    expect(backupPill(status({ error: 'disk full' }), OK).label).toBe('Sync problem');
+    expect(backupPill(status({ pending: 3 }), { kind: 'offline' }).label).toBe(
+      'Offline: 3 changes saved here'
+    );
+    expect(backupPill(status(), { kind: 'offline' }).label).toBe('Offline');
+    expect(backupPill(status({ pending: 1 }), OK).label).toBe('Syncing 1 change');
+    expect(backupPill(status({ historiesComplete: 12 }), OK).label).toBe('Copying history 12/57');
+    expect(backupPill(status(), OK)).toEqual({ label: 'In sync: 57 sets', tone: 'ok' });
   });
 
   it('stops nagging about a different project the user chose to keep', () => {
-    expect(backupPill(status({ held: held('different-source', true) }), null).tone).toBe('ok');
+    expect(backupPill(status({ held: held('different-source', true) }), OK).tone).toBe('ok');
+  });
+});
+
+describe('syncSummary', () => {
+  it('says the state in a few words for the tray', () => {
+    expect(syncSummary(status(), OK)).toBe('in sync, 57 sets');
+    expect(syncSummary(status({ pending: 2 }), { kind: 'offline' })).toBe(
+      'offline, 2 changes saved on this PC'
+    );
+    expect(syncSummary(status(), { kind: 'database-missing' })).toBe(
+      'The Firestore database was not found'
+    );
+    expect(syncSummary(status({ held: held('mass-removal') }), OK)).toMatch(/paused/);
   });
 });
 

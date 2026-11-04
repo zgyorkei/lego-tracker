@@ -17,12 +17,20 @@ const store: DesktopStoreBridge = {
     ipcRenderer.on('store:changed', handler);
     return () => ipcRenderer.removeListener('store:changed', handler);
   },
+  sets: () => ipcRenderer.invoke('store:sets'),
+  history: (setId) => ipcRenderer.invoke('store:history', setId),
+  priceSources: () => ipcRenderer.invoke('store:priceSources'),
+  applyLocal: (change) => ipcRenderer.invoke('store:applyLocal', change),
+  planPush: () => ipcRenderer.invoke('store:planPush'),
+  ackPush: (op) => ipcRenderer.invoke('store:ackPush', op),
 };
 
 // The renderer's only window into the desktop shell. Its presence is what
 // src/lib/platform.ts checks to switch the app into desktop mode.
 contextBridge.exposeInMainWorld('legoTrackerDesktop', {
   store,
+  /** The tray icon's tooltip line: the sync state, in a few words. */
+  setTrayStatus: (text: string): void => ipcRenderer.send('tray:status', text),
   isDesktop: true,
   /** Runs Google sign-in in the system browser; resolves with an ID token. */
   signInWithGoogle: (): Promise<string> => ipcRenderer.invoke('auth:google'),

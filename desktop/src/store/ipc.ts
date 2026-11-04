@@ -39,6 +39,14 @@ export function registerStoreIpc(
     store.putBackup(kind, data)
   );
   handle('store:resolveHeld', (choice: 'delete' | 'keep') => store.resolveHeld(choice));
+  handle('store:sets', () => store.sets());
+  handle('store:history', (setId: string) => store.history(setId));
+  handle('store:priceSources', () => store.priceSources());
+  handle('store:applyLocal', (change: Parameters<LocalStore['applyLocal']>[0]) =>
+    store.applyLocal(change)
+  );
+  handle('store:planPush', () => store.planPush());
+  handle('store:ackPush', (op: Parameters<LocalStore['ackPush']>[0]) => store.ackPush(op));
 
   store.on('change', (change: StoreChange) => {
     const win = getWindow();

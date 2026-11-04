@@ -18,11 +18,16 @@ import {
 } from 'lucide-react';
 import { useSets } from './hooks/useSets';
 import { useSession } from './hooks/useSession';
-import { useLocalBackup } from './hooks/useLocalBackup';
+import { useDesktopSync } from './hooks/useDesktopSync';
 import { StorageStatus } from './components/StorageStatus';
+import { DataStatusBanner } from './components/DataStatusBanner';
 import { usePlannedList } from './hooks/usePlannedList';
 import { firebaseSession } from './data/firebaseSession';
+import { desktopSession } from './data/desktopSession';
 import { createFirestoreBackend } from './data/firestoreBackend';
+import { createLocalBackend } from './data/localBackend';
+import { isProblem } from './lib/dataHealth';
+import { quotaDay, shouldRunLocally } from './lib/dailyRun';
 import { formatPrice as formatPriceUtil } from './lib/currency';
 import { ClassicSpaceLogo } from './components/ClassicSpaceLogo';
 import { SetCard } from './components/SetCard';
@@ -51,6 +56,12 @@ import { DEMO_SETS, demoPriceHistory } from './demoData';
 import { readStoredString, readStoredJson, writeStored } from './lib/storage';
 import { usePriceSources } from './hooks/usePriceSources';
 import { isDesktopApp } from './lib/platform';
+
+// The desktop app works from its copy on this PC (desktop/src/store, through
+// the preload bridge) with its own session; the website signs in to Firebase
+// and reads and writes Firestore directly.
+const desktopStore = isDesktopApp ? window.legoTrackerDesktop?.store : undefined;
+const SESSION = desktopStore ? desktopSession : firebaseSession;
 
 // Same rule as isValidSetNumber on the server; /api/teach-source rejects the
 // whole request if any sample fails it.
@@ -115,11 +126,17 @@ const AVAILABLE_THEMES = [
 
 export default function App() {
   // undefined while a remembered session is being restored, then the user or null.
-  const { user } = useSession(firebaseSession);
+  const { user } = useSession(SESSION);
   const uid = user?.uid ?? null;
+  const googleSub = user?.googleSub ?? null;
   // One backend per signed-in account, so the data hooks resubscribe only
-  // when the account changes.
-  const backend = useMemo(() => (uid ? createFirestoreBackend(uid) : null), [uid]);
+  // when the account changes. The desktop app works from its copy on this PC
+  // (kept in step with Firestore by useDesktopSync); the website uses Firestore.
+  const backend = useMemo(() => {
+    if (!uid) return null;
+    if (desktopStore && googleSub) return createLocalBackend(desktopStore, googleSub);
+    return createFirestoreBackend(uid);
+  }, [uid, googleSub]);
   const {
     sets,
     loading,
@@ -132,8 +149,12 @@ export default function App() {
   } = useSets(user, backend);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [mockSets, setMockSets] = useState<LegoSet[]>(() => getMockSets());
-  // Desktop app: a copy of the account's Firestore data on this PC.
-  const localBackup = useLocalBackup(user, isDemoMode);
+  // Desktop app: keeps the copy on this PC and Firestore in step.
+  const desktopSync = useDesktopSync(user, isDemoMode);
+  const firebaseProblemRef = useRef(false);
+  useEffect(() => {
+    firebaseProblemRef.current = isProblem(desktopSync.health);
+  });
 
   // Cache sets whenever they change
   useEffect(() => {
@@ -169,7 +190,7 @@ export default function App() {
   const handleSignIn = async () => {
     setSignInError(null);
     try {
-      await firebaseSession.signIn();
+      await SESSION.signIn();
     } catch (err) {
       const code = (err as { code?: string } | null)?.code;
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return;
@@ -184,14 +205,21 @@ export default function App() {
     }
   };
   // An account that is not on this copy's allowlist (firestore.rules) is
-  // signed straight out again, with the reason on the sign-in screen. Runs for
-  // a fresh sign-in and for a session remembered from before the list existed.
+  // signed straight out again on the website, with the reason on the sign-in
+  // screen. The desktop app keeps its copy on this PC open instead and shows
+  // the refusal as a problem (nothing reaches Firebase meanwhile). Runs for a
+  // fresh sign-in and for a session remembered from before the list existed.
+  const setAccountRefused = desktopSync.setAccountRefused;
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    void firebaseSession.hasAccess(user).then(async (ok) => {
+    void SESSION.hasAccess(user).then(async (ok) => {
       if (ok || cancelled) return;
-      await firebaseSession.signOut();
+      if (desktopStore) {
+        setAccountRefused();
+        return;
+      }
+      await SESSION.signOut();
       setSignInError(
         `This Brick Tracker is private: ${user.email ?? 'this Google account'} cannot sign in here.`
       );
@@ -199,7 +227,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, setAccountRefused]);
   const [displayCurrency, setDisplayCurrency] = useState<string>(() =>
     readStoredString('legoDisplayCurrency', 'HUF')
   );
@@ -559,17 +587,14 @@ export default function App() {
     if (!isDesktopApp || !uid || isDemoMode) return;
     let running = false;
 
+    let failures = 0;
+
     const checkSchedule = async () => {
       if (running) return;
-      // A "refresh day" starts at 04:00 local: shifting the clock back four
-      // hours makes 00:00-03:59 count as the previous day. The run therefore
-      // fires at 4AM, or on the first check after it if the PC was off then.
-      const shifted = new Date(Date.now() - 4 * 60 * 60 * 1000);
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const quotaDay = `${shifted.getFullYear()}-${pad(shifted.getMonth() + 1)}-${pad(shifted.getDate())}`;
-
+      // 00:00-03:59 still counts as the previous day (src/lib/dailyRun.ts).
+      const day = quotaDay(new Date());
       const lastRefresh = readStoredString('brickTrackerLastDailyRefresh', '');
-      if (lastRefresh === quotaDay) return;
+      if (lastRefresh === day) return;
 
       running = true;
       try {
@@ -579,12 +604,29 @@ export default function App() {
         // reload or crash mid-run does not skip the day.
         const action = await scheduleDailyRun(
           uid,
-          quotaDay,
+          day,
           filteredSetsRef.current.map((s) => s.id)
         );
-        if (action === 'done') writeStored('brickTrackerLastDailyRefresh', quotaDay);
+        failures = 0;
+        if (action === 'done') writeStored('brickTrackerLastDailyRefresh', day);
       } catch (e) {
+        failures++;
         console.error('Scheduling the daily refresh failed; will retry on the next tick', e);
+        // Firebase is failing, so the shared request cannot be made: run it
+        // here instead, once for the day, so the prices still refresh. The
+        // refresh writes to the copy on this PC, which syncs later.
+        if (
+          shouldRunLocally({
+            lastRunDay: lastRefresh,
+            day,
+            failures,
+            firebaseProblem: firebaseProblemRef.current,
+          })
+        ) {
+          // Prices only, like a 'prices' request (runDesktopRequest).
+          const ran = await batchRefreshRef.current(true, { targets: filteredSetsRef.current });
+          if (ran) writeStored('brickTrackerLastDailyRefresh', day);
+        }
       } finally {
         running = false;
       }
@@ -759,6 +801,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen pb-20">
+      <DataStatusBanner sync={desktopSync} />
       <header className="bg-lego-yellow border-b-4 border-black p-4 sticky top-0 z-50 shadow-md">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -797,7 +840,7 @@ export default function App() {
             >
               <ShoppingBag size={14} /> <span className="hidden sm:inline">Sources</span>
             </button>
-            <StorageStatus backup={localBackup} />
+            <StorageStatus backup={desktopSync} />
             {isDemoMode ? (
               <button
                 onClick={() => setIsDemoMode(false)}
@@ -808,7 +851,7 @@ export default function App() {
               </button>
             ) : (
               <button
-                onClick={() => void firebaseSession.signOut()}
+                onClick={() => void SESSION.signOut()}
                 className="p-2 hover:bg-black/5 rounded-full transition-colors flex items-center gap-2 font-black text-xs uppercase"
               >
                 <span className="hidden sm:inline">{user?.displayName?.split(' ')[0]}</span>

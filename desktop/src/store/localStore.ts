@@ -2,6 +2,8 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  ackPush,
+  applyLocal,
   applyRemote,
   applyRemotePriceSources,
   budgetLeft,
@@ -10,12 +12,17 @@ import {
   historyWork,
   mergeHistory,
   noteHistoryPage,
+  planPush,
   resolveHeld,
   spendReads,
   summarize,
+  visibleSets,
   type ApplyResult,
   type HistoryRow,
+  type LocalOp,
+  type PushOp,
   type RemoteSetsSnapshot,
+  type SetRecord,
   type StoreState,
 } from '../../../lib/data/store';
 import {
@@ -23,10 +30,11 @@ import {
   localDay,
   type BackupKind,
   type HistoryPage,
+  type LocalChange,
   type StoreChange,
   type StoreStatus,
 } from '../../../lib/data/storeBridge';
-import { isValidDocId } from '../../../lib/data/ids';
+import { isAutoId, isValidDocId } from '../../../lib/data/ids';
 import { readJsonFile, rotateDailyBackup, writeFileAtomic, writeFileAtomicSync } from './files';
 
 // The desktop app's copy of the signed-in account's data, one folder per
@@ -63,6 +71,74 @@ function checkSnapshot(snap: RemoteSetsSnapshot): void {
       throw new Error('Snapshot has a set with an invalid id');
   }
 }
+
+const MAX_SET_JSON = 200 * 1024;
+const STATUSES = ['planned', 'ordered'];
+const PRIORITIES = ['low', 'medium', 'high'];
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * A change from the page, checked against what the Firestore rules accept for
+ * sets and history (firestore.rules), so a change made here never becomes a
+ * write the rules refuse forever.
+ */
+function checkLocalChange(change: LocalChange, sets: Record<string, unknown>): void {
+  switch (change?.type) {
+    case 'create': {
+      if (!isAutoId(change.id)) throw new Error('A new set needs a Firestore-style id');
+      const v = change.value;
+      if (!isPlainObject(v) || JSON.stringify(v).length > MAX_SET_JSON)
+        throw new Error('A new set must be an object under 200 KB');
+      if (typeof v.setNumber !== 'string' || !v.setNumber || v.setNumber.length > 20)
+        throw new Error('A set number is 1 to 20 characters');
+      if (!STATUSES.includes(v.status as string)) throw new Error('Unknown status');
+      if (!PRIORITIES.includes(v.priority as string)) throw new Error('Unknown priority');
+      // The create rule reads `name`, and a rule reading a missing field denies.
+      if (!('name' in v)) throw new Error('A new set needs a name (null is allowed)');
+      if (v.name !== null && (typeof v.name !== 'string' || v.name.length > 200))
+        throw new Error('A set name is at most 200 characters');
+      return;
+    }
+    case 'update': {
+      if (!isValidDocId(change.id) || !sets[change.id]) throw new Error('Unknown set');
+      const f = change.fields;
+      if (!isPlainObject(f) || JSON.stringify(f).length > MAX_SET_JSON)
+        throw new Error('A change must be an object under 200 KB');
+      if ('status' in f && !STATUSES.includes(f.status as string))
+        throw new Error('Unknown status');
+      if ('priority' in f && !PRIORITIES.includes(f.priority as string))
+        throw new Error('Unknown priority');
+      if (f.name != null && (typeof f.name !== 'string' || f.name.length > 200))
+        throw new Error('A set name is at most 200 characters');
+      return;
+    }
+    case 'delete':
+      if (!isValidDocId(change.id)) throw new Error('Unknown set');
+      return;
+    case 'addHistory': {
+      if (!isValidDocId(change.setId) || !sets[change.setId]) throw new Error('Unknown set');
+      const r = change.row;
+      if (
+        !isPlainObject(r) ||
+        !isValidDocId(r.id) ||
+        typeof r.date !== 'string' ||
+        r.date.length > 32
+      )
+        throw new Error('A history row needs an id and a date of at most 32 characters');
+      if (Object.keys(r).length > 60) throw new Error('A history row has too many fields');
+      return;
+    }
+    case 'priceSources':
+      if (!Array.isArray(change.list) || change.list.length > 15)
+        throw new Error('Price sources are a list of at most 15');
+      return;
+    default:
+      throw new Error('Unknown change');
+  }
+}
+
+const PUSH_KINDS = ['create', 'update', 'delete', 'history', 'priceSources'];
 
 function checkHistoryRows(rows: HistoryRow[]): void {
   if (!Array.isArray(rows) || rows.length > MAX_HISTORY_ROWS_PER_PAGE)
@@ -202,6 +278,68 @@ export class LocalStore extends EventEmitter {
     const json = JSON.stringify(data ?? null);
     if (json.length > MAX_BACKUP_BYTES) throw new Error('Backup too large');
     await writeFileAtomic(path.join(this.backupDir, `${kind}.json`), json);
+  }
+
+  /** The sets the app shows, newest first. */
+  sets(): SetRecord[] {
+    this.requireOpen();
+    return visibleSets(this.state);
+  }
+
+  /** A set's price history, oldest first (rows not on the server yet included). */
+  async history(setId: string): Promise<HistoryRow[]> {
+    this.requireOpen();
+    if (!isValidDocId(setId)) throw new Error('Unknown set');
+    await this.historyQueue;
+    return (await readJsonFile<HistoryRow[]>(this.historyFile(setId))) ?? [];
+  }
+
+  priceSources(): { list: unknown[] | null; seen: boolean } {
+    this.requireOpen();
+    return { list: this.state.priceSources, seen: this.state.priceSourcesSeen };
+  }
+
+  /** A change made in the app: applied here first, pushed by firestoreSync. */
+  applyLocal(change: LocalChange): Promise<StoreStatus> {
+    const run = async () => {
+      this.requireOpen();
+      checkLocalChange(change, this.state.sets);
+      const at = this.now().toISOString();
+      const op = (
+        change.type === 'create' || change.type === 'update' ? { ...change, at } : change
+      ) as LocalOp;
+      const result = applyLocal(this.state, op);
+      if (result.historyAppend) {
+        const { setId, row } = result.historyAppend;
+        const file = this.historyFile(setId);
+        const existing = (await readJsonFile<HistoryRow[]>(file)) ?? [];
+        await writeFileAtomic(file, JSON.stringify(mergeHistory(existing, [row])));
+      }
+      this.commit(result);
+      return this.status();
+    };
+    // Shares the history queue: a history file is only ever written by one task at a time.
+    const result = this.historyQueue.then(run, run);
+    this.historyQueue = result.catch(() => {});
+    return result;
+  }
+
+  planPush(): PushOp[] {
+    this.requireOpen();
+    return planPush(this.state);
+  }
+
+  /** Firestore accepted a planned write. */
+  ackPush(op: PushOp): StoreStatus {
+    this.requireOpen();
+    if (!op || !PUSH_KINDS.includes(op.kind)) throw new Error('Unknown push');
+    const next = ackPush(this.state, op);
+    if (next !== this.state) {
+      this.state = next;
+      this.schedulePersist();
+      this.queueChange([], []);
+    }
+    return this.status();
   }
 
   resolveHeld(choice: 'delete' | 'keep'): StoreStatus {
