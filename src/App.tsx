@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { useSets } from './hooks/useSets';
 import { useSession } from './hooks/useSession';
+import { useLocalBackup } from './hooks/useLocalBackup';
+import { StorageStatus } from './components/StorageStatus';
 import { usePlannedList } from './hooks/usePlannedList';
 import { firebaseSession } from './data/firebaseSession';
 import { createFirestoreBackend } from './data/firestoreBackend';
@@ -130,6 +132,8 @@ export default function App() {
   } = useSets(user, backend);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [mockSets, setMockSets] = useState<LegoSet[]>(() => getMockSets());
+  // Desktop app: a copy of the account's Firestore data on this PC.
+  const localBackup = useLocalBackup(user, isDemoMode);
 
   // Cache sets whenever they change
   useEffect(() => {
@@ -793,6 +797,7 @@ export default function App() {
             >
               <ShoppingBag size={14} /> <span className="hidden sm:inline">Sources</span>
             </button>
+            <StorageStatus backup={localBackup} />
             {isDemoMode ? (
               <button
                 onClick={() => setIsDemoMode(false)}

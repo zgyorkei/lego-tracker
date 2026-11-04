@@ -3,10 +3,11 @@ import { toMillis } from '../../lib/data/timestamps';
 
 const PRIORITY: Record<Priority, number> = { high: 3, medium: 2, low: 1 };
 
-// Reads the date in any form (see lib/data/timestamps.ts), so a Timestamp that
-// slips past normalisation still sorts. A set with no usable date counts as
-// the oldest.
-const addedAt = (s: LegoSet): number => toMillis(s.createdAt) ?? 0;
+// When the set joined the collection: addedAt, else createdAt (sets from
+// before addedAt). Reads the date in any form (see lib/data/timestamps.ts),
+// so a Timestamp that slips past normalisation still sorts. A set with no
+// usable date counts as the oldest.
+const addedAt = (s: LegoSet): number => toMillis(s.addedAt) ?? toMillis(s.createdAt) ?? 0;
 
 const byName = (a: LegoSet, b: LegoSet): number => {
   const nameA = (a.name || '').toLowerCase();

@@ -11,6 +11,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  type QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { getDb } from '../lib/firebase';
 import { OperationType, toDataError } from '../lib/dataErrors';
@@ -22,6 +23,24 @@ import type { DataBackend } from './types';
 
 const SETTINGS_COLLECTION = 'userSettings';
 
+/**
+ * A set document as the app uses it. createdAt/updatedAt arrive as
+ * Timestamps; the app works with ISO strings. 'estimate' gives a set that was
+ * just added its local time until the server's lands, rather than null.
+ */
+export function setFromDoc(d: QueryDocumentSnapshot): LegoSet {
+  return withSetDates({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) } as LegoSet);
+}
+
+/** A price-history row as the app uses it: createdAt is a serverTimestamp(), 'date' a string. */
+export function historyRowFromDoc(d: QueryDocumentSnapshot): PriceHistory {
+  return withIsoDates({ id: d.id, ...d.data() }, ['createdAt']) as PriceHistory;
+}
+
+/** The query every reader of the account's sets uses, so the SDK shares one listener. */
+export const setsQuery = (uid: string) =>
+  query(collection(getDb(), 'sets'), where('userId', '==', uid), orderBy('createdAt', 'desc'));
+
 /** One user's data in Firestore: sets/, sets/{id}/priceHistory and userSettings/{uid}. */
 export function createFirestoreBackend(uid: string): DataBackend {
   const db = getDb();
@@ -30,21 +49,12 @@ export function createFirestoreBackend(uid: string): DataBackend {
     capabilities: { registries: true, publicPlannedList: true, firestoreWorker: true },
 
     subscribeSets(onSets, onError) {
-      const q = query(
-        collection(db, 'sets'),
-        where('userId', '==', uid),
-        orderBy('createdAt', 'desc')
-      );
       return onSnapshot(
-        q,
+        setsQuery(uid),
         (snapshot) => {
           const sets: LegoSet[] = [];
           snapshot.forEach((d) => {
-            // createdAt/updatedAt arrive as Timestamps; the app works with ISO
-            // strings. 'estimate' gives a set that was just added its local time
-            // until the server's lands, rather than null.
-            const data = d.data({ serverTimestamps: 'estimate' });
-            sets.push(withSetDates({ id: d.id, ...data } as LegoSet));
+            sets.push(setFromDoc(d));
           });
           onSets(sets);
         },
@@ -57,6 +67,10 @@ export function createFirestoreBackend(uid: string): DataBackend {
         await addDoc(collection(db, 'sets'), {
           ...setData,
           userId: uid,
+          // createdAt must be the server's time (the create rule checks it);
+          // addedAt keeps the date the set was really added, so an uploaded
+          // local collection keeps its order.
+          addedAt: typeof setData.addedAt === 'string' ? setData.addedAt : new Date().toISOString(),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -96,10 +110,7 @@ export function createFirestoreBackend(uid: string): DataBackend {
       try {
         const q = query(collection(db, 'sets', setId, 'priceHistory'), orderBy('date', 'asc'));
         const snapshot = await getDocs(q);
-        // createdAt is a serverTimestamp(); 'date' is already a string.
-        return snapshot.docs.map(
-          (d) => withIsoDates({ id: d.id, ...d.data() }, ['createdAt']) as PriceHistory
-        );
+        return snapshot.docs.map(historyRowFromDoc);
       } catch (err) {
         throw toDataError(err, OperationType.GET, `sets/${setId}/priceHistory`);
       }

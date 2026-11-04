@@ -196,6 +196,13 @@ export interface LegoSet {
   quantity?: number;
   createdAt: string;
   updatedAt: string;
+  /**
+   * When the set was added to the collection, written once on create. Unlike
+   * createdAt (the server's time of the write, which the rules pin), it keeps
+   * the original date when a collection is uploaded later. Sets from before it
+   * existed have none: sort by `addedAt ?? createdAt`.
+   */
+  addedAt?: string;
   priceHistory?: PriceHistory[];
   isTemporary?: boolean;
   releaseDate?: string | null;

@@ -22,10 +22,39 @@ export interface FirebaseWebConfig {
   firestoreDatabaseId: string;
 }
 
+/**
+ * Where the desktop app keeps the data. 'both': Firebase, with a copy on this
+ * PC that is also the backup; 'local': on this PC only (from Phase 4 of the
+ * local-storage plan). `drive`: let the phone and website reach this PC's
+ * copy through Google Drive (Phase 5).
+ */
+export interface StorageConfig {
+  mode: 'local' | 'both';
+  drive: boolean;
+}
+
 export interface DesktopAppConfig {
   firebase: FirebaseWebConfig;
   /** The website's address, e.g. https://bricks.example.com, without a trailing slash. */
   publicAppUrl: string;
+  /** Absent in configs saved before there was a choice: they mean 'both', no Drive. */
+  storage?: StorageConfig;
+}
+
+export const DEFAULT_STORAGE: StorageConfig = { mode: 'both', drive: false };
+
+/** The config's storage choice, with the default for configs that have none. */
+export const storageOf = (config: Pick<DesktopAppConfig, 'storage'> | null): StorageConfig =>
+  config?.storage ?? DEFAULT_STORAGE;
+
+function validateStorage(input: unknown): StorageConfig | undefined | { error: string } {
+  if (input === undefined || input === null) return undefined;
+  const s = input as { mode?: unknown; drive?: unknown };
+  if (s.mode !== 'local' && s.mode !== 'both')
+    return { error: 'The storage mode must be "local" or "both".' };
+  if (s.drive !== undefined && typeof s.drive !== 'boolean')
+    return { error: 'The storage "drive" setting must be true or false.' };
+  return { mode: s.mode, drive: s.drive === true };
 }
 
 const REQUIRED = ['apiKey', 'authDomain', 'projectId', 'appId'] as const;
@@ -63,7 +92,11 @@ export function normalisePublicUrl(value: string): string | null {
 export function validateAppConfig(
   input: unknown
 ): { config: DesktopAppConfig } | { error: string } {
-  const raw = (input ?? {}) as { firebase?: Record<string, unknown>; publicAppUrl?: unknown };
+  const raw = (input ?? {}) as {
+    firebase?: Record<string, unknown>;
+    publicAppUrl?: unknown;
+    storage?: unknown;
+  };
   const fb = raw.firebase ?? {};
   const missing = REQUIRED.filter((k) => typeof fb[k] !== 'string' || !(fb[k] as string).trim());
   if (missing.length) return { error: `The Firebase config is missing ${missing.join(', ')}.` };
@@ -91,5 +124,8 @@ export function validateAppConfig(
         'The website address must be a full https:// address, such as https://bricks.example.com.',
     };
 
-  return { config: { firebase, publicAppUrl } };
+  const storage = validateStorage(raw.storage);
+  if (storage && 'error' in storage) return storage;
+
+  return { config: { firebase, publicAppUrl, ...(storage ? { storage } : {}) } };
 }

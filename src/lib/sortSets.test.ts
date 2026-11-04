@@ -60,6 +60,16 @@ describe('compareSets', () => {
     expect(order([bought, fresh, old], 'name-asc')).toEqual(['fresh', 'old', 'bought']);
   });
 
+  it('sorts by addedAt where a set has one, else by createdAt', () => {
+    // Uploaded later (new createdAt) but added long ago.
+    const uploaded = set('uploaded', {
+      createdAt: ts('2026-11-01T00:00:00Z'),
+      addedAt: '2024-06-01T00:00:00.000Z',
+    });
+    expect(order([fresh, uploaded, old], 'date-asc')).toEqual(['uploaded', 'old', 'fresh']);
+    expect(order([fresh, uploaded, old], 'date-desc')).toEqual(['fresh', 'old', 'uploaded']);
+  });
+
   it('counts a set with no usable date as the oldest', () => {
     const undated = set('undated', { createdAt: undefined as unknown as string });
     expect(order([fresh, undated, old], 'date-asc')).toEqual(['undated', 'old', 'fresh']);

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { normalisePublicUrl, parseFirebaseConfigText, validateAppConfig } from './appConfig';
+import {
+  DEFAULT_STORAGE,
+  normalisePublicUrl,
+  parseFirebaseConfigText,
+  storageOf,
+  validateAppConfig,
+} from './appConfig';
 
 const consoleSnippet = `
 // Import the functions you need from the SDKs you need
@@ -108,5 +114,40 @@ describe('validateAppConfig', () => {
 
   it('rejects nothing at all', () => {
     expect(validateAppConfig(null)).toHaveProperty('error');
+  });
+});
+
+describe('storage', () => {
+  const firebase = parseFirebaseConfigText(consoleSnippet);
+  const base = { firebase, publicAppUrl: 'https://bricks.example.com' };
+  const configOf = (input: unknown) => {
+    const r = validateAppConfig(input);
+    if (!('config' in r)) throw new Error(r.error);
+    return r.config;
+  };
+
+  it('means Firebase plus a copy on this PC when a config has no choice saved', () => {
+    const config = configOf(base);
+    expect(config).not.toHaveProperty('storage');
+    expect(storageOf(config)).toEqual({ mode: 'both', drive: false });
+    expect(storageOf(null)).toEqual(DEFAULT_STORAGE);
+  });
+
+  it('keeps a saved choice, with Drive off unless set', () => {
+    expect(configOf({ ...base, storage: { mode: 'local', drive: true } }).storage).toEqual({
+      mode: 'local',
+      drive: true,
+    });
+    expect(configOf({ ...base, storage: { mode: 'both' } }).storage).toEqual({
+      mode: 'both',
+      drive: false,
+    });
+  });
+
+  it('refuses an unknown mode or a non-boolean Drive setting', () => {
+    expect(validateAppConfig({ ...base, storage: { mode: 'cloud' } })).toHaveProperty('error');
+    expect(validateAppConfig({ ...base, storage: { mode: 'both', drive: 'yes' } })).toHaveProperty(
+      'error'
+    );
   });
 });

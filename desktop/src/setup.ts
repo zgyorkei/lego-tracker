@@ -132,6 +132,9 @@ export function runSetup(
       const result = validateAppConfig({
         firebase: { ...parsed, ...(databaseId ? { firestoreDatabaseId: databaseId } : {}) },
         publicAppUrl: String(form?.publicAppUrl ?? ''),
+        // Not on the form yet (the choice arrives with "On this PC only");
+        // keep what is saved rather than drop it on every save.
+        storage: opts.current?.storage,
       });
       if ('error' in result) return { error: result.error };
       if (!pickedClient && !existsSync(files.oauthFile)) {

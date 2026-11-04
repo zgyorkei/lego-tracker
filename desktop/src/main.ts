@@ -7,6 +7,8 @@ import { startLocalServer } from './localServer';
 import { PlaywrightScraper } from './scraper/engine';
 import { googleSignIn, loadOAuthClient } from './oauth';
 import { readAppConfig, runSetup } from './setup';
+import { LocalStore } from './store/localStore';
+import { registerStoreIpc } from './store/ipc';
 import type { DesktopAppConfig } from '../../lib/appConfig';
 
 // Express renders stack traces on its error pages outside production.
@@ -60,6 +62,9 @@ let setupWin: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
 let scraper: PlaywrightScraper | null = null;
+// The account's data on this PC (desktop/src/store), one folder per Google
+// account under <userData>/data, in dev runs too.
+let localStore: LocalStore | null = null;
 
 function showWindow() {
   if (setupWin) {
@@ -192,6 +197,9 @@ async function start() {
     event.returnValue = event.senderFrame?.url.startsWith(APP_ORIGIN) ? appConfig : null;
   });
 
+  localStore = new LocalStore(path.join(app.getPath('userData'), 'data'));
+  registerStoreIpc(localStore, APP_ORIGIN, () => win);
+
   scraper = new PlaywrightScraper(path.join(app.getPath('userData'), 'scraper-profile'));
   await startLocalServer({ port: PORT, distDir: webDir, scraper });
 
@@ -223,6 +231,8 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {});
   app.on('before-quit', () => {
     quitting = true;
+    // Synchronous, so the last changes are on disk before the process ends.
+    localStore?.flushSync();
     void scraper?.close();
   });
   app.whenReady().then(start, (err) => {

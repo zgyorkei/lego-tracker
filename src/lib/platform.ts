@@ -1,4 +1,5 @@
 import type { DesktopAppConfig } from '../../lib/appConfig';
+import type { DesktopStoreBridge } from '../../lib/data/storeBridge';
 
 // The desktop (Electron) build exposes a bridge object on window from its
 // preload script. Its presence is the single switch between the two runtimes:
@@ -17,6 +18,8 @@ declare global {
        * setup (lib/appConfig.ts). Desktop builds carry no config of their own.
        */
       config: DesktopAppConfig;
+      /** The account's copy on this PC (lib/data/storeBridge.ts). Absent in builds before it. */
+      store?: DesktopStoreBridge;
     };
   }
 }

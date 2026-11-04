@@ -52,6 +52,20 @@ starts lazily (`getDb()` / `getFirebaseAuth()` in `src/lib/firebase.ts`), so
 importing a module never throws when no project is configured. This is the
 seam the local-storage plan builds on.
 
+**The desktop app keeps a copy on the PC** (local-storage plan, Phase 2, pull
+only): `src/data/firestoreMirror.ts` copies the account's Firestore data into
+`<userData>/data/<googleSub>/` through the `store` IPC bridge
+(`lib/data/storeBridge.ts`, `desktop/src/store/`). The reducer
+`lib/data/store.ts` holds the guards: removals only from server-confirmed
+snapshots, a held snapshot (asked about in the header's StorageStatus) when
+one would remove more than max(3, 10%) of the synced sets, empty the copy, or
+come from another project or account; `LocalStore` never writes an empty copy
+over a non-empty one and keeps 7 daily backups. Local data is never served
+over HTTP, the IPC answers only the app's own page, and nothing the page
+sends becomes a path (`isGoogleSub`, `isValidDocId`). `SET_UPDATABLE_FIELDS`
+(`lib/data/setFields.ts`) must match the sets update rule; its test reads
+`firestore.rules`.
+
 **Routing is hand-rolled** in `src/main.tsx` by matching `window.location.pathname`.
 There is no router library. `App` and `RegistryView` are lazy-loaded and mutually
 exclusive.

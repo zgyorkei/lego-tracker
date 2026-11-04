@@ -79,10 +79,14 @@ describe('createFirestoreBackend', () => {
       {
         setNumber: '10333',
         userId: 'uid-1',
+        addedAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
         createdAt: 'SERVER_TIMESTAMP',
         updatedAt: 'SERVER_TIMESTAMP',
       }
     );
+    // An upload keeps the date the set was added.
+    await backend.addSet({ setNumber: '10334', addedAt: '2025-05-05T00:00:00.000Z' });
+    expect(fs.addDoc.mock.calls[1][1].addedAt).toBe('2025-05-05T00:00:00.000Z');
     await backend.updateSet('s1', { name: 'B' });
     expect(fs.updateDoc).toHaveBeenCalledWith(
       { path: 'sets/s1' },
