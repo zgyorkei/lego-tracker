@@ -27,6 +27,8 @@ import { PlannedListDialog } from './components/PlannedListDialog';
 import { TeachSourcePanel } from './components/TeachSourcePanel';
 import { SourceIdInput } from './components/SourceIdInput';
 import { identityFromQuotes, mergeLookupName } from './lib/setIdentity';
+import { withSetDates } from './lib/setDates';
+import { compareSets } from './lib/sortSets';
 import { scheduleDailyRun, useDesktopWorker, type RunRefresh } from './hooks/useDesktopWorker';
 import { withUrlTemplate } from './lib/priceSources';
 import { Modal } from './components/Modal';
@@ -54,7 +56,8 @@ const getMockSets = (): LegoSet[] => {
   let sourceSets = DEMO_SETS;
   const parsed = readStoredJson<LegoSet[] | null>('cachedSets', null);
   if (Array.isArray(parsed) && parsed.length > 0) {
-    sourceSets = parsed;
+    // Older caches hold the dates in Timestamp JSON form.
+    sourceSets = parsed.map(withSetDates);
   }
   // A visitor (nothing cached) gets the whole curated demo, in a fixed order,
   // so every feature is on show; the random pick below is for previewing the
@@ -241,70 +244,8 @@ export default function App() {
   );
 
   const filteredSets = useMemo(() => {
-    let result = activeSets;
-    if (filter !== 'all') {
-      result = activeSets.filter((s) => s.status === filter);
-    }
-
-    result = [...result].sort((a, b) => {
-      // Automatically place ordered (purchased) sets at the end
-      if (a.status === 'ordered' && b.status !== 'ordered') return 1;
-      if (a.status !== 'ordered' && b.status === 'ordered') return -1;
-
-      const pVals: Record<Priority, number> = { high: 3, medium: 2, low: 1 };
-
-      switch (sortBy) {
-        case 'priority-desc': {
-          const pA = pVals[a.priority || 'medium'];
-          const pB = pVals[b.priority || 'medium'];
-          if (pA !== pB) return pB - pA;
-          return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
-        }
-        case 'priority-asc': {
-          const pA = pVals[a.priority || 'medium'];
-          const pB = pVals[b.priority || 'medium'];
-          if (pA !== pB) return pA - pB;
-          return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
-        }
-        case 'name-asc': {
-          const nameA = (a.name || '').toLowerCase();
-          const nameB = (b.name || '').toLowerCase();
-          if (nameA < nameB) return -1;
-          if (nameA > nameB) return 1;
-          return 0;
-        }
-        case 'name-desc': {
-          const nameA = (a.name || '').toLowerCase();
-          const nameB = (b.name || '').toLowerCase();
-          if (nameA < nameB) return 1;
-          if (nameA > nameB) return -1;
-          return 0;
-        }
-        case 'set-asc': {
-          const setA = parseInt(a.setNumber) || 0;
-          const setB = parseInt(b.setNumber) || 0;
-          return setA - setB;
-        }
-        case 'set-desc': {
-          const setA = parseInt(a.setNumber) || 0;
-          const setB = parseInt(b.setNumber) || 0;
-          return setB - setA;
-        }
-        case 'date-asc': {
-          const dateA = new Date(a.createdAt || 0).getTime();
-          const dateB = new Date(b.createdAt || 0).getTime();
-          return dateA - dateB;
-        }
-        case 'date-desc':
-        default: {
-          const dateA = new Date(a.createdAt || 0).getTime();
-          const dateB = new Date(b.createdAt || 0).getTime();
-          return dateB - dateA;
-        }
-      }
-    });
-
-    return result;
+    const result = filter === 'all' ? activeSets : activeSets.filter((s) => s.status === filter);
+    return [...result].sort(compareSets(sortBy));
   }, [activeSets, filter, sortBy]);
 
   // Mirrors isBatchRefreshing for code that must not wait for a re-render: the

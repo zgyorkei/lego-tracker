@@ -13,7 +13,9 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
+import { withSetDates } from '../lib/setDates';
 import { LegoSet, PriceHistory } from '../types';
+import { withIsoDates } from '../../lib/data/timestamps';
 
 enum OperationType {
   CREATE = 'create',
@@ -83,7 +85,11 @@ export function useSets() {
       (snapshot) => {
         const setsData: LegoSet[] = [];
         snapshot.forEach((doc) => {
-          setsData.push({ id: doc.id, ...doc.data() } as LegoSet);
+          // createdAt/updatedAt arrive as Timestamps; the app works with ISO
+          // strings. 'estimate' gives a set that was just added its local time
+          // until the server's lands, rather than null.
+          const data = doc.data({ serverTimestamps: 'estimate' });
+          setsData.push(withSetDates({ id: doc.id, ...data } as LegoSet));
         });
         setSets(setsData);
         setError(null);
@@ -96,7 +102,8 @@ export function useSets() {
           if (cached) {
             const parsed = JSON.parse(cached);
             if (Array.isArray(parsed) && parsed.length > 0) {
-              setSets(parsed);
+              // Older caches hold the dates in Timestamp JSON form.
+              setSets((parsed as LegoSet[]).map(withSetDates));
             }
           }
         } catch (e) {
@@ -181,7 +188,10 @@ export function useSets() {
     try {
       const q = query(collection(db, 'sets', setId, 'priceHistory'), orderBy('date', 'asc'));
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as PriceHistory);
+      // createdAt is a serverTimestamp(); 'date' is already a string.
+      return snapshot.docs.map(
+        (d) => withIsoDates({ id: d.id, ...d.data() }, ['createdAt']) as PriceHistory
+      );
     } catch (err) {
       // Read-only and non-critical: surface it but return empty rather than
       // throwing, so a history-fetch failure cannot break the card.
