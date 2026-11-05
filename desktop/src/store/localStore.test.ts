@@ -108,6 +108,44 @@ describe('LocalStore', () => {
     expect(Object.keys(stateOnDisk().sets)).toEqual(['z']);
   });
 
+  it('keeps the empty-copy guard when starting again from an unanswered source is refused', async () => {
+    const s = store();
+    await s.open(SUB);
+    s.applySets(snap([set('a'), set('b')]));
+    await s.flush();
+    // A mistyped database: only the SDK's empty cache, never the server.
+    const wrong = { ...SRC, databaseId: 'no-such-database' };
+    const held = s.applySets({ ...snap([], true), source: wrong });
+    expect(held.held).toMatchObject({ reason: 'different-source', confirmed: false });
+    const after = s.resolveHeld('delete');
+    expect(after.sets).toBe(2);
+    expect(after.held?.reason).toBe('different-source');
+    // Had the refusal unlocked the guard, a bug emptying the state could write now.
+    (s as unknown as { state: StoreState }).state = { ...emptyState(), source: SRC };
+    s.putPriceSources([{ id: 'x' }]);
+    await s.flush();
+    expect(Object.keys(stateOnDisk().sets)).toEqual(['a', 'b']);
+  });
+
+  it('tells the page when the copy has been written, and when a write was refused', async () => {
+    const s = store();
+    await s.open(SUB);
+    const statuses: StoreChange['status'][] = [];
+    s.on('change', (c: StoreChange) => statuses.push(c.status));
+    s.applySets(snap([set('a')]));
+    await s.flush();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(statuses[statuses.length - 1]?.lastWrittenAt).toBe(
+      new Date(`${day}T12:00:00`).toISOString()
+    );
+
+    (s as unknown as { state: StoreState }).state = { ...emptyState(), source: SRC };
+    s.putPriceSources([{ id: 'x' }]);
+    await s.flush();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(statuses[statuses.length - 1]?.error).toMatch(/Did not replace the copy of 1 sets/);
+  });
+
   it('never writes an empty copy over a non-empty one by itself (last line of defence)', async () => {
     const s = store();
     await s.open(SUB);

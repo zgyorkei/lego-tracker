@@ -15,8 +15,9 @@
 // Guards, because this copy is the backup when Firebase breaks:
 //   - sets disappear only on a snapshot the server confirmed (fromCache false);
 //   - a snapshot that would remove more than max(3, 10%) of the synced sets,
-//     empty the copy, or that comes from another project or account, is held
-//     for the user, and nothing is pushed while one is held;
+//     empty the copy, or that comes from another project, database or account,
+//     is held for the user, and nothing is pushed while one is held; a cached
+//     snapshot never clears a hold;
 //   - (localStore) an empty store is never written over a non-empty one.
 import { isSetUpdatableField } from './setFields';
 
@@ -44,10 +45,20 @@ export interface HeldSnapshot {
   reason: 'mass-removal' | 'different-source';
   /** When it was first held. */
   at: string;
+  /** Where the held snapshot came from. */
   source: RemoteSource;
+  /** different-source: where this copy came from (holds saved before 2026-11-05 lack it). */
+  from?: RemoteSource | null;
+  /**
+   * different-source: the new source's server has answered. A snapshot from
+   * the SDK's cache says nothing about it (a database that does not exist
+   * yields an empty one), so until then the copy is not started again from it.
+   * Mass-removal holds come from server snapshots only.
+   */
+  confirmed?: boolean;
   /** mass-removal: the synced sets the snapshot no longer has. */
   removeIds: string[];
-  /** How many sets the held snapshot had. */
+  /** How many sets the held snapshot had (different-source: 0 until confirmed). */
   remoteCount: number;
   /** different-source: the user chose to keep this copy, so stop asking. */
   dismissed?: boolean;
@@ -167,20 +178,32 @@ const isSynced = (s: StoredSet) => s.base !== null && !s.deleted;
 export function applyRemote(state: StoreState, snap: RemoteSetsSnapshot): ApplyResult {
   const remote = snap.sets.map(stripUserId);
 
-  // Another project or account: never merged without the user.
+  // Another project, database or account: never merged without the user.
   if (state.source && !sameSource(state.source, snap.source)) {
     const anySynced = Object.values(state.sets).some((s) => s.base !== null);
     if (anySynced) {
-      const held: HeldSnapshot =
+      const prev =
         state.held?.reason === 'different-source' && sameSource(state.held.source, snap.source)
-          ? { ...state.held, remoteCount: remote.length }
-          : {
-              reason: 'different-source',
-              at: snap.at,
-              source: snap.source,
-              removeIds: [],
-              remoteCount: remote.length,
-            };
+          ? state.held
+          : null;
+      // Only the new source's server can confirm what it holds.
+      const confirmed = !snap.fromCache || prev?.confirmed === true;
+      const held: HeldSnapshot = prev
+        ? {
+            ...prev,
+            from: prev.from ?? state.source,
+            confirmed,
+            remoteCount: snap.fromCache ? prev.remoteCount : remote.length,
+          }
+        : {
+            reason: 'different-source',
+            at: snap.at,
+            source: snap.source,
+            from: state.source,
+            confirmed,
+            removeIds: [],
+            remoteCount: snap.fromCache ? 0 : remote.length,
+          };
       return { state: { ...state, held }, changed: [], removed: [] };
     }
   }
@@ -255,7 +278,9 @@ export function applyRemote(state: StoreState, snap: RemoteSetsSnapshot): ApplyR
       sets,
       history,
       pendingHistory,
-      held,
+      // Only the server decides a hold: a cached snapshot (going offline, say)
+      // neither makes nor clears one, so nothing is pushed until the user answers.
+      held: snap.fromCache ? state.held : held,
       lastRemoteAt: snap.fromCache ? state.lastRemoteAt : snap.at,
     },
     changed,
@@ -271,8 +296,9 @@ export function applyRemote(state: StoreState, snap: RemoteSetsSnapshot): ApplyR
  * again), so later snapshots no longer try to remove them.
  *
  * different-source: 'delete' drops this copy and starts again from the new
- * project or account (the next snapshot fills it); 'keep' keeps this copy and
- * stops asking, while nothing from the new source is merged.
+ * project, database or account (the next snapshot fills it), and is refused
+ * until that source's server has answered; 'keep' keeps this copy and stops
+ * asking, while nothing from the new source is merged.
  */
 export function resolveHeld(state: StoreState, choice: 'delete' | 'keep'): ApplyResult {
   const held = state.held;
@@ -299,6 +325,8 @@ export function resolveHeld(state: StoreState, choice: 'delete' | 'keep'): Apply
   }
 
   if (choice === 'delete') {
+    // A source that never answered may not exist at all (a mistyped database).
+    if (held.confirmed !== true) return { state, changed: [], removed: [] };
     const removed = Object.keys(state.sets);
     return {
       state: { ...emptyState(), source: held.source, readBudget: state.readBudget },

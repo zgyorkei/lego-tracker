@@ -131,10 +131,57 @@ describe('applyRemote', () => {
     expect(removed).toEqual([]);
     expect(state.sets).toEqual(s1.sets);
     expect(state.source).toEqual(SRC);
-    expect(state.held).toMatchObject({ reason: 'different-source', source: other, remoteCount: 1 });
+    expect(state.held).toMatchObject({
+      reason: 'different-source',
+      source: other,
+      from: SRC,
+      confirmed: true,
+      remoteCount: 1,
+    });
 
     const otherDb = applyRemote(s1, snap([], { source: { ...SRC, databaseId: 'named' } }));
     expect(otherDb.state.held?.reason).toBe('different-source');
+  });
+
+  it('holds a cached snapshot from another source as unconfirmed, until its server answers', () => {
+    // A mistyped database: Firestore never answers, the SDK serves its empty cache.
+    const wrong = { ...SRC, databaseId: 'no-such-database' };
+    const s1 = applyLocal(withSets(3), update('1', { name: 'Mine' })).state;
+    expect(planPush(s1)).toHaveLength(1);
+    const cached = applyRemote(s1, snap([], { source: wrong, fromCache: true, at: 'T1' })).state;
+    expect(cached.sets).toEqual(s1.sets);
+    expect(cached.held).toMatchObject({
+      reason: 'different-source',
+      source: wrong,
+      from: SRC,
+      confirmed: false,
+      remoteCount: 0,
+      at: 'T1',
+    });
+    expect(planPush(cached)).toEqual([]);
+
+    const answered = applyRemote(cached, snap([set('9')], { source: wrong, at: 'T2' })).state;
+    expect(answered.held).toMatchObject({ confirmed: true, remoteCount: 1, at: 'T1' });
+    // A later cached snapshot does not take the confirmation back.
+    const again = applyRemote(answered, snap([], { source: wrong, fromCache: true })).state;
+    expect(again.held).toMatchObject({ confirmed: true, remoteCount: 1 });
+  });
+
+  it('never lets a cached snapshot clear a hold', () => {
+    const edited = applyLocal(withSets(5), update('1', { name: 'Mine' })).state;
+    const massHeld = applyRemote(edited, snap([set('1')])).state;
+    expect(massHeld.held?.reason).toBe('mass-removal');
+    const offline = applyRemote(massHeld, snap([set('1')], { fromCache: true })).state;
+    expect(offline.held).toEqual(massHeld.held);
+    expect(planPush(offline)).toEqual([]);
+
+    // Back on the copy's own database: only its server lifts the hold.
+    const wrong = { ...SRC, databaseId: 'no-such-database' };
+    const sourceHeld = applyRemote(withSets(3), snap([], { source: wrong, fromCache: true })).state;
+    const backCached = applyRemote(sourceHeld, snap([], { fromCache: true })).state;
+    expect(backCached.held?.reason).toBe('different-source');
+    const backServer = applyRemote(backCached, snap(ids(3).map((i) => set(i)))).state;
+    expect(backServer.held).toBeNull();
   });
 
   it('adopts a new source when nothing here came from the old one', () => {
@@ -213,6 +260,19 @@ describe('resolveHeld', () => {
     expect(
       applyRemote(fresh.state, snap([set('9')], { source: other })).state.sets['9']
     ).toBeDefined();
+  });
+
+  it("different source: 'delete' is refused until the new source's server has answered", () => {
+    const wrong = { ...SRC, databaseId: 'no-such-database' };
+    const held = applyRemote(withSets(3), snap([], { source: wrong, fromCache: true })).state;
+    const refused = resolveHeld(held, 'delete');
+    expect(refused.state).toBe(held);
+    expect(refused.removed).toEqual([]);
+    // Older saved holds have no `confirmed`: treated as not answered.
+    const old: StoreState = { ...held, held: held.held && { ...held.held, confirmed: undefined } };
+    expect(resolveHeld(old, 'delete').state).toBe(old);
+    // 'keep' is still possible.
+    expect(resolveHeld(held, 'keep').state.held?.dismissed).toBe(true);
   });
 
   it("different source: 'keep' keeps this copy and stops asking, still merging nothing", () => {

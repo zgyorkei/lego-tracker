@@ -23,6 +23,15 @@ vi.mock('firebase/firestore', () => ({
   serverTimestamp: () => 'SERVER_TIMESTAMP',
 }));
 vi.mock('../lib/firebase', () => ({ getDb: () => ({}) }));
+const missingDb = vi.hoisted(() => ({
+  listeners: [] as ((id: string, message: string) => void)[],
+}));
+vi.mock('../lib/firestoreLog', () => ({
+  onMissingDatabase: (l: (id: string, message: string) => void) => {
+    missingDb.listeners.push(l);
+    return () => missingDb.listeners.splice(missingDb.listeners.indexOf(l), 1);
+  },
+}));
 
 const { createFirestoreBackend } = await import('./firestoreBackend');
 
@@ -69,6 +78,33 @@ describe('createFirestoreBackend', () => {
     const err = onError.mock.calls[0][0];
     expect(err).toBeInstanceOf(DataError);
     expect(err.message).toBe(ACCESS);
+  });
+
+  it('reports a missing database once, instead of showing its empty cache as no sets', () => {
+    missingDb.listeners.length = 0;
+    fs.onSnapshot.mockReturnValueOnce(() => {});
+    const onSets = vi.fn();
+    const onError = vi.fn();
+    const unsubscribe = createFirestoreBackend('uid-1').subscribeSets(onSets, onError);
+    const next = fs.onSnapshot.mock.calls[0][1];
+    const snapshot = (fromCache: boolean) => ({ forEach: () => {}, metadata: { fromCache } });
+
+    for (const l of [...missingDb.listeners]) l('typo', 'warning');
+    for (const l of [...missingDb.listeners]) l('typo', 'warning');
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0]).toMatchObject({
+      name: 'DataError',
+      code: 'not-found',
+      message: expect.stringContaining('"typo" was not found'),
+    });
+    next(snapshot(true));
+    expect(onSets).not.toHaveBeenCalled();
+    // The server answered after all: back to normal.
+    next(snapshot(false));
+    expect(onSets).toHaveBeenCalledWith([]);
+
+    unsubscribe();
+    expect(missingDb.listeners).toHaveLength(0);
   });
 
   it('writes sets with the uid and server timestamps', async () => {

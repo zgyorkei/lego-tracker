@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { HardDrive } from 'lucide-react';
 import { Modal } from './Modal';
-import { backupPill, heldExplanation } from '../lib/localBackupText';
+import { backupPill, changes, heldActions, heldExplanation } from '../lib/localBackupText';
 import { stepsFor } from '../lib/dataHealth';
 import type { DesktopSyncState } from '../hooks/useDesktopSync';
 
@@ -24,6 +24,7 @@ export function StorageStatus({ backup }: { backup: DesktopSyncState }) {
   const healthLine = health.kind === 'ok' ? null : stepsFor(health.kind).title;
   const explanation = status ? heldExplanation(status) : null;
   const held = status?.held;
+  const actions = held ? heldActions(held) : null;
 
   const answer = async (choice: 'delete' | 'keep') => {
     setBusy(true);
@@ -54,25 +55,25 @@ export function StorageStatus({ backup }: { backup: DesktopSyncState }) {
               to Firebase, and changes made elsewhere come back here.
             </p>
 
-            {held && explanation && !held.dismissed && (
+            {held && actions && explanation && !held.dismissed && (
               <div role="alert" className="mb-4 border-2 border-lego-red bg-red-50 rounded-lg p-3">
                 <p className="font-bold text-sm mb-3">{explanation}</p>
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    disabled={busy}
-                    onClick={() => void answer('delete')}
-                    className="px-3 py-1.5 border-2 border-black rounded font-black text-xs uppercase bg-white"
-                  >
-                    {held.reason === 'mass-removal'
-                      ? 'Delete them here too'
-                      : 'Start again from this project'}
-                  </button>
+                  {actions.remove && (
+                    <button
+                      disabled={busy}
+                      onClick={() => void answer('delete')}
+                      className="px-3 py-1.5 border-2 border-black rounded font-black text-xs uppercase bg-white"
+                    >
+                      {actions.remove}
+                    </button>
+                  )}
                   <button
                     disabled={busy}
                     onClick={() => void answer('keep')}
                     className="px-3 py-1.5 border-2 border-black rounded font-black text-xs uppercase bg-lego-yellow"
                   >
-                    {held.reason === 'mass-removal' ? 'Keep them here' : 'Keep this copy'}
+                    {actions.keep}
                   </button>
                 </div>
               </div>
@@ -89,7 +90,7 @@ export function StorageStatus({ backup }: { backup: DesktopSyncState }) {
                 <dt className="font-bold">Sets</dt>
                 <dd>{status.sets}</dd>
                 <dt className="font-bold">Waiting to sync</dt>
-                <dd>{status.pending ? ` changes` : 'nothing'}</dd>
+                <dd>{status.pending ? changes(status.pending) : 'nothing'}</dd>
                 <dt className="font-bold">Price history</dt>
                 <dd>
                   {status.historiesComplete} of {status.historiesTotal} sets copied (

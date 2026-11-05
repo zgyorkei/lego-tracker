@@ -345,6 +345,8 @@ export class LocalStore extends EventEmitter {
   resolveHeld(choice: 'delete' | 'keep'): StoreStatus {
     if (choice !== 'delete' && choice !== 'keep') throw new Error('Unknown choice');
     const result = resolveHeld(this.state, choice);
+    // Refused (a source that never answered) or nothing held: the guard stays.
+    if (result.state === this.state) return this.status();
     // The user asked for it, so an empty copy may replace the one on disk.
     if (choice === 'delete') this.allowEmptyOnce = true;
     this.commit(result);
@@ -440,20 +442,26 @@ export class LocalStore extends EventEmitter {
   private persist(): Promise<void> {
     const write = async () => {
       if (!this.sub || !this.unsaved) return;
-      if (!this.mayWrite()) return;
-      const json = JSON.stringify(this.state);
       try {
-        // Yesterday's file becomes the day's backup before today's first write.
-        this.lastBackupDay = await rotateDailyBackup(
-          this.stateFile,
-          this.backupDir,
-          localDay(this.now())
-        );
-        await writeFileAtomic(this.stateFile, json);
-        this.markWritten();
-      } catch (err) {
-        this.error = `Could not write the copy on this PC: ${err instanceof Error ? err.message : String(err)}`;
-        console.error('Local store:', err);
+        if (!this.mayWrite()) return;
+        const json = JSON.stringify(this.state);
+        try {
+          // Yesterday's file becomes the day's backup before today's first write.
+          this.lastBackupDay = await rotateDailyBackup(
+            this.stateFile,
+            this.backupDir,
+            localDay(this.now())
+          );
+          await writeFileAtomic(this.stateFile, json);
+          this.markWritten();
+        } catch (err) {
+          this.error = `Could not write the copy on this PC: ${err instanceof Error ? err.message : String(err)}`;
+          console.error('Local store:', err);
+        }
+      } finally {
+        // The page's status was sent before this write: send it again, so
+        // "saved on this PC" and a refused or failed write reach the page.
+        this.queueChange([], []);
       }
     };
     this.writing = this.writing.then(write, write);

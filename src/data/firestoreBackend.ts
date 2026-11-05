@@ -15,11 +15,12 @@ import {
 } from 'firebase/firestore';
 import { getDb } from '../lib/firebase';
 import { OperationType, toDataError } from '../lib/dataErrors';
+import { onMissingDatabase } from '../lib/firestoreLog';
 import { toStoredSource } from '../lib/priceSources';
 import { withSetDates } from '../lib/setDates';
 import type { LegoSet, PriceHistory, PriceSource } from '../types';
 import { withIsoDates } from '../../lib/data/timestamps';
-import type { DataBackend } from './types';
+import { DataError, type DataBackend } from './types';
 
 const SETTINGS_COLLECTION = 'userSettings';
 
@@ -49,9 +50,25 @@ export function createFirestoreBackend(uid: string): DataBackend {
     capabilities: { registries: true, publicPlannedList: true, firestoreWorker: true },
 
     subscribeSets(onSets, onError) {
-      return onSnapshot(
+      // Firestore only logs a missing database and serves its empty cache, so
+      // without this the collection would just look empty (firestoreLog.ts).
+      let missing = false;
+      const offMissing = onMissingDatabase((id) => {
+        if (missing) return;
+        missing = true;
+        onError(
+          new DataError(
+            `The Firestore database "${id}" was not found. Check the database name in the Firebase config.`,
+            'not-found'
+          )
+        );
+      });
+      const off = onSnapshot(
         setsQuery(uid),
         (snapshot) => {
+          // While the database is missing, a cached snapshot says nothing.
+          if (missing && snapshot.metadata.fromCache) return;
+          missing = false;
           const sets: LegoSet[] = [];
           snapshot.forEach((d) => {
             sets.push(setFromDoc(d));
@@ -60,6 +77,10 @@ export function createFirestoreBackend(uid: string): DataBackend {
         },
         (err) => onError(toDataError(err, OperationType.LIST, 'sets'))
       );
+      return () => {
+        offMissing();
+        off();
+      };
     },
 
     async addSet(setData) {

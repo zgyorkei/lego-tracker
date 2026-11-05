@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { backupPill, heldExplanation, syncSummary } from './localBackupText';
+import { backupPill, changes, heldActions, heldExplanation, syncSummary } from './localBackupText';
 import type { StoreStatus } from '../../lib/data/storeBridge';
+import type { HeldSnapshot, RemoteSource } from '../../lib/data/store';
 import type { Health } from './dataHealth';
 
 const OK: Health = { kind: 'ok' };
@@ -77,5 +78,56 @@ describe('heldExplanation', () => {
       /no longer has 4 of the 57 sets/
     );
     expect(heldExplanation(status({ held: held('different-source') }))).toMatch(/other-project/);
+  });
+
+  const MINE: RemoteSource = { projectId: 'p', databaseId: 'db-1', uid: 'u1' };
+  const moved = (to: Partial<RemoteSource>, confirmed: boolean, remoteCount = 0): HeldSnapshot => ({
+    reason: 'different-source',
+    at: 'x',
+    source: { ...MINE, ...to },
+    from: MINE,
+    confirmed,
+    removeIds: [],
+    remoteCount,
+  });
+
+  it('names what changed: the database, the project or the account', () => {
+    const db = heldExplanation(status({ held: moved({ databaseId: 'typo' }, false) }));
+    expect(db).toMatch(
+      /from the Firestore database db-1, but the app now uses typo \(same project, p\)/
+    );
+    expect(db).toMatch(/The new database has not answered yet/);
+    expect(db).toMatch(/Settings\.\.\. in the tray menu/);
+    expect(heldExplanation(status({ held: moved({ projectId: 'q' }, true, 1) }))).toMatch(
+      /from the Firebase project p, but the app now uses q\. The new project holds 1 set\./
+    );
+    expect(heldExplanation(status({ held: moved({ uid: 'u2' }, true, 4) }))).toMatch(
+      /different Firebase account of this project.*The new account holds 4 sets/
+    );
+  });
+});
+
+describe('heldActions', () => {
+  it('offers starting again only once the new source has answered', () => {
+    const base = { at: 'x', removeIds: [], remoteCount: 0 };
+    const src: RemoteSource = { projectId: 'p', databaseId: 'db-1', uid: 'u1' };
+    const typo: HeldSnapshot = {
+      ...base,
+      reason: 'different-source',
+      source: { ...src, databaseId: 'typo' },
+      from: src,
+      confirmed: false,
+    };
+    expect(heldActions(typo)).toEqual({ remove: null, keep: 'Keep this copy' });
+    expect(heldActions({ ...typo, confirmed: true }).remove).toBe('Start again from this database');
+    expect(heldActions(held('mass-removal'))).toEqual({
+      remove: 'Delete them here too',
+      keep: 'Keep them here',
+    });
+  });
+
+  it('counts changes', () => {
+    expect(changes(1)).toBe('1 change');
+    expect(changes(2)).toBe('2 changes');
   });
 });

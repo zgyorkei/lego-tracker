@@ -1,9 +1,11 @@
 import type { StoreStatus } from '../../lib/data/storeBridge';
+import type { HeldSnapshot, RemoteSource } from '../../lib/data/store';
 import { isProblem, stepsFor, type Health } from './dataHealth';
 
 export type PillTone = 'ok' | 'busy' | 'problem';
 
-const changes = (n: number) => `${n} ${n === 1 ? 'change' : 'changes'}`;
+/** "1 change", "3 changes". */
+export const changes = (n: number) => `${n} ${n === 1 ? 'change' : 'changes'}`;
 
 /** The header pill for the copy on this PC and its sync with Firebase. */
 export function backupPill(
@@ -51,8 +53,46 @@ export function heldExplanation(status: StoreStatus): string | null {
       'Nothing is sent to Firebase, and this PC keeps them, until you decide.'
     );
   }
-  return (
-    `This copy came from a different Firebase project or account than the one signed in now ` +
-    `(${held.source.projectId}). Nothing from the new one is mixed in, and nothing is sent to it, until you decide.`
-  );
+  const { from, source: to } = held;
+  const what = changedPart(from, to);
+  let came: string;
+  if (from && what === 'project')
+    came = `This copy came from the Firebase project ${from.projectId}, but the app now uses ${to.projectId}.`;
+  else if (from && what === 'database')
+    came = `This copy came from the Firestore database ${from.databaseId}, but the app now uses ${to.databaseId} (same project, ${to.projectId}).`;
+  else if (what === 'account')
+    came =
+      'This copy came from a different Firebase account of this project than the one signed in now.';
+  else
+    came = `This copy came from a different Firebase project, database or account than the one signed in now (${to.projectId}).`;
+  const answered = held.confirmed
+    ? ` The new ${what ?? 'one'} holds ${held.remoteCount} ${held.remoteCount === 1 ? 'set' : 'sets'}.`
+    : ` The new ${what ?? 'one'} has not answered yet, so what it holds is not known; if the setting is a mistake, correct it under Settings... in the tray menu.`;
+  return `${came}${answered} Nothing from it is mixed in, and nothing is sent to it, until you decide.`;
+}
+
+/** What differs between where the copy came from and where the app is now. */
+function changedPart(
+  from: RemoteSource | null | undefined,
+  to: RemoteSource
+): 'project' | 'database' | 'account' | null {
+  if (!from) return null;
+  if (from.projectId !== to.projectId) return 'project';
+  if (from.databaseId !== to.databaseId) return 'database';
+  if (from.uid !== to.uid) return 'account';
+  return null;
+}
+
+/**
+ * The answers a held snapshot offers. Starting again from a new source is
+ * offered only once its server has answered: a mistyped database never does.
+ */
+export function heldActions(held: HeldSnapshot): { remove: string | null; keep: string } {
+  if (held.reason === 'mass-removal')
+    return { remove: 'Delete them here too', keep: 'Keep them here' };
+  const what = changedPart(held.from, held.source) ?? 'project';
+  return {
+    remove: held.confirmed ? `Start again from this ${what}` : null,
+    keep: 'Keep this copy',
+  };
 }

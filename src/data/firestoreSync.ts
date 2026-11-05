@@ -5,7 +5,7 @@ import {
   doc,
   documentId,
   getDoc,
-  getDocs,
+  getDocsFromServer,
   limit,
   onSnapshot,
   orderBy,
@@ -21,6 +21,7 @@ import {
 } from 'firebase/firestore';
 import { getDb } from '../lib/firebase';
 import { classifyFirebaseError, isProblem, type Health } from '../lib/dataHealth';
+import { onMissingDatabase } from '../lib/firestoreLog';
 import {
   pushKey,
   type HistoryRow,
@@ -41,7 +42,9 @@ import { historyRowFromDoc, setFromDoc, setsQuery } from './firestoreBackend';
 //   push  whatever changed here (planPush in lib/data/store.ts), a few writes
 //         at a time, each acknowledged back to the copy.
 // Firestore's own offline cache is not used: the copy on this PC is the one
-// that survives a restart, so the SDK keeps its default memory cache.
+// that survives a restart, so the SDK keeps its default memory cache. When the
+// SDK thinks it is offline, a plain getDocs answers from that cache, often
+// empty, so the copies read here come from the server or fail.
 
 const HISTORY_PAGE = 200;
 const HISTORY_PAUSE_MS = 250;
@@ -82,14 +85,30 @@ export function startFirestoreSync(opts: SyncOptions): Sync {
   let listeners: (() => void)[] = [];
   const timers: ReturnType<typeof setInterval>[] = [];
   let lastServerSnapshot: RemoteSetsSnapshot | null = null;
+  /** Firestore said its database does not exist (its warning), until it answers. */
+  let missingDatabase: string | null = null;
 
-  const setHealth = (h: Health) => {
+  const setHealth = (next: Health) => {
     if (stopped) return;
+    // To everything else a missing database looks like being offline.
+    const h: Health =
+      missingDatabase && (next.kind === 'ok' || next.kind === 'offline')
+        ? { kind: 'database-missing', detail: missingDatabase }
+        : next;
     if (h.kind === health.kind && h.detail === health.detail) return;
     health = h;
     opts.onHealth(h);
   };
   opts.onHealth(health);
+
+  const offMissingDatabase = onMissingDatabase((_id, message) => {
+    missingDatabase = message;
+    setHealth({ kind: 'database-missing', detail: message });
+  });
+  /** Firestore answered, so its database exists. */
+  const databaseAnswered = () => {
+    missingDatabase = null;
+  };
 
   const report = (what: string) => (err: unknown) => {
     if (stopped) return;
@@ -131,7 +150,8 @@ export function startFirestoreSync(opts: SyncOptions): Sync {
         if (cursor?.lastDate && cursor.lastId)
           constraints.push(startAfter(cursor.lastDate, cursor.lastId));
         constraints.push(limit(size));
-        const snap = await getDocs(
+        // From the server: a cached empty page would mark the copy complete.
+        const snap = await getDocsFromServer(
           query(collection(db, 'sets', setId, 'priceHistory'), ...constraints)
         );
         const rows = snap.docs.map((d) => historyRowFromDoc(d) as unknown as HistoryRow);
@@ -159,12 +179,13 @@ export function startFirestoreSync(opts: SyncOptions): Sync {
   async function backupShared() {
     if (refused) return;
     try {
-      const registries = await getDocs(
+      // From the server: cached empty answers would overwrite the backups.
+      const registries = await getDocsFromServer(
         query(collection(db, 'registries'), where('userId', '==', uid))
       );
       const withReservations = await Promise.all(
         registries.docs.map(async (r) => {
-          const res = await getDocs(collection(db, 'registries', r.id, 'reservations'));
+          const res = await getDocsFromServer(collection(db, 'registries', r.id, 'reservations'));
           return {
             id: r.id,
             ...r.data(),
@@ -173,7 +194,7 @@ export function startFirestoreSync(opts: SyncOptions): Sync {
         })
       );
       await store.putBackup('registries', withReservations);
-      const lists = await getDocs(
+      const lists = await getDocsFromServer(
         query(collection(db, 'plannedLists'), where('userId', '==', uid), limit(1))
       );
       const list = lists.docs[0];
@@ -203,6 +224,7 @@ export function startFirestoreSync(opts: SyncOptions): Sync {
           };
           if (!snapshot.fromCache) {
             lastServerSnapshot = snapshot;
+            databaseAnswered();
             if (health.kind !== 'ok' && !refused) setHealth({ kind: 'ok' });
           }
           void apply(snapshot).then(() => {
@@ -319,6 +341,7 @@ export function startFirestoreSync(opts: SyncOptions): Sync {
         }
       };
       await Promise.all(Array.from({ length: Math.min(MAX_IN_FLIGHT, queue.length) }, worker));
+      if (!failed && ops.length) databaseAnswered();
       if (!failed && ops.length && isProblem(health) && !refused) setHealth({ kind: 'ok' });
     } catch (err) {
       console.error('Sync: push round failed', err);
@@ -396,6 +419,7 @@ export function startFirestoreSync(opts: SyncOptions): Sync {
       window.removeEventListener('offline', onOffline);
       window.removeEventListener('focus', onFocus);
       offChange();
+      offMissingDatabase();
     },
     retryNow,
     async resync() {

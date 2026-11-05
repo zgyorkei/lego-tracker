@@ -63,14 +63,23 @@ local edit wins per field), deletes win both ways, creates use Firestore-style
 ids and wait for a server snapshot, history waits for its set, `userId` is
 never stored (the pusher writes the uid); removals only from server-confirmed
 snapshots, and a snapshot that would remove more than max(3, 10%) of the
-synced sets, empty the copy, or come from another project or account is held
-(asked about in StorageStatus) with nothing pushed meanwhile. `LocalStore`
+synced sets, empty the copy, or come from another project, database or
+account is held (asked about in StorageStatus) with nothing pushed meanwhile.
+A cached snapshot never makes or lifts a hold, except that a new source's
+cached one holds as unconfirmed: "start again" from a source waits until its
+server has answered (a mistyped database never does). `LocalStore`
 never writes an empty copy over a non-empty one, keeps 7 daily backups, and
 checks local changes against the rules' shapes (a create needs `name`).
 `LocalBackend` holds the set list back until the copy is real, which
 `usePlannedList`'s ready gate relies on. Firebase problems are classified in
 `src/lib/dataHealth.ts` (offline is a pill, the rest a `DataStatusBanner`);
-on the desktop an allowlist refusal is a health state, not a sign-out. Local
+on the desktop an allowlist refusal is a health state, not a sign-out.
+Firestore 12 reports a missing database only as a logged warning and then
+looks offline, so `src/lib/firestoreLog.ts` (`onLog`) turns it into that
+health state, and into a `useSets` error on the website. With the SDK's
+memory cache a plain `getDocs` answers from the (empty) cache when it thinks
+it is offline, so what the sync copies (history, backups) is read with
+`getDocsFromServer`. Local
 data is never served over HTTP, the IPC answers only the app's own page, and
 nothing the page sends becomes a path (`isGoogleSub`, `isValidDocId`).
 `SET_UPDATABLE_FIELDS` (`lib/data/setFields.ts`) must match the sets update
