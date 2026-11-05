@@ -10,6 +10,7 @@ import {
   type StoreState,
 } from '../../../lib/data/store';
 import type { StoreChange } from '../../../lib/data/storeBridge';
+import { validateOpBatch } from '../../../lib/data/ops';
 
 const SUB = '112233445566778899';
 const SRC = { projectId: 'p', databaseId: '(default)', uid: 'u1' };
@@ -402,6 +403,62 @@ describe('LocalStore, local first', () => {
     expect(s.ackPush(op).pending).toBe(0);
     expect(s.planPush()).toEqual([]);
   });
+
+  it('saves the copy empty when the user deletes the last set, and it stays empty', async () => {
+    const s = store();
+    await s.open(SUB);
+    await s.applyLocal({ type: 'create', id: NEW_ID, value: newSet });
+    await s.flush();
+    expect(Object.keys(stateOnDisk().sets)).toEqual([NEW_ID]);
+    await s.applyLocal({ type: 'delete', id: NEW_ID });
+    await s.flush();
+    expect(stateOnDisk().sets).toEqual({});
+    expect(s.status().error).toBeNull();
+
+    const again = store();
+    expect((await again.open(SUB)).sets).toBe(0);
+    // The choice was used up: a bug emptying a copy that shows sets is refused again.
+    await again.applyLocal({ type: 'create', id: NEW_ID, value: newSet });
+    await again.flush();
+    (again as unknown as { state: StoreState }).state = emptyState();
+    again.putPriceSources([{ id: 'x' }]);
+    await again.flush();
+    expect(Object.keys(stateOnDisk().sets)).toEqual([NEW_ID]);
+    expect(again.status().error).toMatch(/Did not replace the copy of 1 sets/);
+  }, 20_000);
+
+  it('with Firebase, writes the copy empty once Firestore confirms the last deletes', async () => {
+    const s = store();
+    await s.open(SUB);
+    s.applySets(snap([set('a'), set('b')]));
+    await s.flush();
+    await s.applyLocal({ type: 'delete', id: 'a' });
+    await s.applyLocal({ type: 'delete', id: 'b' });
+    for (const op of s.planPush()) s.ackPush(op);
+    await s.flush();
+    // The snapshot that confirms the deletes drops them; nothing to ask about.
+    expect(s.applySets(snap([])).held).toBeNull();
+    await s.flush();
+    expect(stateOnDisk().sets).toEqual({});
+    expect(s.status().error).toBeNull();
+  }, 20_000);
+
+  it('saves the copy empty when a Drive batch deletes the last sets', async () => {
+    const s = store();
+    await s.open(SUB);
+    await s.applyLocal({ type: 'create', id: NEW_ID, value: newSet });
+    await s.flush();
+    const checked = validateOpBatch({
+      batchId: 'batch-0001',
+      createdAt: '2026-11-05T10:00:00.000Z',
+      ops: [{ type: 'delete', id: NEW_ID }],
+    });
+    if (!('batch' in checked)) throw new Error(checked.error);
+    expect((await s.applyOpsBatch(checked.batch)).rejected).toEqual([]);
+    await s.flush();
+    expect(stateOnDisk().sets).toEqual({});
+    expect(s.status().error).toBeNull();
+  }, 20_000);
 
   it('reports whether the server has said what price sources it holds', async () => {
     const s = store();

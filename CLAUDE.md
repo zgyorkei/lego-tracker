@@ -69,7 +69,10 @@ account is held (asked about in StorageStatus) with nothing pushed meanwhile.
 A cached snapshot never makes or lifts a hold, except that a new source's
 cached one holds as unconfirmed: "start again" from a source waits until its
 server has answered (a mistyped database never does). `LocalStore`
-never writes an empty copy over a non-empty one, keeps 7 daily backups, and
+never writes a copy that shows no sets over one that does unless the user
+emptied it (deleted the last sets, in the app or by a Drive batch, or
+answered "delete"; deletes awaiting Firestore's confirmation count as gone),
+keeps 7 daily backups, and
 checks local changes against the rules' shapes (a create needs `name`).
 `LocalBackend` holds the set list back until the copy is real, which
 `usePlannedList`'s ready gate relies on. Firebase problems are classified in

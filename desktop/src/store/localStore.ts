@@ -187,6 +187,9 @@ const listSources = (list: unknown[] | null): PayloadSource[] =>
       typeof s.currency === 'string'
   );
 
+/** The sets the app shows: a deleted set waiting for Firestore's confirmation is not one. */
+const shownSets = (state: StoreState) => Object.values(state.sets).filter((s) => !s.deleted).length;
+
 function checkHistoryRows(rows: HistoryRow[]): void {
   if (!Array.isArray(rows) || rows.length > MAX_HISTORY_ROWS_PER_PAGE)
     throw new Error('History page is not a list of at most 1000 rows');
@@ -199,8 +202,9 @@ function checkHistoryRows(rows: HistoryRow[]): void {
 export class LocalStore extends EventEmitter {
   private sub: string | null = null;
   private state: StoreState = emptyState();
-  /** How many sets the copy on disk holds (the empty-over-non-empty guard). */
+  /** How many sets the copy on disk shows (the empty-over-non-empty guard). */
   private setsOnDisk = 0;
+  /** The user emptied the copy (deleted the last sets, or answered "delete"). */
   private allowEmptyOnce = false;
   private unsaved = false;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -243,7 +247,7 @@ export class LocalStore extends EventEmitter {
     this.sub = sub;
     const loaded = await readJsonFile<StoreState>(this.stateFile);
     this.state = loaded?.version === 1 ? { ...emptyState(), ...loaded } : emptyState();
-    this.setsOnDisk = loaded?.version === 1 ? Object.keys(this.state.sets).length : 0;
+    this.setsOnDisk = loaded?.version === 1 ? shownSets(this.state) : 0;
     this.unsaved = false;
     this.error = null;
     await fs.promises.mkdir(path.join(this.dir, 'history'), { recursive: true });
@@ -286,6 +290,11 @@ export class LocalStore extends EventEmitter {
         await writeFileAtomic(file, JSON.stringify(mergeHistory(existing, [row])));
         this.emit('history', setId);
       }
+      // The owner's own deletes, each one named in the batch (unlike a server
+      // snapshot, where a missing set may be a wrong or damaged database): they
+      // may empty the copy without asking, as deletes in the app do. The daily
+      // backups and the set-aside history are there if it was a mistake.
+      if (result.removed.length && shownSets(result.state) === 0) this.allowEmptyOnce = true;
       if (result.state !== this.state)
         this.commit({ state: result.state, changed: result.changed, removed: result.removed });
       return { rejected: result.rejected, refreshes: result.refreshes };
@@ -447,6 +456,9 @@ export class LocalStore extends EventEmitter {
         await writeFileAtomic(file, JSON.stringify(mergeHistory(existing, [row])));
         this.emit('history', setId);
       }
+      // Deleting the last sets is the user's choice: the copy may be empty now.
+      if (change.type === 'delete' && result.removed.length && shownSets(result.state) === 0)
+        this.allowEmptyOnce = true;
       this.commit(result);
       return this.status();
     };
@@ -576,10 +588,14 @@ export class LocalStore extends EventEmitter {
     }, PERSIST_DEBOUNCE_MS);
   }
 
-  /** The empty-over-non-empty guard. */
+  /**
+   * The empty-over-non-empty guard: a copy that shows sets is never replaced by
+   * one that shows none, unless the user emptied it. Deleted sets waiting for
+   * Firestore's confirmation do not count either way: they are deletions the
+   * user already made, and the confirming snapshot drops them.
+   */
   private mayWrite(): boolean {
-    const count = Object.keys(this.state.sets).length;
-    if (count === 0 && this.setsOnDisk > 0 && !this.allowEmptyOnce) {
+    if (shownSets(this.state) === 0 && this.setsOnDisk > 0 && !this.allowEmptyOnce) {
       this.error = `Did not replace the copy of ${this.setsOnDisk} sets on this PC with an empty one.`;
       console.error(`Local store: ${this.error}`);
       return false;
@@ -588,7 +604,7 @@ export class LocalStore extends EventEmitter {
   }
 
   private markWritten() {
-    this.setsOnDisk = Object.keys(this.state.sets).length;
+    this.setsOnDisk = shownSets(this.state);
     this.allowEmptyOnce = false;
     this.unsaved = false;
     this.lastWrittenAt = this.now().toISOString();
