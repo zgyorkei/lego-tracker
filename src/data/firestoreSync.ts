@@ -15,6 +15,7 @@ import {
   startAfter,
   updateDoc,
   where,
+  writeBatch,
   type DocumentData,
   type QueryConstraint,
   type UpdateData,
@@ -53,6 +54,10 @@ const SHARED_BACKUP_MS = 6 * 60 * 60 * 1000;
 const RETRY_MS = 5 * 60 * 1000;
 const PUSH_DEBOUNCE_MS = 500;
 const MAX_IN_FLIGHT = 4;
+// An upload ("On this PC only" to Firebase) brings hundreds of history rows:
+// from this many on they go in batched writes, this many rows per batch.
+const HISTORY_BATCH_FROM = 20;
+const HISTORY_BATCH_SIZE = 200;
 
 export interface SyncOptions {
   store: DesktopStoreBridge;
@@ -245,7 +250,7 @@ export function startFirestoreSync(opts: SyncOptions): Sync {
           if (snap.metadata.fromCache && !snap.exists()) return;
           const list = snap.data()?.priceSources;
           void store
-            .putPriceSources(Array.isArray(list) ? list : null)
+            .putPriceSources(Array.isArray(list) ? list : null, source)
             .catch((err) => console.error('Sync: could not copy price sources', err));
         },
         report('Following the price sources failed')
@@ -264,6 +269,15 @@ export function startFirestoreSync(opts: SyncOptions): Sync {
     if (pushTimer) clearTimeout(pushTimer);
     pushTimer = setTimeout(() => void pushRound(), PUSH_DEBOUNCE_MS);
   }
+
+  type HistoryOp = Extract<PushOp, { kind: 'history' }>;
+  const historyRef = (op: HistoryOp) => doc(db, 'sets', op.setId, 'priceHistory', op.row.id);
+  // Rows are create-only, and the rules want createdAt to be the server's time.
+  const historyData = (op: HistoryOp) => {
+    const row: Record<string, unknown> = { ...op.row };
+    delete row.id;
+    return withoutUndefined({ ...row, createdAt: serverTimestamp() });
+  };
 
   async function write(op: PushOp): Promise<void> {
     switch (op.kind) {
@@ -292,11 +306,9 @@ export function startFirestoreSync(opts: SyncOptions): Sync {
         await deleteDoc(doc(db, 'sets', op.id));
         return;
       case 'history': {
-        const ref = doc(db, 'sets', op.setId, 'priceHistory', op.row.id);
-        const row: Record<string, unknown> = { ...op.row };
-        delete row.id;
+        const ref = historyRef(op);
         try {
-          await setDoc(ref, withoutUndefined({ ...row, createdAt: serverTimestamp() }));
+          await setDoc(ref, historyData(op));
         } catch (err) {
           // Rows cannot be overwritten (no update rule), so a row that landed
           // before its acknowledgement was lost is refused: check it is there.
@@ -324,23 +336,51 @@ export function startFirestoreSync(opts: SyncOptions): Sync {
     try {
       const ops = (await store.planPush()).filter((op) => !inFlight.has(pushKey(op)));
       let failed = false;
-      const queue = [...ops];
+      const send = async (op: PushOp) => {
+        try {
+          await write(op);
+          onStatus(await store.ackPush(op));
+        } catch (err) {
+          failed = true;
+          report('Sending a change to Firebase failed')(err);
+        }
+      };
+      // planPush lists a set's rows only once the set is on the server, so a
+      // batch never holds a row whose set is still to be created.
+      const history = ops.filter((op): op is HistoryOp => op.kind === 'history');
+      const batched = history.length >= HISTORY_BATCH_FROM ? history : [];
+      const queue = ops.filter((op) => !batched.includes(op as HistoryOp));
       const worker = async () => {
         for (let op = queue.shift(); op && !stopped; op = queue.shift()) {
           const key = pushKey(op);
           inFlight.add(key);
           try {
-            await write(op);
-            onStatus(await store.ackPush(op));
-          } catch (err) {
-            failed = true;
-            report('Sending a change to Firebase failed')(err);
+            await send(op);
           } finally {
             inFlight.delete(key);
           }
         }
       };
       await Promise.all(Array.from({ length: Math.min(MAX_IN_FLIGHT, queue.length) }, worker));
+
+      for (let i = 0; i < batched.length && !stopped; i += HISTORY_BATCH_SIZE) {
+        const chunk = batched.slice(i, i + HISTORY_BATCH_SIZE);
+        const keys = chunk.map(pushKey);
+        for (const k of keys) inFlight.add(k);
+        try {
+          const batch = writeBatch(db);
+          for (const op of chunk) batch.set(historyRef(op), historyData(op));
+          await batch.commit();
+          for (const op of chunk) onStatus(await store.ackPush(op));
+        } catch (err) {
+          // One refused row fails the whole batch (a row that landed before,
+          // say): send this chunk row by row, which checks for those.
+          console.warn('Sync: a history batch was refused; sending its rows one by one', err);
+          for (const op of chunk) if (!stopped) await send(op);
+        } finally {
+          for (const k of keys) inFlight.delete(k);
+        }
+      }
       if (!failed && ops.length) databaseAnswered();
       if (!failed && ops.length && isProblem(health) && !refused) setHealth({ kind: 'ok' });
     } catch (err) {

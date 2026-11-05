@@ -119,6 +119,26 @@ describe('createLocalBackend', () => {
     expect(err.message).toBe('Could not save on this PC: Unknown set');
   });
 
+  it('on this PC only: an empty copy is real at once, and Firebase features are off', async () => {
+    const f = fakeStore(status());
+    const onSets = vi.fn();
+    const onSources = vi.fn();
+    const backend = createLocalBackend(f.store, '1', { localOnly: true });
+    expect(backend.capabilities).toEqual({
+      registries: false,
+      publicPlannedList: false,
+      firestoreWorker: false,
+    });
+    backend.subscribeSets(onSets, vi.fn());
+    backend.subscribePriceSources(onSources, vi.fn());
+    await tick();
+    await tick();
+    expect(onSets).toHaveBeenCalledWith([]);
+    // No server will ever answer: the copy's "none" is final, so defaults get seeded.
+    expect(onSources).toHaveBeenLastCalledWith(null, false);
+    expect(createLocalBackend(f.store, '1').capabilities.registries).toBe(true);
+  });
+
   it('reports price sources as not yet known until the server has answered', async () => {
     const f = fakeStore(status());
     const onSources = vi.fn();

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { motion } from 'motion/react';
 import { X, Check, Link as LinkIcon, RefreshCw, Trash2, Webhook } from 'lucide-react';
 import { Modal } from './Modal';
-import { plannedListApiUrl } from '../lib/plannedList';
+import { localPlannedListApiUrl, plannedListApiUrl } from '../lib/plannedList';
+import { isDesktopApp } from '../lib/platform';
 import type { PlannedListState } from '../hooks/usePlannedList';
 
 interface PlannedListDialogProps {
@@ -22,11 +23,19 @@ export function PlannedListDialog({ onClose, state }: PlannedListDialogProps) {
     createList,
     deleteList,
     syncNow,
+    local,
   } = state;
   const [copied, setCopied] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const apiUrl = list ? plannedListApiUrl(list.id) : null;
+  // On this PC only the desktop serves the list itself, to programs on this PC.
+  const apiUrl = list
+    ? local
+      ? localPlannedListApiUrl(list.id)
+      : plannedListApiUrl(list.id)
+    : null;
+  // With Firebase the desktop also answers for the same token from its copy.
+  const alsoHere = list && !local && isDesktopApp ? localPlannedListApiUrl(list.id) : null;
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -53,12 +62,21 @@ export function PlannedListDialog({ onClose, state }: PlannedListDialogProps) {
         <h2 className="text-2xl font-black text-gray-900 uppercase mb-2 flex items-center gap-2">
           <Webhook /> Planned Sets API
         </h2>
-        <p className="text-gray-500 font-bold mb-6 text-sm">
-          Publishes all of your planned sets as JSON so another application can fetch them, and the
-          sets you bought (day, price paid and the official price), which BrickBudget books as
-          expenses. The list stays in sync automatically while this app is open. Anyone with the
-          link can read it, so treat it like a password.
-        </p>
+        {local ? (
+          <p className="text-gray-500 font-bold mb-6 text-sm">
+            Serves all of your planned sets as JSON to other programs on this PC, and the sets you
+            bought (day, price paid and the official price), which BrickBudget books as expenses.
+            This PC answers while Brick Tracker runs, always with your sets as they are now. A link
+            other people can open needs Firebase. Treat the link like a password.
+          </p>
+        ) : (
+          <p className="text-gray-500 font-bold mb-6 text-sm">
+            Publishes all of your planned sets as JSON so another application can fetch them, and
+            the sets you bought (day, price paid and the official price), which BrickBudget books as
+            expenses. The list stays in sync automatically while this app is open. Anyone with the
+            link can read it, so treat it like a password.
+          </p>
+        )}
 
         {error && (
           <div
@@ -105,11 +123,23 @@ export function PlannedListDialog({ onClose, state }: PlannedListDialogProps) {
                 {copied ? 'Copied' : 'Copy'}
               </button>
             </div>
-            <p className="text-gray-500 font-bold text-xs mb-6">
-              {list.sets?.length ?? 0} of {plannedCount} planned sets and{' '}
-              {list.purchases?.length ?? 0} of {purchaseCount} purchases published, last synced{' '}
-              {new Date(list.updatedAt).toLocaleString()}.
-            </p>
+            {local ? (
+              <p className="text-gray-500 font-bold text-xs mb-6">
+                {plannedCount} planned sets and {purchaseCount} purchases, always current. This PC
+                only.
+              </p>
+            ) : (
+              <p className="text-gray-500 font-bold text-xs mb-6">
+                {list.sets?.length ?? 0} of {plannedCount} planned sets and{' '}
+                {list.purchases?.length ?? 0} of {purchaseCount} purchases published, last synced{' '}
+                {new Date(list.updatedAt).toLocaleString()}.
+                {alsoHere && (
+                  <span className="block mt-1 font-mono break-all">
+                    Programs on this PC can also use {alsoHere}
+                  </span>
+                )}
+              </p>
+            )}
 
             <div className="flex flex-wrap justify-between gap-3">
               {confirmingDelete ? (
@@ -136,13 +166,15 @@ export function PlannedListDialog({ onClose, state }: PlannedListDialogProps) {
                   <Trash2 size={14} /> Delete Link
                 </button>
               )}
-              <button
-                onClick={() => void syncNow()}
-                disabled={busy || !ready}
-                className="px-3 py-2 bg-lego-blue hover:brightness-110 text-white border-2 border-black rounded font-black text-xs uppercase flex items-center gap-2 transition-colors disabled:opacity-50"
-              >
-                <RefreshCw size={14} className={busy ? 'animate-spin' : ''} /> Sync Now
-              </button>
+              {!local && (
+                <button
+                  onClick={() => void syncNow()}
+                  disabled={busy || !ready}
+                  className="px-3 py-2 bg-lego-blue hover:brightness-110 text-white border-2 border-black rounded font-black text-xs uppercase flex items-center gap-2 transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw size={14} className={busy ? 'animate-spin' : ''} /> Sync Now
+                </button>
+              )}
             </div>
           </div>
         )}

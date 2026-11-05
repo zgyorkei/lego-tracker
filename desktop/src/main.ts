@@ -9,12 +9,20 @@ import { googleSignIn, loadOAuthClient } from './oauth';
 import { readAppConfig, runSetup } from './setup';
 import { LocalStore } from './store/localStore';
 import { registerStoreIpc } from './store/ipc';
-import type { DesktopAppConfig } from '../../lib/appConfig';
+import { usesFirebase, type DesktopAppConfig } from '../../lib/appConfig';
 
 // Express renders stack traces on its error pages outside production.
 process.env.NODE_ENV ??= 'production';
 
-const PORT = 47321;
+// Dev runs only (ignored when packaged): a separate profile, so a test can run
+// beside the installed app without touching its data. BRICK_TRACKER_USER_DATA
+// is the folder used instead of %APPDATA%\Brick Tracker (settings included),
+// BRICK_TRACKER_PORT the port instead of 47321.
+const devUserData = !app.isPackaged ? process.env.BRICK_TRACKER_USER_DATA : undefined;
+if (devUserData) app.setPath('userData', path.resolve(devUserData));
+const devPort = !app.isPackaged ? Number(process.env.BRICK_TRACKER_PORT) : NaN;
+
+const PORT = Number.isInteger(devPort) && devPort > 1024 && devPort < 65536 ? devPort : 47321;
 const APP_ORIGIN = `http://localhost:${PORT}`;
 // Passed by the login item, so a start with Windows goes straight to the tray.
 const startHidden = process.argv.includes('--hidden');
@@ -27,9 +35,11 @@ if (app.isPackaged)
 
 // Secrets are never packaged: the installer must be safe to copy around. A
 // packaged app reads them from its data folder (%APPDATA%\Brick Tracker);
-// dev runs read the gitignored files in desktop/.
+// dev runs read the gitignored files in desktop/, or the separate profile's.
 const secretFile = (name: string) =>
-  app.isPackaged ? path.join(app.getPath('userData'), name) : path.join(__dirname, '..', name);
+  app.isPackaged || devUserData
+    ? path.join(app.getPath('userData'), name)
+    : path.join(__dirname, '..', name);
 
 // GEMINI_API_KEY for the shared API routes (teaching sources only). It stays
 // in this process: the page talks to the local API, never to Gemini.
@@ -189,12 +199,20 @@ async function start() {
   }
   // The planned-sets route reads Firestore over REST and finds the project
   // the same way as on the website (getFirestoreTarget in lib/server-api.ts).
-  process.env.VITE_FIREBASE_PROJECT_ID = appConfig.firebase.projectId;
-  process.env.VITE_FIREBASE_DATABASE_ID = appConfig.firebase.firestoreDatabaseId;
+  // On this PC only there is none: the route answers from the copy alone.
+  if (usesFirebase(appConfig) && appConfig.firebase) {
+    process.env.VITE_FIREBASE_PROJECT_ID = appConfig.firebase.projectId;
+    process.env.VITE_FIREBASE_DATABASE_ID = appConfig.firebase.firestoreDatabaseId;
+  }
 
   // Read synchronously by the preload script as the page starts.
   ipcMain.on('config:get', (event) => {
     event.returnValue = event.senderFrame?.url.startsWith(APP_ORIGIN) ? appConfig : null;
+  });
+  // The app's own "Settings" buttons: the same window as the tray's.
+  ipcMain.handle('settings:open', (event) => {
+    if (!event.senderFrame?.url.startsWith(APP_ORIGIN)) throw new Error('Unexpected sender');
+    void openSettings();
   });
 
   localStore = new LocalStore(path.join(app.getPath('userData'), 'data'));
@@ -207,7 +225,14 @@ async function start() {
   });
 
   scraper = new PlaywrightScraper(path.join(app.getPath('userData'), 'scraper-profile'));
-  await startLocalServer({ port: PORT, distDir: webDir, scraper });
+  const store = localStore;
+  await startLocalServer({
+    port: PORT,
+    distDir: webDir,
+    scraper,
+    // Read-only, by a list's token: the one way local data leaves over HTTP.
+    localPlannedList: (token) => store.plannedListResponse(token),
+  });
 
   ipcMain.handle('auth:google', (event) => {
     // Only the app's own page may start a sign-in.

@@ -1,6 +1,6 @@
 import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron';
 import type { LocalStore } from './localStore';
-import type { StoreChange } from '../../../lib/data/storeBridge';
+import type { HeldChoice, StoreChange } from '../../../lib/data/storeBridge';
 
 // The page's way into the local store (lib/data/storeBridge.ts describes it;
 // the preload script exposes it as window.legoTrackerDesktop.store). Only the
@@ -27,7 +27,9 @@ export function registerStoreIpc(
   handle('store:applySets', (snap: Parameters<LocalStore['applySets']>[0]) =>
     store.applySets(snap)
   );
-  handle('store:putPriceSources', (list: unknown[] | null) => store.putPriceSources(list));
+  handle('store:putPriceSources', (list: unknown[] | null, source: unknown) =>
+    store.putPriceSources(list, source)
+  );
   handle('store:historyWork', () => store.historyWork());
   handle(
     'store:putHistoryPage',
@@ -38,7 +40,11 @@ export function registerStoreIpc(
   handle('store:putBackup', (kind: Parameters<LocalStore['putBackup']>[0], data: unknown) =>
     store.putBackup(kind, data)
   );
-  handle('store:resolveHeld', (choice: 'delete' | 'keep') => store.resolveHeld(choice));
+  handle('store:resolveHeld', (choice: HeldChoice) =>
+    choice === 'upload' ? store.uploadHeld() : store.resolveHeld(choice)
+  );
+  handle('store:plannedList', () => store.plannedList());
+  handle('store:setPlannedList', (list: unknown) => store.setPlannedList(list));
   handle('store:sets', () => store.sets());
   handle('store:history', (setId: string) => store.history(setId));
   handle('store:priceSources', () => store.priceSources());

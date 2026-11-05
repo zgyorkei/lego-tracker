@@ -6,7 +6,7 @@ const store: DesktopStoreBridge = {
   open: (sub) => ipcRenderer.invoke('store:open', sub),
   status: () => ipcRenderer.invoke('store:status'),
   applySets: (snapshot) => ipcRenderer.invoke('store:applySets', snapshot),
-  putPriceSources: (list) => ipcRenderer.invoke('store:putPriceSources', list),
+  putPriceSources: (list, source) => ipcRenderer.invoke('store:putPriceSources', list, source),
   historyWork: () => ipcRenderer.invoke('store:historyWork'),
   putHistoryPage: (setId, page) => ipcRenderer.invoke('store:putHistoryPage', setId, page),
   budgetLeft: (day) => ipcRenderer.invoke('store:budgetLeft', day),
@@ -23,6 +23,8 @@ const store: DesktopStoreBridge = {
   applyLocal: (change) => ipcRenderer.invoke('store:applyLocal', change),
   planPush: () => ipcRenderer.invoke('store:planPush'),
   ackPush: (op) => ipcRenderer.invoke('store:ackPush', op),
+  plannedList: () => ipcRenderer.invoke('store:plannedList'),
+  setPlannedList: (list) => ipcRenderer.invoke('store:setPlannedList', list),
 };
 
 // The renderer's only window into the desktop shell. Its presence is what
@@ -34,6 +36,8 @@ contextBridge.exposeInMainWorld('legoTrackerDesktop', {
   isDesktop: true,
   /** Runs Google sign-in in the system browser; resolves with an ID token. */
   signInWithGoogle: (): Promise<string> => ipcRenderer.invoke('auth:google'),
+  /** Opens the settings window (the tray's "Settings..."); saving restarts the app. */
+  openSettings: (): Promise<void> => ipcRenderer.invoke('settings:open'),
   // Synchronous on purpose: src/lib/firebaseConfig.ts reads it as the page's
   // scripts load, and the installer has no project built in, only the one
   // saved by the setup window (lib/appConfig.ts).

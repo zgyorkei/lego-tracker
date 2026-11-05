@@ -53,6 +53,18 @@ describe('backupPill', () => {
     expect(backupPill(status(), OK)).toEqual({ label: 'In sync: 57 sets', tone: 'ok' });
   });
 
+  it('on this PC only: the count, or what is wrong, never "pending"', () => {
+    expect(backupPill(status({ pending: 9 }), OK, 'local')).toEqual({
+      label: 'On this PC: 57 sets',
+      tone: 'ok',
+    });
+    expect(backupPill(status(), { kind: 'not-configured' }, 'local')).toEqual({
+      label: 'No Firebase project is set up',
+      tone: 'problem',
+    });
+    expect(syncSummary(status({ pending: 9 }), OK, 'local')).toBe('on this PC only, 57 sets');
+  });
+
   it('stops nagging about a different project the user chose to keep', () => {
     expect(backupPill(status({ held: held('different-source', true) }), OK).tone).toBe('ok');
   });
@@ -118,11 +130,36 @@ describe('heldActions', () => {
       from: src,
       confirmed: false,
     };
-    expect(heldActions(typo)).toEqual({ remove: null, keep: 'Keep this copy' });
-    expect(heldActions({ ...typo, confirmed: true }).remove).toBe('Start again from this database');
-    expect(heldActions(held('mass-removal'))).toEqual({
+    expect(heldActions(typo, 57)).toEqual({ upload: null, remove: null, keep: 'Keep this copy' });
+    expect(heldActions({ ...typo, confirmed: true }, 57)).toEqual({
+      upload: 'Upload 57 sets to this database',
+      remove: 'Start again from this database',
+      keep: 'Keep this copy',
+    });
+    expect(heldActions(held('mass-removal'), 57)).toEqual({
+      upload: null,
       remove: 'Delete them here too',
       keep: 'Keep them here',
+    });
+  });
+
+  it('asks before a copy kept on this PC only goes into a project', () => {
+    const local: HeldSnapshot = {
+      reason: 'different-source',
+      at: 'x',
+      source: { projectId: 'p', databaseId: '(default)', uid: 'u1' },
+      from: null,
+      confirmed: true,
+      removeIds: [],
+      remoteCount: 3,
+    };
+    expect(heldExplanation(status({ sets: 2, held: local }))).toMatch(
+      /The 2 sets on this PC have never been in Firebase.*project p\. The project holds 3 sets\..*nothing is uploaded/
+    );
+    expect(heldActions(local, 2)).toEqual({
+      upload: 'Upload 2 sets to this project',
+      remove: "Use the project's sets instead",
+      keep: 'Keep this copy',
     });
   });
 

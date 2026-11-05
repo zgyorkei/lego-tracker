@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Settings } from 'lucide-react';
 import { Modal } from './Modal';
 import { isProblem, stepsFor } from '../lib/dataHealth';
+import { openDesktopSettings } from '../lib/platform';
 import type { DesktopSyncState } from '../hooks/useDesktopSync';
 
 /**
@@ -13,6 +14,8 @@ export function DataStatusBanner({ sync }: { sync: DesktopSyncState }) {
   const [showSteps, setShowSteps] = useState(false);
   if (!sync.active || !isProblem(sync.health)) return null;
   const info = stepsFor(sync.health.kind);
+  // On this PC only there is no sync to retry (Firebase is not set up).
+  const canRetry = sync.mode === 'both';
 
   return (
     <>
@@ -31,11 +34,19 @@ export function DataStatusBanner({ sync }: { sync: DesktopSyncState }) {
           What to do
         </button>
         <button
-          onClick={() => sync.retryNow()}
-          className="px-3 py-1 bg-black text-white border-2 border-white rounded font-black text-xs uppercase flex items-center gap-1"
+          onClick={openDesktopSettings}
+          className="px-3 py-1 bg-white text-black border-2 border-black rounded font-black text-xs uppercase flex items-center gap-1"
         >
-          <RefreshCw size={12} /> Retry now
+          <Settings size={12} /> Settings
         </button>
+        {canRetry && (
+          <button
+            onClick={() => sync.retryNow()}
+            className="px-3 py-1 bg-black text-white border-2 border-white rounded font-black text-xs uppercase flex items-center gap-1"
+          >
+            <RefreshCw size={12} /> Retry now
+          </button>
+        )}
       </div>
 
       {showSteps && (
@@ -48,8 +59,8 @@ export function DataStatusBanner({ sync }: { sync: DesktopSyncState }) {
               ))}
             </ol>
             <p className="text-sm text-gray-600 mb-2">
-              Until then the app works from the copy on this PC: changes are kept and go to Firebase
-              once it accepts them.
+              Until then the app works from the copy on this PC: changes are kept here
+              {canRetry && ' and go to Firebase once it accepts them'}.
             </p>
             {sync.health.detail && (
               <p className="text-xs font-mono break-all bg-gray-100 p-2 rounded">
@@ -58,14 +69,22 @@ export function DataStatusBanner({ sync }: { sync: DesktopSyncState }) {
             )}
             <div className="mt-6 flex justify-end gap-2">
               <button
-                onClick={() => {
-                  sync.retryNow();
-                  setShowSteps(false);
-                }}
-                className="px-4 py-2 border-2 border-black rounded font-black uppercase text-xs bg-lego-yellow"
+                onClick={openDesktopSettings}
+                className="px-4 py-2 border-2 border-black rounded font-black uppercase text-xs bg-white"
               >
-                Retry now
+                Settings
               </button>
+              {canRetry && (
+                <button
+                  onClick={() => {
+                    sync.retryNow();
+                    setShowSteps(false);
+                  }}
+                  className="px-4 py-2 border-2 border-black rounded font-black uppercase text-xs bg-lego-yellow"
+                >
+                  Retry now
+                </button>
+              )}
               <button
                 onClick={() => setShowSteps(false)}
                 className="px-4 py-2 border-2 border-black rounded font-black uppercase text-xs bg-white"

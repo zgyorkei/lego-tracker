@@ -6,11 +6,16 @@ import type {
   HistoryCursor,
   HistoryRow,
   LocalOp,
+  LocalPlannedList,
   PushOp,
   RemoteSetsSnapshot,
+  RemoteSource,
   SetRecord,
   StoreSummary,
 } from './store';
+
+/** The answers to a held snapshot (resolveHeld and uploadHeld in ./store). */
+export type HeldChoice = 'delete' | 'keep' | 'upload';
 
 /** A change from the page: the main process stamps the time. */
 export type LocalChange =
@@ -56,12 +61,13 @@ export interface DesktopStoreBridge {
   open(googleSub: string): Promise<StoreStatus>;
   status(): Promise<StoreStatus>;
   applySets(snapshot: RemoteSetsSnapshot): Promise<StoreStatus>;
-  putPriceSources(list: unknown[] | null): Promise<void>;
+  /** The server's price-source list, from `source` (the copy's own when omitted). */
+  putPriceSources(list: unknown[] | null, source?: RemoteSource): Promise<void>;
   historyWork(): Promise<{ setId: string; cursor: HistoryCursor | null }[]>;
   putHistoryPage(setId: string, page: HistoryPage): Promise<StoreStatus>;
   budgetLeft(day: string): Promise<number>;
   putBackup(kind: BackupKind, data: unknown): Promise<void>;
-  resolveHeld(choice: 'delete' | 'keep'): Promise<StoreStatus>;
+  resolveHeld(choice: HeldChoice): Promise<StoreStatus>;
   /** Coalesced change events; returns the unsubscribe. */
   onChange(listener: (change: StoreChange) => void): () => void;
 
@@ -75,6 +81,10 @@ export interface DesktopStoreBridge {
   applyLocal(change: LocalChange): Promise<StoreStatus>;
   planPush(): Promise<PushOp[]>;
   ackPush(op: PushOp): Promise<StoreStatus>;
+
+  // On this PC only (Phase 4): the planned list the desktop's own route serves.
+  plannedList(): Promise<LocalPlannedList | null>;
+  setPlannedList(list: LocalPlannedList | null): Promise<StoreStatus>;
 }
 
 /** Google account ids are decimal digits; anything else never becomes a folder name. */

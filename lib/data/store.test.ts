@@ -15,6 +15,7 @@ import {
   resolveHeld,
   spendReads,
   summarize,
+  uploadHeld,
   visibleSets,
   type RemoteSource,
   type SetRecord,
@@ -275,6 +276,80 @@ describe('resolveHeld', () => {
     expect(resolveHeld(held, 'keep').state.held?.dismissed).toBe(true);
   });
 
+  it('asks before a copy kept on this PC only goes into a project', () => {
+    // "On this PC only": sets made here, never in any Firebase project.
+    let local = emptyState();
+    for (const id of ['a', 'b'])
+      local = applyLocal(local, {
+        type: 'create',
+        id,
+        value: { setNumber: id, name: id, status: 'planned', priority: 'low' },
+        at: AT,
+      }).state;
+    const remote = snap([set('9')]);
+    const held = applyRemote(local, remote).state;
+    expect(held.sets).toEqual(local.sets);
+    expect(held.held).toMatchObject({
+      reason: 'different-source',
+      from: null,
+      source: SRC,
+      confirmed: true,
+      remoteCount: 1,
+    });
+    expect(planPush(held)).toEqual([]);
+    // An empty copy has nothing to ask about.
+    expect(applyRemote(emptyState(), remote).state.held).toBeNull();
+  });
+
+  it("'upload' sends this copy, with its history, to the new source", () => {
+    const other = { ...SRC, projectId: 'q' };
+    let s = applyLocal(withSets(2), update('1', { name: 'Mine' })).state;
+    s = applyLocal(s, { type: 'delete', id: '2' }).state;
+    s = applyLocal(s, {
+      type: 'addHistory',
+      setId: '1',
+      row: { id: 'h2', date: '2026-02-01' },
+    }).state;
+    s = applyLocal(s, { type: 'priceSources', list: [{ id: 'x' }] }).state;
+    const unanswered = applyRemote(s, snap([], { source: other, fromCache: true })).state;
+    expect(uploadHeld(unanswered, {}).state).toBe(unanswered);
+
+    // The project has said it holds no price-source list, so this copy's goes up.
+    const held = applyRemotePriceSources(
+      applyRemote(s, snap([set('9')], { source: other })).state,
+      null,
+      other
+    );
+    const fromDisk = { '1': [{ id: 'h1', date: '2026-01-01' }] };
+    const { state, removed } = uploadHeld(held, fromDisk);
+    expect(removed).toEqual(['2']);
+    expect(state.held).toBeNull();
+    expect(state.source).toEqual(other);
+    expect(state.sets['1']).toEqual({ value: s.sets['1'].value, base: null, dirty: {} });
+    expect(state.pendingHistory['1'].map((r) => r.id)).toEqual(['h1', 'h2']);
+    expect(state.history['1']).toMatchObject({ complete: true, rows: 2, lastId: 'h2' });
+    expect(state.priceSourcesDirty).not.toBeNull();
+
+    // Once the new source's snapshot is applied, the set is created there,
+    // then its history follows, and the server's own sets come in.
+    const merged = applyRemote(state, snap([set('9')], { source: other })).state;
+    expect(merged.held).toBeNull();
+    expect(
+      visibleSets(merged)
+        .map((x) => x.id)
+        .sort()
+    ).toEqual(['1', '9']);
+    const ops = planPush(merged);
+    expect(ops.map((o) => o.kind).sort()).toEqual(['create', 'priceSources']);
+    const create = ops.find((o) => o.kind === 'create');
+    if (!create) throw new Error('no create planned');
+    const created = applyRemote(
+      ackPush(merged, create),
+      snap([set('9'), set('1')], { source: other })
+    ).state;
+    expect(planPush(created).filter((o) => o.kind === 'history')).toHaveLength(2);
+  });
+
   it("different source: 'keep' keeps this copy and stops asking, still merging nothing", () => {
     const other = { ...SRC, uid: 'u2' };
     const held = applyRemote(withSets(3), snap([set('9')], { source: other })).state;
@@ -283,6 +358,59 @@ describe('resolveHeld', () => {
     const again = applyRemote(kept, snap([set('9')], { source: other })).state;
     expect(again.held?.dismissed).toBe(true);
     expect(again.sets['9']).toBeUndefined();
+  });
+});
+
+describe('price sources from another source', () => {
+  const other = { ...SRC, projectId: 'q' };
+  const mine = [{ id: 'mine' }];
+  const theirs = [{ id: 'theirs' }];
+  const withMine = (s: StoreState) => applyLocal(s, { type: 'priceSources', list: mine }).state;
+
+  it("are only noted while that source's snapshot is held, and never mixed in", () => {
+    const held = applyRemote(withMine(withSets(2)), snap([set('9')], { source: other })).state;
+    const noted = applyRemotePriceSources(held, theirs, other);
+    expect(noted.priceSources).toEqual(mine);
+    expect(noted.serverPriceSources).toEqual({ source: other, list: theirs });
+    // Also when the list arrives before the sets snapshot that holds.
+    const early = applyRemotePriceSources(withMine(withSets(2)), theirs, other);
+    expect(early.priceSources).toEqual(mine);
+    // A copy kept on this PC only is not mixed with a project's either.
+    const localOnly = applyLocal(emptyState(), {
+      type: 'create',
+      id: 'a',
+      value: { setNumber: 'a', name: 'a', status: 'planned', priority: 'low' },
+      at: AT,
+    }).state;
+    expect(applyRemotePriceSources(withMine(localOnly), theirs, SRC).priceSources).toEqual(mine);
+    // A copy with nothing in it yet takes the list.
+    expect(applyRemotePriceSources(emptyState(), theirs, SRC).priceSources).toEqual(theirs);
+  });
+
+  it("'upload' keeps the project's own list, and sends this copy's only where it has none", () => {
+    const base = applyRemote(withMine(withSets(2)), snap([set('9')], { source: other })).state;
+    const hasOwn = uploadHeld(applyRemotePriceSources(base, theirs, other), {}).state;
+    expect(hasOwn.priceSources).toEqual(theirs);
+    expect(hasOwn.priceSourcesDirty).toBeNull();
+
+    const hasNone = uploadHeld(applyRemotePriceSources(base, null, other), {}).state;
+    expect(hasNone.priceSources).toEqual(mine);
+    expect(
+      planPush(applyRemote(hasNone, snap([set('9')], { source: other })).state)
+    ).toContainEqual(expect.objectContaining({ kind: 'priceSources', list: mine }));
+
+    // Not heard yet: nothing is pushed; what the project says next wins.
+    const unknown = uploadHeld(base, {}).state;
+    expect(unknown.priceSourcesDirty).toBeNull();
+    expect(applyRemotePriceSources(unknown, theirs, other).priceSources).toEqual(theirs);
+  });
+
+  it("'delete' starts again with the project's list", () => {
+    const base = applyRemote(withMine(withSets(2)), snap([set('9')], { source: other })).state;
+    const fresh = resolveHeld(applyRemotePriceSources(base, theirs, other), 'delete').state;
+    expect(fresh.priceSources).toEqual(theirs);
+    expect(fresh.priceSourcesDirty).toBeNull();
+    expect(fresh.priceSourcesSeen).toBe(true);
   });
 });
 
@@ -369,6 +497,10 @@ describe('history cursors and the read budget', () => {
 });
 
 const AT = '2026-11-05T09:00:00.000Z';
+// A copy started again from SRC (its server not heard from yet): sets created
+// in it go to SRC once its snapshot arrives. A copy with no source at all is
+// one kept on this PC only, which is asked about first.
+const startedAgain = (): StoreState => ({ ...emptyState(), source: SRC });
 const update = (id: string, fields: Record<string, unknown>) =>
   ({ type: 'update', id, fields, at: AT }) as const;
 
@@ -474,7 +606,7 @@ describe('planPush and ackPush', () => {
   });
 
   it('waits with creates until the server has been seen, then sends the whole set', () => {
-    const local = applyLocal(emptyState(), {
+    const local = applyLocal(startedAgain(), {
       type: 'create',
       id: 'c'.repeat(20),
       value: { setNumber: '1' },
@@ -497,8 +629,12 @@ describe('planPush and ackPush', () => {
   it('settles a create that landed without an acknowledgement when the server shows it', () => {
     const id = 'c'.repeat(20);
     let s = applyRemote(
-      applyLocal(emptyState(), { type: 'create', id, value: { setNumber: '1', name: 'X' }, at: AT })
-        .state,
+      applyLocal(startedAgain(), {
+        type: 'create',
+        id,
+        value: { setNumber: '1', name: 'X' },
+        at: AT,
+      }).state,
       snap([])
     ).state;
     s = applyLocal(s, update(id, { name: 'Y' })).state;
@@ -541,7 +677,7 @@ describe('planPush and ackPush', () => {
   it('sends history rows once their set is on the server', () => {
     const id = 'c'.repeat(20);
     let s = applyRemote(
-      applyLocal(emptyState(), { type: 'create', id, value: {}, at: AT }).state,
+      applyLocal(startedAgain(), { type: 'create', id, value: {}, at: AT }).state,
       snap([])
     ).state;
     s = applyLocal(s, { type: 'addHistory', setId: id, row: { id: 'h1', date: AT } }).state;

@@ -20,6 +20,8 @@ import {
   stableStringify,
 } from '../lib/plannedList';
 import { LegoSet, PlannedList, PriceSource } from '../types';
+import type { DesktopStoreBridge } from '../../lib/data/storeBridge';
+import type { LocalPlannedList } from '../../lib/data/store';
 
 // Batch price refreshes update sets one after another; waiting for things to
 // settle turns a burst of snapshots into a single write.
@@ -36,8 +38,30 @@ const SYNC_DEBOUNCE_MS = 3000;
  *
  * `ready` must stay false until the sets have actually loaded. Otherwise the
  * empty initial array would be synced and wipe the published list.
+ *
+ * Desktop app "On this PC only" (`local` given): there is no Firestore. The
+ * list is the copy's own (useLocalPlannedList), served by the desktop's route
+ * to programs on this PC. Both hooks always run; the one not in use is inert.
  */
 export function usePlannedList(
+  user: AuthUser | null,
+  sets: LegoSet[],
+  priceSources: PriceSource[],
+  ready: boolean,
+  local?: DesktopStoreBridge
+) {
+  const firestore = useFirestorePlannedList(local ? null : user, sets, priceSources, ready);
+  const onThisPc = useLocalPlannedList(
+    local ? user : null,
+    local ?? null,
+    sets,
+    priceSources,
+    ready
+  );
+  return local ? onThisPc : firestore;
+}
+
+function useFirestorePlannedList(
   user: AuthUser | null,
   sets: LegoSet[],
   priceSources: PriceSource[],
@@ -198,6 +222,124 @@ export function usePlannedList(
     createList,
     deleteList,
     syncNow,
+    /** Served by this PC, not the website (On this PC only). */
+    local: false,
+  };
+}
+
+/**
+ * The planned list "On this PC only": the copy keeps its token, and the
+ * desktop's route builds the answer from the sets whenever it is asked, so
+ * there is nothing to sync. The list shown here is built the same way.
+ */
+function useLocalPlannedList(
+  user: AuthUser | null,
+  store: DesktopStoreBridge | null,
+  sets: LegoSet[],
+  priceSources: PriceSource[],
+  ready: boolean
+) {
+  const [entry, setEntry] = useState<LocalPlannedList | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user || !store) {
+      setEntry(null);
+      setLoading(false);
+      return;
+    }
+    let stopped = false;
+    setLoading(true);
+    store.plannedList().then(
+      (e) => {
+        if (stopped) return;
+        setEntry(e);
+        setLoading(false);
+      },
+      (err) => {
+        console.error('Reading the planned list on this PC failed', err);
+        if (stopped) return;
+        setError('Could not read the planned list on this PC.');
+        setLoading(false);
+      }
+    );
+    return () => {
+      stopped = true;
+    };
+  }, [user, store]);
+
+  const payload = useMemo(() => buildPlannedListSets(sets, priceSources), [sets, priceSources]);
+  const purchases = useMemo(() => buildPlannedListPurchases(sets), [sets]);
+
+  const list = useMemo<PlannedList | null>(
+    () =>
+      entry && user
+        ? {
+            id: entry.token,
+            userId: user.uid,
+            title: entry.title,
+            sets: payload,
+            purchases,
+            createdAt: entry.createdAt,
+            // Always as the sets are now.
+            updatedAt: new Date().toISOString(),
+          }
+        : null,
+    [entry, user, payload, purchases]
+  );
+
+  const save = useCallback(
+    async (next: LocalPlannedList | null, failure: string) => {
+      if (!store) return;
+      setBusy(true);
+      try {
+        await store.setPlannedList(next);
+        setEntry(next);
+        setError(null);
+      } catch (err) {
+        console.error(failure, err);
+        setError(`${failure} Please try again.`);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [store]
+  );
+
+  const createList = useCallback(async () => {
+    if (!user || !ready) return;
+    await save(
+      {
+        token: generatePlannedListToken(),
+        title: 'Planned sets',
+        createdAt: new Date().toISOString(),
+      },
+      'Could not create the planned list on this PC.'
+    );
+  }, [user, ready, save]);
+
+  const deleteList = useCallback(
+    () => save(null, 'Could not delete the planned list on this PC.'),
+    [save]
+  );
+
+  // Nothing to sync: the route reads the copy as it is.
+  const syncNow = useCallback(async () => {}, []);
+
+  return {
+    list,
+    loading,
+    busy,
+    error,
+    ready,
+    plannedCount: payload.length,
+    purchaseCount: purchases.length,
+    createList,
+    deleteList,
+    syncNow,
+    local: true,
   };
 }
 

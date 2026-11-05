@@ -20,10 +20,18 @@ keeps running when its window is closed. Use the tray menu to quit.
    the Chromium build Playwright installs (`npx playwright install chromium`).
 3. `npm start` builds `desktop/dist/` and launches the app. The first start
    opens the setup window (`src/setup.ts`), which asks for:
-   - the Firebase web config (the console's `firebaseConfig` snippet, or
-     the JSON of `firebase-applet-config.json`) and the database ID;
+   - where the sets are kept: **On this PC only** (the first-run default, no
+     Firebase at all) or **Firebase + a copy on this PC**. Gift registries and
+     the public Planned Sets link need Firebase; on this PC only the planned
+     list is served to programs on this PC at `http://localhost:47321/...`;
+   - for Firebase only: the Firebase web config (the console's
+     `firebaseConfig` snippet, or the JSON of `firebase-applet-config.json`)
+     and the database ID;
    - the website's address, for gift-registry and Planned Sets links (the app
-     itself is on localhost, which nobody else can open);
+     itself is on localhost, which nobody else can open); optional on this PC
+     only;
+   - "Let my phone and website reach this PC's copy (Google Drive)": saved
+     only, until the Drive mailbox arrives (local-storage plan, Phase 5);
    - the Google OAuth client for the desktop app: the JSON downloaded from
      Google Cloud console, Credentials, OAuth client of type "Desktop app", in
      the Firebase project;
@@ -35,10 +43,18 @@ keeps running when its window is closed. Use the tray menu to quit.
 
    Dev runs save these in `desktop/app-config.json` and
    `desktop/oauth-client.json` (both gitignored). The tray's **Settings...**
-   reopens the window; saving restarts the app.
+   (and the Settings buttons in the app) reopen the window; saving restarts
+   the app. Switching from Firebase to this PC only stops syncing and leaves
+   Firestore as it is; switching back asks before the sets on this PC are
+   uploaded to the project.
 
 `npm start` works from VS Code terminals too: VS Code exports
 `ELECTRON_RUN_AS_NODE=1`, which `run.mjs` removes before starting Electron.
+
+A dev run beside the installed app (for a test on a fresh profile): set
+`BRICK_TRACKER_USER_DATA` to an empty folder (it is used instead of
+`%APPDATA%\Brick Tracker`, settings included) and `BRICK_TRACKER_PORT` to a
+free port. Both are ignored by the packaged app.
 
 ## How it fits together
 
@@ -56,8 +72,9 @@ keeps running when its window is closed. Use the tray menu to quit.
   the page loads.
 - Sign-in (`src/oauth.ts`): Google blocks sign-in pages inside Electron, so
   the app opens Google in your normal browser and receives the result on a
-  one-off loopback port (PKCE). The Google ID token is exchanged for a Firebase
-  session with `signInWithCredential`.
+  one-off loopback port (PKCE). With Firebase, the Google ID token is
+  exchanged for a Firebase session with `signInWithCredential`; on this PC
+  only, the token just says which Google account's copy to open.
 
 ## Scraping
 

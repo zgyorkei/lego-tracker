@@ -5,13 +5,15 @@ import { desktopConfig } from './platform';
  * gift-registry links and the Planned Sets API URL.
  *
  * The desktop app is served from localhost, which nobody else can open, so it
- * uses the website address entered in its setup (required there). On the
+ * uses the website address entered in its setup (required with Firebase). On the
  * website, VITE_PUBLIC_APP_URL wins when set at build time; otherwise it is
  * the address the site is served from, so every self-hosted copy links to
  * itself. There is deliberately no hard-coded fallback domain.
  */
 export function publicAppUrl(): string {
-  if (desktopConfig) return desktopConfig.publicAppUrl;
+  // "On this PC only" may have no website. Nothing public is linked then:
+  // registries need Firebase, and the planned list uses this PC's address.
+  if (desktopConfig) return desktopConfig.publicAppUrl ?? window.location.origin;
   const configured = (import.meta.env.VITE_PUBLIC_APP_URL as string | undefined)?.trim();
   if (configured) return configured.replace(/\/+$/, '');
   return window.location.origin;

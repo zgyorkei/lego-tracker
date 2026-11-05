@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_STORAGE,
+  firebaseMissing,
   normalisePublicUrl,
   parseFirebaseConfigText,
   storageOf,
+  usesFirebase,
   validateAppConfig,
 } from './appConfig';
 
@@ -142,6 +144,40 @@ describe('storage', () => {
       mode: 'both',
       drive: false,
     });
+  });
+
+  it('needs no Firebase project or website on this PC only, and keeps a complete project', () => {
+    const local = configOf({ storage: { mode: 'local', drive: false } });
+    expect(local).toEqual({
+      firebase: null,
+      publicAppUrl: null,
+      storage: { mode: 'local', drive: false },
+    });
+    expect(usesFirebase(local)).toBe(false);
+    expect(firebaseMissing(local)).toBe(false);
+
+    // Kept for switching back, but not used.
+    const kept = configOf({ ...base, storage: { mode: 'local', drive: false } });
+    expect(kept.firebase?.projectId).toBe('my-bricks');
+    expect(usesFirebase(kept)).toBe(false);
+    // An incomplete one is dropped rather than refused: it is not needed here.
+    expect(
+      configOf({ firebase: { apiKey: 'k' }, storage: { mode: 'local', drive: false } }).firebase
+    ).toBeNull();
+    // A website address that is given must still be a real one.
+    expect(
+      validateAppConfig({ publicAppUrl: 'nope', storage: { mode: 'local', drive: false } })
+    ).toHaveProperty('error');
+  });
+
+  it("runs 'both' without a project on this PC, with the warning", () => {
+    const missing = configOf({ storage: { mode: 'both', drive: false } });
+    expect(missing.firebase).toBeNull();
+    expect(usesFirebase(missing)).toBe(false);
+    expect(firebaseMissing(missing)).toBe(true);
+    expect(usesFirebase(configOf(base))).toBe(true);
+    // A file from before the choice existed always had a project.
+    expect(validateAppConfig({ publicAppUrl: 'https://x.example' })).toHaveProperty('error');
   });
 
   it('refuses an unknown mode or a non-boolean Drive setting', () => {

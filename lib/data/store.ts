@@ -76,8 +76,19 @@ export interface HistoryCursor {
   checkedFor: number | null;
 }
 
+/**
+ * The planned list published from this PC ("On this PC only"): the desktop's
+ * local route serves it, built from the sets as they are when asked.
+ */
+export interface LocalPlannedList {
+  token: string;
+  title: string;
+  createdAt: string;
+}
+
 export interface StoreState {
   version: 1;
+  /** The Firebase project, database and account the copy is in step with; null: never synced. */
   source: RemoteSource | null;
   sets: Record<string, StoredSet>;
   priceSources: unknown[] | null;
@@ -95,6 +106,14 @@ export interface StoreState {
   priceSourcesDirty: number | null;
   /** The server has said what price sources it holds (null included). */
   priceSourcesSeen: boolean;
+  /** The planned list published from this PC, if any (absent in copies from before it). */
+  plannedList?: LocalPlannedList | null;
+  /**
+   * The price-source list a server last reported, and which source it came
+   * from. Only the list of the source this copy is in step with is mixed in;
+   * another's (a held snapshot's) waits here for the user's answer.
+   */
+  serverPriceSources?: { source: RemoteSource; list: unknown[] | null } | null;
 }
 
 export const emptyState = (): StoreState => ({
@@ -110,6 +129,7 @@ export const emptyState = (): StoreState => ({
   pendingHistory: {},
   priceSourcesDirty: null,
   priceSourcesSeen: false,
+  plannedList: null,
 });
 
 /** What Firestore said about the account's sets: the full list. */
@@ -178,10 +198,11 @@ const isSynced = (s: StoredSet) => s.base !== null && !s.deleted;
 export function applyRemote(state: StoreState, snap: RemoteSetsSnapshot): ApplyResult {
   const remote = snap.sets.map(stripUserId);
 
-  // Another project, database or account: never merged without the user.
-  if (state.source && !sameSource(state.source, snap.source)) {
-    const anySynced = Object.values(state.sets).some((s) => s.base !== null);
-    if (anySynced) {
+  // Another project, database or account, or a copy kept on this PC only
+  // (no source yet): never merged into, nor uploaded to, without the user.
+  if (!state.source || !sameSource(state.source, snap.source)) {
+    const hasSets = Object.values(state.sets).some((s) => !s.deleted);
+    if (hasSets) {
       const prev =
         state.held?.reason === 'different-source' && sameSource(state.held.source, snap.source)
           ? state.held
@@ -328,8 +349,20 @@ export function resolveHeld(state: StoreState, choice: 'delete' | 'keep'): Apply
     // A source that never answered may not exist at all (a mistyped database).
     if (held.confirmed !== true) return { state, changed: [], removed: [] };
     const removed = Object.keys(state.sets);
+    const theirs = reportedList(state, held.source);
     return {
-      state: { ...emptyState(), source: held.source, readBudget: state.readBudget },
+      state: {
+        ...emptyState(),
+        source: held.source,
+        readBudget: state.readBudget,
+        ...(theirs
+          ? {
+              priceSources: theirs.list,
+              priceSourcesSeen: true,
+              serverPriceSources: state.serverPriceSources,
+            }
+          : {}),
+      },
       changed: [],
       removed,
     };
@@ -338,11 +371,97 @@ export function resolveHeld(state: StoreState, choice: 'delete' | 'keep'): Apply
 }
 
 /**
+ * The third answer to a snapshot held because it comes from another source (or
+ * because this copy was kept on this PC only): upload this copy there,
+ * alongside whatever it already holds. Every set becomes one the server has
+ * not confirmed, so planPush creates it once the server's snapshot is applied
+ * again, and its price history (`history`, read from this PC) is queued after
+ * it; that history copy counts as complete, since the server gets exactly
+ * these rows. The new source's own price-source list stays when it has one
+ * (the website uses it); this copy's goes up only to a source known to have
+ * none, and while the source has not said, what it says next wins. Refused
+ * until the new source's server has answered.
+ */
+export function uploadHeld(state: StoreState, history: Record<string, HistoryRow[]>): ApplyResult {
+  const held = state.held;
+  if (!held || held.reason !== 'different-source' || held.confirmed !== true)
+    return { state, changed: [], removed: [] };
+
+  const sets: Record<string, StoredSet> = {};
+  const cursors: Record<string, HistoryCursor> = {};
+  const pendingHistory: Record<string, HistoryRow[]> = {};
+  const removed: string[] = [];
+  for (const [id, s] of Object.entries(state.sets)) {
+    // A delete made here was meant for the old source; the new one never had the set.
+    if (s.deleted) {
+      removed.push(id);
+      continue;
+    }
+    sets[id] = { value: s.value, base: null, dirty: {} };
+    const rows = mergeHistory(history[id] ?? [], state.pendingHistory[id] ?? []);
+    if (!rows.length) continue;
+    pendingHistory[id] = rows;
+    const last = rows[rows.length - 1];
+    cursors[id] = {
+      lastDate: last.date,
+      lastId: last.id,
+      rows: rows.length,
+      complete: true,
+      checkedFor: asNumber(s.value.lastPricesRefreshTime),
+    };
+  }
+  const rev = state.rev + 1;
+  const theirs = reportedList(state, held.source);
+  const keepTheirs = !!theirs && Array.isArray(theirs.list) && theirs.list.length > 0;
+  return {
+    state: {
+      ...state,
+      source: held.source,
+      held: null,
+      sets,
+      history: cursors,
+      pendingHistory,
+      rev,
+      priceSources: keepTheirs && theirs ? theirs.list : state.priceSources,
+      priceSourcesDirty: !keepTheirs && theirs && state.priceSources ? rev : null,
+      priceSourcesSeen: theirs ? true : state.priceSourcesSeen,
+    },
+    changed: [],
+    removed,
+  };
+}
+
+/** The price-source list this source last reported, if it has (lists of others say nothing). */
+function reportedList(state: StoreState, source: RemoteSource): { list: unknown[] | null } | null {
+  const known = state.serverPriceSources;
+  return known && sameSource(known.source, source) ? { list: known.list } : null;
+}
+
+/**
  * The account's price-source list as the server has it (null: none stored).
  * An unsynced local change wins until it is pushed; one the server already
  * holds counts as pushed.
+ *
+ * `source` is where the list came from (omitted: the copy's own). A list from
+ * another source, or one for a copy kept on this PC only, is only noted
+ * (`serverPriceSources`), like that source's sets: nothing is mixed in until
+ * the user answers the held snapshot. A copy with no sets yet takes it.
  */
-export function applyRemotePriceSources(state: StoreState, list: unknown[] | null): StoreState {
+export function applyRemotePriceSources(
+  state: StoreState,
+  list: unknown[] | null,
+  source?: RemoteSource
+): StoreState {
+  const from = source ?? state.source;
+  const known = state.serverPriceSources;
+  if (from && !(known && sameSource(known.source, from) && sameJson(known.list, list)))
+    state = { ...state, serverPriceSources: { source: from, list } };
+  const inStep =
+    !source ||
+    (state.source
+      ? sameSource(state.source, source)
+      : !Object.values(state.sets).some((s) => !s.deleted));
+  if (!inStep) return state;
   if (state.priceSourcesDirty !== null) {
     if (sameJson(state.priceSources, list))
       return { ...state, priceSourcesDirty: null, priceSourcesSeen: true };

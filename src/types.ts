@@ -1,4 +1,16 @@
 import type { ScrapeRecipe } from '../lib/scrapeRecipe';
+import type { PriceQuote } from '../lib/priceQuote';
+import type { PlannedListPurchase, PlannedListSet } from '../lib/plannedListPayload';
+
+// The quote guard and the public planned-list shapes live in lib/, so the
+// desktop's main process (its local Planned Sets route) shares them; the web
+// app imports them from here as before.
+export { isPriceQuote, type PriceQuote } from '../lib/priceQuote';
+export type {
+  PlannedListPrice,
+  PlannedListPurchase,
+  PlannedListSet,
+} from '../lib/plannedListPayload';
 
 export type Priority = 'low' | 'medium' | 'high';
 export type Status = 'planned' | 'ordered';
@@ -73,32 +85,12 @@ export const DEFAULT_PRICE_SOURCES: PriceSource[] = [
 // backend distinguishes them by id, so their ids must stay stable.
 export const PERMANENT_SOURCE_IDS = ['bricklink'];
 
-// One price reading from a single source, as returned by /api/prices* and
-// stored on LegoSet.marketPrices. Previously this shape existed only as an
-// `any` index signature, so every read (priceHuf, price, url, store) was
-// unchecked and a typo in a field name compiled fine.
-export interface PriceQuote {
-  price: number;
-  priceHuf: number;
-  priceEur?: number;
-  store?: string;
-  url?: string;
-  /** The shop's own title and image for the listing (desktop scraper only). */
-  title?: string;
-  image?: string;
-}
-
 export interface MarketPrices {
   exchangeRate?: number;
   error?: boolean;
   // Per-source entries keyed by PriceSource.id. Values may be undefined when a
   // source produced no usable price for a set.
   [source: string]: PriceQuote | number | boolean | undefined;
-}
-
-/** Narrows a MarketPrices entry to a real quote, skipping the metadata keys. */
-export function isPriceQuote(v: unknown): v is PriceQuote {
-  return typeof v === 'object' && v !== null && typeof (v as PriceQuote).priceHuf === 'number';
 }
 
 export interface PriceHistory {
@@ -116,49 +108,6 @@ export interface Registry {
   title: string;
   sets: LegoSet[];
   createdAt: string;
-}
-
-// One set as published in a planned list. This is the public, world-readable
-// shape served by GET /api/planned-sets/:token, so it is an explicit field
-// whitelist: no userId. Purchases are published separately (PlannedListPurchase).
-export interface PlannedListPrice {
-  sourceId: string;
-  sourceName: string;
-  price: number;
-  currency: string;
-  priceHuf: number;
-  url: string | null;
-}
-
-export interface PlannedListSet {
-  id: string;
-  setNumber: string;
-  name: string;
-  priority: Priority;
-  quantity: number;
-  legoPriceHuf: number | null;
-  legoUrl: string | null;
-  productImage: string | null;
-  releaseDate: string | null;
-  prices: PlannedListPrice[];
-}
-
-// One set the owner bought (status "ordered"), as published for BrickBudget, which
-// books it as an expense on the day it was bought. Prices are per set.
-export interface PlannedListPurchase {
-  id: string;
-  setNumber: string;
-  name: string;
-  quantity: number;
-  /** YYYY-MM-DD */
-  purchasedOn: string;
-  /** As paid, per set. */
-  price: number;
-  currency: string;
-  /** In forints, at the rate of the purchase day. */
-  priceHuf: number;
-  /** The official LEGO price per set, when known. */
-  legoPriceHuf: number | null;
 }
 
 export interface PlannedList {

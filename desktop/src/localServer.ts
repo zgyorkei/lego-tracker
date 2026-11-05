@@ -1,7 +1,7 @@
 import express from 'express';
 import http from 'node:http';
 import path from 'node:path';
-import { registerApiRoutes, type PriceScraper } from '../../lib/server-api';
+import { registerApiRoutes, type ApiOptions, type PriceScraper } from '../../lib/server-api';
 
 /**
  * Serves the built web app and the shared API on loopback.
@@ -20,11 +20,17 @@ export function startLocalServer(opts: {
   port: number;
   distDir: string;
   scraper: PriceScraper;
+  /** GET /api/planned-sets/:token from the copy on this PC. */
+  localPlannedList?: ApiOptions['localPlannedList'];
 }): Promise<http.Server> {
   const app = express();
   // No rate limits on loopback: they exist to protect the public deployment's
   // Gemini quota, and here they would stop "Update all" after 12 sets.
-  registerApiRoutes(app, { scraper: opts.scraper, rateLimit: false });
+  registerApiRoutes(app, {
+    scraper: opts.scraper,
+    rateLimit: false,
+    localPlannedList: opts.localPlannedList,
+  });
   app.use(express.static(opts.distDir, { index: false }));
   // SPA fallback (registry links etc.); /api/* already ended in a JSON 404.
   app.get('*', (_req, res) => res.sendFile(path.join(opts.distDir, 'index.html')));

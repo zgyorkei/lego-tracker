@@ -115,40 +115,102 @@
         background: #f2f2f2;
         padding: 0 3px;
       }
+      fieldset {
+        margin: 0;
+        padding: 0;
+        border: 0;
+      }
+      legend {
+        font-weight: 800;
+        padding: 0;
+      }
+      .choice {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        margin-top: 10px;
+        padding: 10px 12px;
+        border: 2px solid #000;
+        font-weight: 400;
+        cursor: pointer;
+      }
+      .choice input {
+        width: auto;
+        margin-top: 4px;
+      }
+      .choice strong {
+        display: block;
+      }
+      .note {
+        margin-top: 10px;
+        padding: 8px 12px;
+        border-left: 4px solid #0055bf;
+        background: #eef4ff;
+        font-size: 13px;
+      }
+      .note:empty,
+      [hidden] {
+        display: none;
+      }
     </style>
   </head>
   <body>
     <main>
       <h1>Brick Tracker setup</h1>
       <p class="intro" id="intro">
-        Connect this app to your own Brick Tracker: the Firebase project your website uses, and its
-        address. The setup guide on the intro page shows where each value comes from.
+        Choose where Brick Tracker keeps your sets. The setup guide on the intro page shows where
+        each value comes from.
       </p>
       <div class="error" id="problem" role="alert"></div>
       <form id="form">
-        <label for="firebase">Firebase config</label>
-        <p class="hint">
-          Firebase console, Project settings, Your apps, your web app: paste the
-          <code>firebaseConfig</code> snippet, or the JSON of
-          <code>firebase-applet-config.json</code>.
-        </p>
-        <textarea id="firebase" spellcheck="false" required></textarea>
+        <fieldset>
+          <legend>Where your sets are kept</legend>
+          <label class="choice">
+            <input type="radio" name="mode" value="local" id="modeLocal" />
+            <span>
+              <strong>On this PC only</strong>
+              No Firebase project needed. Gift registries and the public Planned Sets link need
+              Firebase; other programs on this PC can still read the planned list.
+            </span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="mode" value="both" id="modeBoth" />
+            <span>
+              <strong>Firebase + a copy on this PC</strong>
+              Your website and other PCs see the same sets. The copy on this PC keeps working when
+              Firebase is offline or broken, and is your backup.
+            </span>
+          </label>
+          <div class="note" id="switchNote"></div>
+        </fieldset>
 
-        <label for="database">Firestore database ID</label>
-        <p class="hint">Leave empty for <code>(default)</code>.</p>
-        <input id="database" spellcheck="false" placeholder="(default)" />
+        <div id="firebaseFields">
+          <label for="firebase">Firebase config</label>
+          <p class="hint">
+            Firebase console, Project settings, Your apps, your web app: paste the
+            <code>firebaseConfig</code> snippet, or the JSON of
+            <code>firebase-applet-config.json</code>.
+          </p>
+          <textarea id="firebase" spellcheck="false"></textarea>
+
+          <label for="database">Firestore database ID</label>
+          <p class="hint">Leave empty for <code>(default)</code>.</p>
+          <input id="database" spellcheck="false" placeholder="(default)" />
+        </div>
 
         <label for="url">Website address</label>
-        <p class="hint">
+        <p class="hint" id="urlHint">
           Where your Brick Tracker website runs. Gift-registry and Planned Sets links point there.
         </p>
-        <input
-          id="url"
-          type="url"
-          spellcheck="false"
-          placeholder="https://bricks.example.com"
-          required
-        />
+        <input id="url" type="url" spellcheck="false" placeholder="https://bricks.example.com" />
+
+        <label class="choice">
+          <input type="checkbox" id="drive" />
+          <span>
+            <strong>Let my phone and website reach this PC's copy (Google Drive)</strong>
+            Coming in a later version: the choice is saved now, and nothing uses Google Drive yet.
+          </span>
+        </label>
 
         <label>Google sign-in client</label>
         <p class="hint">

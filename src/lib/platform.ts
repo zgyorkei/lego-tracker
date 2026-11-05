@@ -1,4 +1,4 @@
-import type { DesktopAppConfig } from '../../lib/appConfig';
+import { firebaseMissing, usesFirebase, type DesktopAppConfig } from '../../lib/appConfig';
 import type { DesktopStoreBridge } from '../../lib/data/storeBridge';
 
 // The desktop (Electron) build exposes a bridge object on window from its
@@ -22,6 +22,8 @@ declare global {
       store?: DesktopStoreBridge;
       /** The tray icon's tooltip line. Absent in builds before it. */
       setTrayStatus?(text: string): void;
+      /** Opens the settings window; saving restarts the app. Absent in builds before it. */
+      openSettings?(): Promise<void>;
     };
   }
 }
@@ -32,3 +34,22 @@ export const isDesktopApp: boolean =
 /** The desktop app's settings, or null on the website. */
 export const desktopConfig: DesktopAppConfig | null =
   (isDesktopApp && window.legoTrackerDesktop?.config) || null;
+
+/**
+ * The desktop app's storage as it runs: 'both' syncs with Firebase, 'local'
+ * keeps the sets on this PC only (also when 'both' is chosen but no project
+ * is saved, which `desktopFirebaseMissing` reports). Null on the website.
+ */
+export const desktopMode: 'local' | 'both' | null = desktopConfig
+  ? usesFirebase(desktopConfig)
+    ? 'both'
+    : 'local'
+  : null;
+
+export const desktopFirebaseMissing: boolean = firebaseMissing(desktopConfig);
+
+/** Desktop app: opens its settings window (no-op on the website). */
+export const openDesktopSettings = (): void =>
+  void window.legoTrackerDesktop?.openSettings?.().catch((err: unknown) => {
+    console.error('Could not open the settings', err);
+  });

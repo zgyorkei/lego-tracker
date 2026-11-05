@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import express from 'express';
+import type { AddressInfo } from 'node:net';
 import {
   isBlockedHost,
   isPrivateIp,
@@ -17,6 +19,7 @@ import {
   parseLegoProductPage,
   parseBricksetMinifigs,
   parseBricksetSeriesSearch,
+  registerApiRoutes,
 } from './server-api.js';
 
 describe('page parsers', () => {
@@ -377,5 +380,58 @@ describe('convertToHuf', () => {
 
   it('returns null for a currency missing from the rate table', () => {
     expect(convertToHuf(10, 'XYZ', rates)).toBeNull();
+  });
+});
+
+describe('GET /api/planned-sets/:token from the desktop copy', () => {
+  const TOKEN = 'a'.repeat(24);
+  const answer = { title: 'Planned sets', updatedAt: null, count: 0, sets: [], purchases: [] };
+
+  async function withServer(run: (base: string) => Promise<void>) {
+    const app = express();
+    registerApiRoutes(app, {
+      rateLimit: false,
+      localPlannedList: (token) => (token === TOKEN ? answer : null),
+    });
+    const server = app.listen(0, '127.0.0.1');
+    await new Promise((r) => server.once('listening', r));
+    try {
+      await run(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+    } finally {
+      server.close();
+    }
+  }
+
+  it('answers from this PC first, uncached, and 404s other tokens without Firestore', async () => {
+    const saved = process.env.VITE_FIREBASE_PROJECT_ID;
+    delete process.env.VITE_FIREBASE_PROJECT_ID;
+    try {
+      await withServer(async (base) => {
+        const res = await fetch(`${base}/api/planned-sets/${TOKEN}`);
+        expect(res.status).toBe(200);
+        expect(res.headers.get('cache-control')).toBe('no-store');
+        expect(res.headers.get('access-control-allow-origin')).toBe('*');
+        expect(await res.json()).toEqual(answer);
+        expect((await fetch(`${base}/api/planned-sets/${'b'.repeat(24)}`)).status).toBe(404);
+      });
+    } finally {
+      if (saved !== undefined) process.env.VITE_FIREBASE_PROJECT_ID = saved;
+    }
+  });
+
+  it("answers the browser's Private Network Access preflight", async () => {
+    await withServer(async (base) => {
+      const res = await fetch(`${base}/api/planned-sets/${TOKEN}`, {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'https://budget.example.com',
+          'Access-Control-Request-Method': 'GET',
+          'Access-Control-Request-Private-Network': 'true',
+        },
+      });
+      expect(res.status).toBe(204);
+      expect(res.headers.get('access-control-allow-private-network')).toBe('true');
+      expect(res.headers.get('access-control-allow-methods')).toBe('GET');
+    });
   });
 });

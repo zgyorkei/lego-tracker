@@ -55,13 +55,16 @@ import {
 import { DEMO_SETS, demoPriceHistory } from './demoData';
 import { readStoredString, readStoredJson, writeStored } from './lib/storage';
 import { usePriceSources } from './hooks/usePriceSources';
-import { isDesktopApp } from './lib/platform';
+import { desktopMode, isDesktopApp, openDesktopSettings } from './lib/platform';
+import { firebaseAvailable } from './lib/firebase';
 
 // The desktop app works from its copy on this PC (desktop/src/store, through
 // the preload bridge) with its own session; the website signs in to Firebase
 // and reads and writes Firestore directly.
 const desktopStore = isDesktopApp ? window.legoTrackerDesktop?.store : undefined;
 const SESSION = desktopStore ? desktopSession : firebaseSession;
+// The desktop app "On this PC only": no Firebase at all.
+const localOnly = Boolean(desktopStore) && desktopMode === 'local';
 
 // Same rule as isValidSetNumber on the server; /api/teach-source rejects the
 // whole request if any sample fails it.
@@ -134,9 +137,13 @@ export default function App() {
   // (kept in step with Firestore by useDesktopSync); the website uses Firestore.
   const backend = useMemo(() => {
     if (!uid) return null;
-    if (desktopStore && googleSub) return createLocalBackend(desktopStore, googleSub);
+    if (desktopStore && googleSub)
+      return createLocalBackend(desktopStore, googleSub, { localOnly });
     return createFirestoreBackend(uid);
   }, [uid, googleSub]);
+  // What needs Firebase: off "On this PC only", where nothing reads Firestore.
+  const firebaseUser = firebaseAvailable ? (user ?? null) : null;
+  const registriesAvailable = backend?.capabilities.registries !== false;
   const {
     sets,
     loading,
@@ -182,6 +189,7 @@ export default function App() {
   );
   const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [showGiftRegistry, setShowGiftRegistry] = useState(false);
+  const [showRegistriesNeedFirebase, setShowRegistriesNeedFirebase] = useState(false);
   const [showPlannedList, setShowPlannedList] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
 
@@ -275,11 +283,13 @@ export default function App() {
   // Lives here rather than in its dialog so the published list keeps syncing
   // whenever the app is open, not only while the dialog is showing. Held back
   // while sets are loading or failed, so an empty/cached array is never synced.
+  // On this PC only, the list is the copy's own, served by the desktop itself.
   const plannedList = usePlannedList(
     isDemoMode ? null : (user ?? null),
     sets,
     priceSources,
-    !isDemoMode && !loading && !setsError
+    !isDemoMode && !loading && !setsError,
+    localOnly ? desktopStore : undefined
   );
 
   const filteredSets = useMemo(() => {
@@ -316,7 +326,7 @@ export default function App() {
   // The desktop app as the website's scraper: on the website `delegate` hands a
   // refresh to it, in the desktop app this works through those requests.
   const { desktopOnline, delegate } = useDesktopWorker(
-    user ?? null,
+    firebaseUser,
     isDemoMode,
     isDesktopApp ? runDesktopRequest : undefined
   );
@@ -598,6 +608,13 @@ export default function App() {
 
       running = true;
       try {
+        if (!firebaseAvailable) {
+          // On this PC only there is no shared request to make (and no other
+          // desktop to share it with): run it here, once for the day.
+          const ran = await batchRefreshRef.current(true, { targets: filteredSetsRef.current });
+          if (ran) writeStored('brickTrackerLastDailyRefresh', day);
+          return;
+        }
         // Market prices only. Creates (or retries) today's request; this or
         // another desktop's worker runs it. Checked again every minute until
         // some desktop reports it done, and only then marked locally, so a
@@ -924,7 +941,11 @@ export default function App() {
           <div className="flex flex-wrap items-center justify-end gap-4 shrink-0 sm:ml-auto mt-4 sm:mt-0 w-full sm:w-auto">
             {filter === 'planned' && (
               <button
-                onClick={() => setShowGiftRegistry(true)}
+                onClick={() =>
+                  registriesAvailable
+                    ? setShowGiftRegistry(true)
+                    : setShowRegistriesNeedFirebase(true)
+                }
                 className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white border-2 border-black px-4 py-1.5 rounded-lg font-black uppercase text-xs shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
                 title="Gift Registry"
                 aria-label="Gift Registry"
@@ -1393,6 +1414,37 @@ export default function App() {
       </AnimatePresence>
 
       <AnimatePresence>
+        {showRegistriesNeedFirebase && (
+          <Modal
+            onClose={() => setShowRegistriesNeedFirebase(false)}
+            label="Gift registries need Firebase"
+            className="w-full max-w-md"
+          >
+            <div className="bg-white border-4 border-black rounded-xl p-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+              <h2 className="text-xl font-black uppercase mb-3">Gift registries need Firebase</h2>
+              <p className="text-sm text-gray-700 mb-4">
+                A registry link is opened by other people on your website, which reads it from
+                Firestore. Brick Tracker keeps your sets on this PC only, so there is nowhere to
+                publish one. Choose &quot;Firebase + a copy on this PC&quot; in Settings to use
+                registries.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={openDesktopSettings}
+                  className="px-4 py-2 border-2 border-black rounded font-black uppercase text-xs bg-lego-yellow"
+                >
+                  Settings
+                </button>
+                <button
+                  onClick={() => setShowRegistriesNeedFirebase(false)}
+                  className="px-4 py-2 border-2 border-black rounded font-black uppercase text-xs bg-white"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
         {showGiftRegistry && (
           <GiftRegistryDialog
             user={user ?? null}

@@ -2,6 +2,7 @@ import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { firebaseConfig } from './lib/firebaseConfig.ts';
+import { isDesktopApp } from './lib/platform.ts';
 import { registerServiceWorker } from './lib/pwa.ts';
 import './index.css';
 
@@ -37,10 +38,26 @@ const NotConfigured = (
   </div>
 );
 
-const Content = !firebaseConfig ? (
+// Registries are read from Firestore; the desktop app "On this PC only" has none.
+const NoRegistries = (
+  <div className="min-h-screen flex items-center justify-center p-6">
+    <div className="max-w-lg border-2 border-black bg-white p-6 shadow-[4px_4px_0_0_rgba(0,0,0,1)]">
+      <h1 className="text-xl font-black mb-3">Gift registries need Firebase</h1>
+      <p>This Brick Tracker keeps its sets on this PC only, so it has no registries to show.</p>
+    </div>
+  </div>
+);
+
+// The desktop app runs without Firebase "On this PC only"; a website needs it.
+const configured = Boolean(firebaseConfig) || isDesktopApp;
+const Content = !configured ? (
   NotConfigured
 ) : registryMatch ? (
-  <RegistryView registryId={registryMatch[1]} />
+  firebaseConfig || registryMatch[1] === 'demo' ? (
+    <RegistryView registryId={registryMatch[1]} />
+  ) : (
+    NoRegistries
+  )
 ) : (
   <App />
 );

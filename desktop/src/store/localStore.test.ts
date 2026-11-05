@@ -146,6 +146,80 @@ describe('LocalStore', () => {
     expect(statuses[statuses.length - 1]?.error).toMatch(/Did not replace the copy of 1 sets/);
   });
 
+  it('serves the planned list from this PC, built from the sets as they are now', async () => {
+    const s = store();
+    expect(s.plannedListResponse('f'.repeat(24))).toBeNull();
+    await s.open(SUB);
+    s.applySets(
+      snap([
+        set('a', {
+          status: 'planned',
+          priority: 'high',
+          setNumber: '10333',
+          name: 'Barad-dur',
+          marketPrices: { shop: { price: 10, priceHuf: 4000 } },
+        }),
+        set('b', {
+          status: 'ordered',
+          priority: 'low',
+          setNumber: '10316',
+          orderedDate: '2026-03-01T00:00:00.000Z',
+          orderedPriceHuf: 5000,
+        }),
+      ])
+    );
+    s.putPriceSources([{ id: 'shop', name: 'Shop', currency: 'EUR' }, { bad: true }]);
+    const token = 'f'.repeat(24);
+    expect(() => s.setPlannedList({ token: '../x', title: 't', createdAt: 'x' })).toThrow('token');
+    s.setPlannedList({ token, title: 'Planned sets', createdAt: '2026-11-05T00:00:00.000Z' });
+    expect(s.plannedList()?.token).toBe(token);
+
+    const answer = s.plannedListResponse(token);
+    expect(answer).toMatchObject({ title: 'Planned sets', count: 1 });
+    expect(answer?.sets).toEqual([
+      expect.objectContaining({
+        id: 'a',
+        setNumber: '10333',
+        prices: [expect.objectContaining({ sourceId: 'shop', priceHuf: 4000 })],
+      }),
+    ]);
+    expect(answer?.purchases).toEqual([
+      expect.objectContaining({ id: 'b', purchasedOn: '2026-03-01', priceHuf: 5000 }),
+    ]);
+    expect(JSON.stringify(answer)).not.toContain('userId');
+    expect(s.plannedListResponse('e'.repeat(24))).toBeNull();
+
+    // The Firestore list (Firebase + copy) is answered by its backed-up token too.
+    await s.putBackup('plannedList', { id: 'shared-token-1234567', title: 'Mine', userId: 'u1' });
+    expect(s.plannedListResponse('shared-token-1234567')?.title).toBe('Mine');
+    s.setPlannedList(null);
+    expect(s.plannedListResponse(token)).toBeNull();
+  });
+
+  it('uploads a copy kept on this PC only, with its history, once the project has answered', async () => {
+    const s = store();
+    await s.open(SUB);
+    const id = 'A'.repeat(20);
+    await s.applyLocal({
+      type: 'create',
+      id,
+      value: { setNumber: '10333', name: 'x', status: 'planned', priority: 'low' },
+    });
+    await s.applyLocal({ type: 'addHistory', setId: id, row: { id: 'h1', date: '2026-01-01' } });
+    const held = s.applySets(snap([set('z')]));
+    expect(held.held).toMatchObject({ reason: 'different-source', from: null, confirmed: true });
+
+    const after = await s.uploadHeld();
+    expect(after.held).toBeNull();
+    expect(after.sets).toBe(1);
+    // The sync applies the project's snapshot again (resync): its set comes
+    // in, and the create goes first; the history once the set is on the server.
+    expect(s.applySets(snap([set('z')])).sets).toBe(2);
+    expect(s.planPush().map((o) => o.kind)).toEqual(['create']);
+    await s.flush();
+    expect(stateOnDisk().source).toEqual(SRC);
+  });
+
   it('never writes an empty copy over a non-empty one by itself (last line of defence)', async () => {
     const s = store();
     await s.open(SUB);

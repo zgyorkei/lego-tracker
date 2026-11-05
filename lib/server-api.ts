@@ -6,6 +6,7 @@ import dns from 'node:dns/promises';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { GoogleGenAI } from '@google/genai';
+import type { PlannedListResponse } from './plannedListPayload.js';
 import type { RecipeTestResult, ScrapeRecipe } from './scrapeRecipe.js';
 import { MAX_TEACH_SAMPLES, teachSource } from './teachSource.js';
 
@@ -976,6 +977,12 @@ export interface ApiOptions {
    * where they only cut a full "Update all" off after 12 sets.
    */
   rateLimit?: boolean;
+  /**
+   * The desktop app: answers GET /api/planned-sets/:token from the copy on
+   * this PC (its own list, or the Firestore one by its token), before the
+   * Firestore read; null for a token it does not know.
+   */
+  localPlannedList?: (token: string) => PlannedListResponse | null;
 }
 
 const noLimit = (_req: Request, _res: Response, next: NextFunction) => next();
@@ -1761,14 +1768,37 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
   // firestore.rules, so this reads it unauthenticated over the Firestore REST
   // API and strips userId before responding. CORS is open so a browser-based
   // consumer can call it too; there are no cookies or credentials to leak.
+  //
+  // The desktop app answers from the copy on this PC first (localPlannedList),
+  // so BrickBudget on the same PC gets the list "On this PC only" too. A page
+  // on a public site calling localhost first asks the browser's Private
+  // Network Access preflight, answered below.
+  app.options('/api/planned-sets/:token', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET');
+    const asked = req.headers['access-control-request-headers'];
+    if (typeof asked === 'string') res.setHeader('Access-Control-Allow-Headers', asked);
+    res.setHeader('Access-Control-Allow-Private-Network', 'true');
+    res.setHeader('Access-Control-Max-Age', '600');
+    res.status(204).end();
+  });
   app.get('/api/planned-sets/:token', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Private-Network', 'true');
     const { token } = req.params;
     if (!isValidPlannedListToken(token)) {
       return res.status(404).json({ error: 'Not found' });
     }
+    const local = options.localPlannedList?.(token) ?? null;
+    if (local) {
+      // Built from the sets as they are now, so nothing to cache.
+      res.setHeader('Cache-Control', 'no-store');
+      return res.json(local);
+    }
     const target = getFirestoreTarget();
     if (!target) {
+      // The desktop "On this PC only" has no Firestore to ask: an unknown token.
+      if (options.localPlannedList) return res.status(404).json({ error: 'Not found' });
       return res.status(503).json({ error: 'Firebase project is not configured on the server' });
     }
 

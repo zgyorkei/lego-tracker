@@ -41,9 +41,10 @@ layer never touches Firestore and never verifies an ID token, so *all* data
 authorisation lives in `firestore.rules`. Treat that file as security-critical.
 
 **Client data goes through `src/data/`.** `useSets` and `usePriceSources` talk
-to a `DataBackend` (today only `createFirestoreBackend(uid)`, memoised on the
-uid in `App`), and the signed-in user comes from a `SessionProvider`
-(`firebaseSession`) through `useSession` as an `AuthUser`, never Firebase's
+to a `DataBackend` (`createFirestoreBackend(uid)` on the website,
+`createLocalBackend` on the desktop, memoised in `App`), and the signed-in
+user comes from a `SessionProvider` (`firebaseSession`, `desktopSession`)
+through `useSession` as an `AuthUser`, never Firebase's
 `User`. `useSession`'s user is `undefined` until the session is restored, then
 the user or `null`; `useSets` stays `loading` until then, which
 `usePlannedList`'s ready gate depends on. Registries, the planned list and the
@@ -81,9 +82,33 @@ memory cache a plain `getDocs` answers from the (empty) cache when it thinks
 it is offline, so what the sync copies (history, backups) is read with
 `getDocsFromServer`. Local
 data is never served over HTTP, the IPC answers only the app's own page, and
-nothing the page sends becomes a path (`isGoogleSub`, `isValidDocId`).
+nothing the page sends becomes a path (`isGoogleSub`, `isValidDocId`). The
+one exception is read-only: `GET /api/planned-sets/:token` asks
+`ApiOptions.localPlannedList` (the copy's own list, or the Firestore list by
+its backed-up token) before Firestore.
 `SET_UPDATABLE_FIELDS` (`lib/data/setFields.ts`) must match the sets update
 rule; its test reads `firestore.rules`.
+
+**The desktop has two storage modes** (Phase 4, `storage.mode` in
+`app-config.json`): "On this PC only" (`local`) and "Firebase + a copy on
+this PC" (`both`, also what a config without the choice means). `firebase`
+is null without a project and `publicAppUrl` optional on this PC only;
+`usesFirebase()` / `desktopMode` decide, so `firebaseConfig` is null in
+local mode even with a project kept for switching back, and `main.ts` sets
+`VITE_FIREBASE_*` only when it is used. 'both' without a project runs local
+with the `not-configured` banner. Local mode: `desktopSession` signs in with
+the same system-browser Google flow but no Firebase (the ID token's `sub` is
+uid and folder); `createLocalBackend(..., { localOnly: true })` treats the
+copy as the whole truth (capabilities off for registries, the public list
+and refresh requests); `usePlannedList` keeps the list's token in the copy
+and the desktop serves it on its own address; the 4AM run happens locally;
+nothing touches Firestore (`firebaseUser` is null). Switching to `both`
+asks before uploading: a copy with sets that was never in the signed-in
+source (kept on this PC only, or from another project) is held, and
+`uploadHeld` ("Upload N sets") makes every set unconfirmed so `planPush`
+creates it, history after its set in `writeBatch` chunks. Dev runs can use
+`BRICK_TRACKER_USER_DATA` / `BRICK_TRACKER_PORT` for a separate profile
+beside the installed app (ignored when packaged).
 
 **Routing is hand-rolled** in `src/main.tsx` by matching `window.location.pathname`.
 There is no router library. `App` and `RegistryView` are lazy-loaded and mutually
@@ -190,9 +215,11 @@ exclusive.
 - **The desktop installer belongs to nobody's Firebase project.** The web
   app inside it is built with `npm run build:desktop` (`--mode desktop`),
   which leaves out `VITE_FIREBASE_*` and `firebase-applet-config.json`; the
-  setup window (`desktop/src/setup.ts`, first start and tray "Settings...")
-  saves the user's project and website address as `app-config.json`
+  setup window (`desktop/src/setup.ts`; first start, tray "Settings..." and
+  the app's Settings buttons through `settings:open`) saves the storage
+  choice, the user's project and website address as `app-config.json`
   (`lib/appConfig.ts`), and the preload hands it to the page synchronously.
+  A first run defaults to "On this PC only".
   `package.mjs` refuses a web build that contains a Firebase API key or the
   builder's project. Never bake a project or domain into the desktop build.
   Releases go to GitHub Releases as `Brick-Tracker-Setup.exe` (a fixed
@@ -245,7 +272,9 @@ exclusive.
   (`src/lib/appUrl.ts`): registry links and the Planned Sets API URL. The
   desktop app (localhost) uses the website address from its setup; the
   website uses `VITE_PUBLIC_APP_URL`, else its own origin, so self-hosted
-  copies link to themselves. Never hard-code a domain again.
+  copies link to themselves. Never hard-code a domain again. "On this PC
+  only" has no public links: the planned list uses
+  `localPlannedListApiUrl` (this PC's own address, said as such).
 - **Demo Mode is curated data** (`src/demoData.ts`): Brickset image URLs
   (LEGO's old image CDN is gone), dates relative to today, generated price
   history (`demoPriceHistory`), and the built-in `/registry/demo`

@@ -16,12 +16,15 @@ import {
   resolveHeld,
   spendReads,
   summarize,
+  uploadHeld,
   visibleSets,
   type ApplyResult,
   type HistoryRow,
   type LocalOp,
+  type LocalPlannedList,
   type PushOp,
   type RemoteSetsSnapshot,
+  type RemoteSource,
   type SetRecord,
   type StoreState,
 } from '../../../lib/data/store';
@@ -35,6 +38,12 @@ import {
   type StoreStatus,
 } from '../../../lib/data/storeBridge';
 import { isAutoId, isValidDocId } from '../../../lib/data/ids';
+import {
+  plannedListResponse,
+  type PayloadSet,
+  type PayloadSource,
+  type PlannedListResponse,
+} from '../../../lib/plannedListPayload';
 import { readJsonFile, rotateDailyBackup, writeFileAtomic, writeFileAtomicSync } from './files';
 
 // The desktop app's copy of the signed-in account's data, one folder per
@@ -44,6 +53,9 @@ import { readJsonFile, rotateDailyBackup, writeFileAtomic, writeFileAtomicSync }
 //   history/<setId>.json  each set's price history, oldest first
 //   backup/state-<day>.bak  the last 7 days of state.json
 //   backup/registries.json, backup/plannedList.json  read-only copies of what is shared
+//
+// It also answers the local Planned Sets route (plannedListResponse), the one
+// thing served over HTTP, read-only and only for a list's token.
 //
 // The reducer decides what changes; this class only keeps it on disk and
 // tells the page. Never imports Electron, so it is tested under plain Node.
@@ -58,11 +70,15 @@ const BACKUP_KINDS: readonly BackupKind[] = ['registries', 'plannedList'];
 const isShortString = (v: unknown, max = 200): v is string =>
   typeof v === 'string' && v.length > 0 && v.length <= max;
 
+const isSource = (s: unknown): s is RemoteSource =>
+  isPlainObject(s) &&
+  isShortString(s.projectId) &&
+  isShortString(s.databaseId) &&
+  isShortString(s.uid);
+
 /** Checks what the page sends: it is the app's own page, but it never gets to pick paths. */
 function checkSnapshot(snap: RemoteSetsSnapshot): void {
-  const s = snap?.source;
-  if (!s || !isShortString(s.projectId) || !isShortString(s.databaseId) || !isShortString(s.uid))
-    throw new Error('Snapshot source is missing');
+  if (!isSource(snap?.source)) throw new Error('Snapshot source is missing');
   if (typeof snap.fromCache !== 'boolean') throw new Error('Snapshot fromCache is missing');
   if (!Array.isArray(snap.sets) || snap.sets.length > MAX_SETS)
     throw new Error('Snapshot sets are not a list of at most 5000');
@@ -140,6 +156,36 @@ function checkLocalChange(change: LocalChange, sets: Record<string, unknown>): v
 
 const PUSH_KINDS = ['create', 'update', 'delete', 'history', 'priceSources'];
 
+/** generatePlannedListToken's shape: 24 hex characters. */
+const LOCAL_LIST_TOKEN_RE = /^[0-9a-f]{24}$/;
+
+function checkPlannedList(list: unknown): LocalPlannedList | null {
+  if (list === null) return null;
+  const l = list as Partial<LocalPlannedList> | undefined;
+  if (!l || typeof l.token !== 'string' || !LOCAL_LIST_TOKEN_RE.test(l.token))
+    throw new Error('A planned list needs a 24-character token');
+  if (!isShortString(l.title, 100)) throw new Error('A planned list title is 1 to 100 characters');
+  if (!isShortString(l.createdAt, 40)) throw new Error('A planned list needs its creation time');
+  return { token: l.token, title: l.title, createdAt: l.createdAt };
+}
+
+/** The Firestore planned list's token and title, from its backup document. */
+function sharedListOf(data: unknown): { token: string; title: string } | null {
+  if (!isPlainObject(data) || typeof data.id !== 'string' || !data.id) return null;
+  const title = typeof data.title === 'string' && data.title ? data.title : 'Planned sets';
+  return { token: data.id, title };
+}
+
+/** The price sources the list names, as far as they have the fields it reads. */
+const listSources = (list: unknown[] | null): PayloadSource[] =>
+  (list ?? []).filter(
+    (s): s is PayloadSource =>
+      isPlainObject(s) &&
+      typeof s.id === 'string' &&
+      typeof s.name === 'string' &&
+      typeof s.currency === 'string'
+  );
+
 function checkHistoryRows(rows: HistoryRow[]): void {
   if (!Array.isArray(rows) || rows.length > MAX_HISTORY_ROWS_PER_PAGE)
     throw new Error('History page is not a list of at most 1000 rows');
@@ -164,6 +210,8 @@ export class LocalStore extends EventEmitter {
   private lastWrittenAt: string | null = null;
   private lastBackupDay: string | null = null;
   private error: string | null = null;
+  /** The Firestore planned list's token and title, from its backup (Firebase + copy). */
+  private sharedList: { token: string; title: string } | null = null;
 
   constructor(
     private readonly root: string,
@@ -203,6 +251,9 @@ export class LocalStore extends EventEmitter {
       this.backupDir,
       localDay(this.now())
     );
+    this.sharedList = sharedListOf(
+      await readJsonFile<unknown>(path.join(this.backupDir, 'plannedList.json'))
+    );
     return this.status();
   }
 
@@ -221,11 +272,13 @@ export class LocalStore extends EventEmitter {
     return this.status();
   }
 
-  putPriceSources(list: unknown[] | null): void {
+  putPriceSources(list: unknown[] | null, source?: unknown): void {
     if (list !== null && (!Array.isArray(list) || list.length > 50))
       throw new Error('Price sources are not a list of at most 50');
+    if (source !== undefined && !isSource(source))
+      throw new Error('Price sources need their source');
     this.requireOpen();
-    const next = applyRemotePriceSources(this.state, list);
+    const next = applyRemotePriceSources(this.state, list, source);
     if (next !== this.state) {
       this.state = next;
       this.schedulePersist();
@@ -278,6 +331,45 @@ export class LocalStore extends EventEmitter {
     const json = JSON.stringify(data ?? null);
     if (json.length > MAX_BACKUP_BYTES) throw new Error('Backup too large');
     await writeFileAtomic(path.join(this.backupDir, `${kind}.json`), json);
+    if (kind === 'plannedList') this.sharedList = sharedListOf(data);
+  }
+
+  /** The planned list published from this PC ("On this PC only"), if any. */
+  plannedList(): LocalPlannedList | null {
+    this.requireOpen();
+    return this.state.plannedList ?? null;
+  }
+
+  /** Creates (or, with null, deletes) the planned list published from this PC. */
+  setPlannedList(list: unknown): StoreStatus {
+    this.requireOpen();
+    this.state = { ...this.state, plannedList: checkPlannedList(list) };
+    this.schedulePersist();
+    this.queueChange([], []);
+    return this.status();
+  }
+
+  /**
+   * GET /api/planned-sets/:token from this PC: the list published from here,
+   * or the Firestore one (by its backed-up token), built from the sets as they
+   * are now. Null for any other token, so the route can try Firestore.
+   */
+  plannedListResponse(token: string): PlannedListResponse | null {
+    if (!this.sub) return null;
+    const own = this.state.plannedList;
+    const list =
+      own && own.token === token
+        ? own
+        : this.sharedList && this.sharedList.token === token
+          ? this.sharedList
+          : null;
+    if (!list) return null;
+    return plannedListResponse(
+      list.title,
+      this.lastWrittenAt,
+      visibleSets(this.state) as unknown as PayloadSet[],
+      listSources(this.state.priceSources)
+    );
   }
 
   /** The sets the app shows, newest first. */
@@ -351,6 +443,30 @@ export class LocalStore extends EventEmitter {
     if (choice === 'delete') this.allowEmptyOnce = true;
     this.commit(result);
     return this.status();
+  }
+
+  /**
+   * "Upload": this copy goes to the source its held snapshot came from, price
+   * history included (uploadHeld in lib/data/store.ts). Refused, with nothing
+   * changed, until that source's server has answered.
+   */
+  uploadHeld(): Promise<StoreStatus> {
+    const run = async () => {
+      this.requireOpen();
+      const history: Record<string, HistoryRow[]> = {};
+      for (const [id, s] of Object.entries(this.state.sets)) {
+        if (s.deleted) continue;
+        const rows = await readJsonFile<HistoryRow[]>(this.historyFile(id));
+        if (Array.isArray(rows) && rows.length) history[id] = rows;
+      }
+      const result = uploadHeld(this.state, history);
+      if (result.state !== this.state) this.commit(result);
+      return this.status();
+    };
+    // Shares the history queue, so no history file changes while it is read.
+    const result = this.historyQueue.then(run, run);
+    this.historyQueue = result.catch(() => {});
+    return result;
   }
 
   status(): StoreStatus {

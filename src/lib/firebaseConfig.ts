@@ -1,4 +1,4 @@
-import type { FirebaseWebConfig } from '../../lib/appConfig';
+import { usesFirebase, type FirebaseWebConfig } from '../../lib/appConfig';
 import { desktopConfig } from './platform';
 
 // Built with `vite build --mode desktop` (npm run build:desktop): the desktop
@@ -9,14 +9,16 @@ const DESKTOP_BUILD = import.meta.env.MODE === 'desktop';
 
 /**
  * Which Firebase project this copy of the app talks to, or null when none is
- * configured (main.tsx then shows how to set one up instead of the app).
+ * configured (on the website main.tsx then shows how to set one up instead of
+ * the app).
  *
- * Desktop app: its own setup (%APPDATA%\Brick Tracker\app-config.json).
+ * Desktop app: its own setup (%APPDATA%\Brick Tracker\app-config.json), and
+ * null "On this PC only", even with a project kept there for switching back.
  * Website: VITE_FIREBASE_* at build time, else the gitignored
  * firebase-applet-config.json. Nothing falls back to anybody else's project.
  */
 function resolveFirebaseConfig(): FirebaseWebConfig | null {
-  if (desktopConfig) return desktopConfig.firebase;
+  if (desktopConfig) return usesFirebase(desktopConfig) ? desktopConfig.firebase : null;
   if (DESKTOP_BUILD) return null;
 
   if (import.meta.env.VITE_FIREBASE_API_KEY) {
