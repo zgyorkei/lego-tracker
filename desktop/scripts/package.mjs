@@ -92,7 +92,9 @@ cpSync(path.join(desktop, '..', 'dist'), webStage, { recursive: true });
 function assertNoSecrets(appOutDir) {
   const asarPath = path.join(appOutDir, 'resources', 'app.asar');
   const packaged = listPackage(asarPath, { isPack: false });
-  const leaked = packaged.filter((f) => /[\\/](\.env|oauth-client\.json|app-config\.json)$/.test(f));
+  const leaked = packaged.filter((f) =>
+    /[\\/](\.env|oauth-client\.json|app-config\.json|google-session\.bin)$/.test(f)
+  );
   const secretValues = [];
   for (const f of ['.env', 'oauth-client.json']) {
     const p = path.join(desktop, f);
@@ -135,7 +137,9 @@ await build({
     // Allow-list: the bundled main process and package.json. Production
     // node_modules are added by electron-builder itself. Secrets and the dev
     // setup are outside the list, so they can never be swept in.
-    files: ['dist/**/*', 'package.json', '!**/*.map'],
+    // The Google Drive session (google-session.bin) lives in the user's data
+    // folder; excluded here too, in case one is ever left in the tree.
+    files: ['dist/**/*', 'package.json', '!**/*.map', '!**/google-session.bin'],
     // Native modules ship as prebuilt N-API binaries; nothing to compile.
     npmRebuild: false,
     asar: true,

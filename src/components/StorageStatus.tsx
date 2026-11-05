@@ -1,7 +1,13 @@
 import { useState } from 'react';
 import { HardDrive, Settings } from 'lucide-react';
 import { Modal } from './Modal';
-import { backupPill, changes, heldActions, heldExplanation } from '../lib/localBackupText';
+import {
+  backupPill,
+  changes,
+  driveLine,
+  heldActions,
+  heldExplanation,
+} from '../lib/localBackupText';
 import { stepsFor } from '../lib/dataHealth';
 import { openDesktopSettings } from '../lib/platform';
 import type { DesktopSyncState } from '../hooks/useDesktopSync';
@@ -21,6 +27,7 @@ const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : 'no
 export function StorageStatus({ backup }: { backup: DesktopSyncState }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [driveError, setDriveError] = useState<string | null>(null);
   if (!backup.active) return null;
 
   const { status, health, mode } = backup;
@@ -30,6 +37,18 @@ export function StorageStatus({ backup }: { backup: DesktopSyncState }) {
   const explanation = status ? heldExplanation(status) : null;
   const held = status?.held;
   const actions = held && status ? heldActions(held, status.sets) : null;
+  const drive = driveLine(backup.drive);
+  const connect = async () => {
+    setBusy(true);
+    setDriveError(null);
+    try {
+      await backup.connectDrive();
+    } catch (err) {
+      setDriveError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const answer = async (choice: HeldChoice) => {
     setBusy(true);
@@ -144,6 +163,28 @@ export function StorageStatus({ backup }: { backup: DesktopSyncState }) {
                 )}
                 <dt className="font-bold">Folder</dt>
                 <dd className="break-all font-mono text-xs">{status.dir}</dd>
+                {drive && (
+                  <>
+                    <dt className="font-bold">Google Drive</dt>
+                    <dd className={drive.problem ? 'text-red-600 font-bold' : ''}>
+                      {drive.text}
+                      {drive.connect && (
+                        <button
+                          disabled={busy}
+                          onClick={() => void connect()}
+                          className={`${BUTTON} bg-lego-blue text-white mt-2 block`}
+                        >
+                          Connect Google Drive
+                        </button>
+                      )}
+                      {driveError && (
+                        <span role="alert" className="block text-red-600 font-bold mt-1">
+                          {driveError}
+                        </span>
+                      )}
+                    </dd>
+                  </>
+                )}
               </dl>
             ) : (
               <p className="text-sm">Opening the copy on this PC...</p>

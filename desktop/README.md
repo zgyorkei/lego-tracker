@@ -30,8 +30,14 @@ keeps running when its window is closed. Use the tray menu to quit.
    - the website's address, for gift-registry and Planned Sets links (the app
      itself is on localhost, which nobody else can open); optional on this PC
      only;
-   - "Let my phone and website reach this PC's copy (Google Drive)": saved
-     only, until the Drive mailbox arrives (local-storage plan, Phase 5);
+   - "Let my phone and website reach this PC's copy (Google Drive)": the app
+     then shares its copy through your Google Drive's hidden app folder (the
+     website side arrives with Phase 6). The Google sign-in asks for that
+     folder too; tick the Drive box on Google's screen. Already signed in?
+     The storage dialog offers "Connect Google Drive". The Google Cloud
+     project needs the Drive API enabled and the `drive.appdata` scope;
+     signing out forgets the Drive sign-in on this PC without revoking it
+     (revoking would cut the website's access too);
    - the Google OAuth client for the desktop app: the JSON downloaded from
      Google Cloud console, Credentials, OAuth client of type "Desktop app", in
      the Firebase project;

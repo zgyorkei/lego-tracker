@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { GoogleGenAI } from '@google/genai';
 import type { PlannedListResponse } from './plannedListPayload.js';
+import { SET_NUMBER_RE } from './setNumber.js';
 import type { RecipeTestResult, ScrapeRecipe } from './scrapeRecipe.js';
 import { MAX_TEACH_SAMPLES, teachSource } from './teachSource.js';
 
@@ -206,7 +207,6 @@ setInterval(() => {
   for (const [k, v] of rateBuckets) if (now >= v.resetAt) rateBuckets.delete(k);
 }, 60_000).unref?.();
 
-const SET_NUMBER_RE = /^[A-Za-z0-9][A-Za-z0-9-]{0,19}$/;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export const isValidSetNumber = (v: unknown): v is string =>

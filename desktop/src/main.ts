@@ -9,7 +9,9 @@ import { googleSignIn, loadOAuthClient } from './oauth';
 import { readAppConfig, runSetup } from './setup';
 import { LocalStore } from './store/localStore';
 import { registerStoreIpc } from './store/ipc';
-import { usesFirebase, type DesktopAppConfig } from '../../lib/appConfig';
+import { GoogleSession } from './googleSession';
+import { DriveWorker, type RefreshOp } from './drive/worker';
+import { storageOf, usesFirebase, type DesktopAppConfig } from '../../lib/appConfig';
 
 // Express renders stack traces on its error pages outside production.
 process.env.NODE_ENV ??= 'production';
@@ -75,6 +77,9 @@ let scraper: PlaywrightScraper | null = null;
 // The account's data on this PC (desktop/src/store), one folder per Google
 // account under <userData>/data, in dev runs too.
 let localStore: LocalStore | null = null;
+// Google Drive (the phone and website reach this PC's copy): the desktop's
+// own Google session and the mailbox worker, both main-process only.
+let driveWorker: DriveWorker | null = null;
 
 function showWindow() {
   if (setupWin) {
@@ -167,6 +172,60 @@ function createTray() {
 
 const setupIcon = () => path.join(__dirname, 'icon.png');
 
+/** Every channel the page uses answers only the app's own page. */
+const fromApp = (event: Electron.IpcMainInvokeEvent) => {
+  if (!event.senderFrame?.url.startsWith(APP_ORIGIN)) throw new Error('Unexpected sender');
+};
+
+const REQUEST_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+
+/** The page's view of the Drive mailbox (lib/drive/bridge.ts); Drive tokens never go there. */
+function registerDriveIpc(drive: DriveWorker, google: GoogleSession) {
+  // Refreshes asked for before the page listens wait here.
+  const waiting: RefreshOp[] = [];
+  let listening = false;
+  const page = () => (win && !win.isDestroyed() ? win.webContents : null);
+  drive.on('status', (s) => page()?.send('drive:status', s));
+  drive.on('refresh', (op: RefreshOp) => {
+    const p = page();
+    if (listening && p) p.send('drive:refresh', op);
+    else waiting.push(op);
+  });
+  ipcMain.handle('drive:status', (e) => {
+    fromApp(e);
+    return drive.status();
+  });
+  ipcMain.handle('drive:connect', async (e) => {
+    fromApp(e);
+    await google.signIn(true);
+    await drive.update();
+    return drive.status();
+  });
+  ipcMain.handle('drive:takeRefreshes', (e) => {
+    fromApp(e);
+    listening = true;
+    return waiting.splice(0);
+  });
+  ipcMain.handle('drive:reply', (e, requestId: unknown, status: unknown, error: unknown) => {
+    fromApp(e);
+    if (typeof requestId !== 'string' || !REQUEST_ID_RE.test(requestId))
+      throw new Error('Unknown request');
+    if (status !== 'running' && status !== 'done' && status !== 'failed')
+      throw new Error('Unknown status');
+    return drive.reply(requestId, status, typeof error === 'string' ? error : undefined);
+  });
+  // Signing out forgets the Drive session on this PC (not revoked: googleSession.ts).
+  ipcMain.handle('auth:signedOut', (e) => {
+    fromApp(e);
+    google.forget();
+  });
+  // A fresh ID token for the stored account, so the page can sign in to Firebase again.
+  ipcMain.handle('auth:idToken', (e) => {
+    fromApp(e);
+    return google.idToken().catch(() => null);
+  });
+}
+
 /** The tray's "Settings...": the same window as the first-run setup; saving restarts the app. */
 async function openSettings() {
   if (setupWin) return showWindow();
@@ -234,16 +293,40 @@ async function start() {
     localPlannedList: (token) => store.plannedListResponse(token),
   });
 
-  ipcMain.handle('auth:google', (event) => {
-    // Only the app's own page may start a sign-in.
-    if (!event.senderFrame?.url.startsWith(APP_ORIGIN)) throw new Error('Unexpected sender');
+  const oauthClient = () => {
     const clientFile = setupFiles.oauthFile;
     if (!existsSync(clientFile)) {
       throw new Error(
         'Sign-in is not set up yet: choose the Google sign-in client in the tray menu, Settings...'
       );
     }
-    return googleSignIn(loadOAuthClient(clientFile));
+    return loadOAuthClient(clientFile);
+  };
+  const google = new GoogleSession(
+    path.join(app.getPath('userData'), 'google-session.bin'),
+    oauthClient
+  );
+  google.load();
+  const drive = new DriveWorker(
+    store,
+    google,
+    () => ({
+      drive: storageOf(appConfig).drive,
+      mode: usesFirebase(appConfig) ? 'both' : 'local',
+    }),
+    path.join(app.getPath('userData'), 'drive-publisher.json'),
+    app.getVersion()
+  );
+  driveWorker = drive;
+  void drive.update();
+  registerDriveIpc(drive, google);
+
+  // Only the app's own page may start a sign-in. With Drive on, the same
+  // sign-in asks for the app-data folder, and the session stays here.
+  ipcMain.handle('auth:google', (event) => {
+    fromApp(event);
+    if (storageOf(appConfig).drive) return google.signIn(true);
+    return googleSignIn(oauthClient()).then((t) => t.idToken);
   });
 
   // The Start menu shortcut and the start-with-Windows entry come from the
@@ -262,6 +345,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {});
   app.on('before-quit', () => {
     quitting = true;
+    driveWorker?.stop();
     // Synchronous, so the last changes are on disk before the process ends.
     localStore?.flushSync();
     void scraper?.close();

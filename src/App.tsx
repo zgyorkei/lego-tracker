@@ -328,7 +328,9 @@ export default function App() {
   const { desktopOnline, delegate } = useDesktopWorker(
     firebaseUser,
     isDemoMode,
-    isDesktopApp ? runDesktopRequest : undefined
+    isDesktopApp ? runDesktopRequest : undefined,
+    // With Google Drive on, refreshes asked for over Drive come in too.
+    { driveUser: user ?? null }
   );
 
   /**

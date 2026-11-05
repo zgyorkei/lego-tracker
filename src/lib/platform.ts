@@ -1,5 +1,6 @@
 import { firebaseMissing, usesFirebase, type DesktopAppConfig } from '../../lib/appConfig';
 import type { DesktopStoreBridge } from '../../lib/data/storeBridge';
+import type { DesktopDriveBridge } from '../../lib/drive/bridge';
 
 // The desktop (Electron) build exposes a bridge object on window from its
 // preload script. Its presence is the single switch between the two runtimes:
@@ -24,6 +25,12 @@ declare global {
       setTrayStatus?(text: string): void;
       /** Opens the settings window; saving restarts the app. Absent in builds before it. */
       openSettings?(): Promise<void>;
+      /** The Google Drive mailbox (lib/drive/bridge.ts). Absent in builds before it. */
+      drive?: DesktopDriveBridge;
+      /** A fresh Google ID token from the desktop's Drive session, or null without one. */
+      googleIdToken?(): Promise<string | null>;
+      /** Tells the desktop the page signed out, so it forgets its Google session. */
+      googleSignedOut?(): Promise<void>;
     };
   }
 }

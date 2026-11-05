@@ -12,7 +12,8 @@ import {
 } from 'firebase/firestore';
 import type { AuthUser } from '../data/types';
 import { getDb } from '../lib/firebase';
-import { isDesktopApp } from '../lib/platform';
+import { desktopConfig, isDesktopApp } from '../lib/platform';
+import type { DesktopDriveBridge, DriveRefresh } from '../../lib/drive/bridge';
 import {
   CLAIM_TIMEOUT_MS,
   DESKTOP_STATUS_COLLECTION,
@@ -58,18 +59,151 @@ export async function scheduleDailyRun(
   });
 }
 
+/** One refresh for the desktop to run, from whichever channel asked. */
+interface RefreshJob {
+  kind: RefreshKind;
+  setIds: string[];
+  /** Takes the job (a Firestore claim); false: another desktop has it, or it lapsed. */
+  claim(): Promise<boolean>;
+  finish(outcome: 'done' | 'failed', error?: string): Promise<void>;
+}
+
+/** Where refresh jobs come from: the website's Firestore requests, or Drive ops. */
+interface WorkerChannel {
+  /** Starts delivering jobs; returns the stop. */
+  start(submit: (job: RefreshJob) => void): () => void;
+}
+
+/** Today's protocol: heartbeat in desktopStatus, claims on refreshRequests. */
+function firestoreChannel(uid: string): WorkerChannel {
+  return {
+    start(submit) {
+      const db = getDb();
+      const beat = () =>
+        setDoc(doc(db, DESKTOP_STATUS_COLLECTION, uid), {
+          lastSeenAt: new Date().toISOString(),
+        }).catch((err) =>
+          console.warn(
+            'Desktop heartbeat failed (is the desktopStatus rule in the Firebase store?)',
+            err
+          )
+        );
+      void beat();
+      const timer = setInterval(() => void beat(), HEARTBEAT_MS);
+      const inFlight = new Set<string>();
+
+      const job = (id: string, req: RefreshRequest): RefreshJob => {
+        const ref = doc(db, REFRESH_REQUESTS_COLLECTION, id);
+        return {
+          kind: req.kind,
+          setIds: req.setIds,
+          async claim() {
+            try {
+              return await runTransaction(db, async (tx) => {
+                const snap = await tx.get(ref);
+                if (!shouldClaim(snap.data() as RefreshRequest | undefined)) return false;
+                tx.update(ref, { status: 'running', claimedAt: new Date().toISOString() });
+                return true;
+              });
+            } catch (err) {
+              console.warn('Could not claim refresh request', id, err);
+              return false;
+            } finally {
+              inFlight.delete(id);
+            }
+          },
+          async finish(outcome, error) {
+            await updateDoc(ref, {
+              status: outcome,
+              finishedAt: new Date().toISOString(),
+              ...(error ? { error: error.slice(0, 300) } : {}),
+            });
+          },
+        };
+      };
+
+      const pending = query(
+        collection(db, REFRESH_REQUESTS_COLLECTION),
+        where('userId', '==', uid),
+        where('status', '==', 'pending')
+      );
+      const unsubscribe = onSnapshot(
+        pending,
+        (snap) => {
+          snap.docs.forEach((d) => {
+            const req = d.data() as RefreshRequest;
+            if (inFlight.has(d.id) || !shouldClaim(req)) return;
+            inFlight.add(d.id);
+            submit(job(d.id, req));
+          });
+        },
+        (err) =>
+          console.warn(
+            'Refresh request subscription failed (is the refreshRequests rule in the Firebase store?)',
+            err
+          )
+      );
+      return () => {
+        clearInterval(timer);
+        unsubscribe();
+      };
+    },
+  };
+}
+
+/**
+ * Refreshes a website asked for through the Google Drive mailbox (the main
+ * process reads them, desktop/src/drive/inbox.ts); each one's progress goes
+ * back as a reply file. This desktop is the only one reading them.
+ */
+function driveChannel(drive: DesktopDriveBridge): WorkerChannel {
+  return {
+    start(submit) {
+      let stopped = false;
+      const take = (r: DriveRefresh) => {
+        if (stopped) return;
+        submit({
+          kind: r.kind,
+          setIds: r.setIds,
+          async claim() {
+            await drive.reply(r.requestId, 'running').catch(() => {});
+            return true;
+          },
+          finish: (outcome, error) => drive.reply(r.requestId, outcome, error),
+        });
+      };
+      void drive.takeRefreshes().then(
+        (list) => list.forEach(take),
+        () => {}
+      );
+      const off = drive.onRefresh(take);
+      return () => {
+        stopped = true;
+        off();
+      };
+    },
+  };
+}
+
 /**
  * The desktop app as the website's scraper (see src/lib/desktopWorker.ts).
  *
- * In the desktop app it keeps the heartbeat going and works through the
- * website's refresh requests with `run`. On the website it tracks whether the
- * desktop is online and offers `delegate`, which hands a refresh to it and
- * resolves "done" when the desktop did the work, or "failed" / "unavailable"
- * when the caller should fall back to its own (Gemini) path.
+ * In the desktop app it works through the refreshes the website asks for
+ * with `run`, one at a time whichever channel they come by: Firestore
+ * requests (with Firebase; it also keeps the heartbeat going) and the Google
+ * Drive mailbox (`driveUser`, when Drive is on). On the website it tracks
+ * whether the desktop is online and offers `delegate`, which hands a refresh
+ * to it and resolves "done" when the desktop did the work, or "failed" /
+ * "unavailable" when the caller should fall back to its own (Gemini) path.
  *
  * Inert in Demo Mode and when signed out.
  */
-export function useDesktopWorker(user: AuthUser | null, isDemoMode: boolean, run?: RunRefresh) {
+export function useDesktopWorker(
+  user: AuthUser | null,
+  isDemoMode: boolean,
+  run?: RunRefresh,
+  { driveUser = null }: { driveUser?: AuthUser | null } = {}
+) {
   const active = Boolean(user) && !isDemoMode;
   const uid = user?.uid ?? null;
 
@@ -80,87 +214,34 @@ export function useDesktopWorker(user: AuthUser | null, isDemoMode: boolean, run
     runRef.current = run;
   });
 
+  const drive = isDesktopApp ? window.legoTrackerDesktop?.drive : undefined;
+  const driveActive = Boolean(drive && driveUser && desktopConfig?.storage?.drive) && !isDemoMode;
+
   useEffect(() => {
-    if (!active || !isDesktopApp || !uid) return;
-    const db = getDb();
+    if (!isDesktopApp) return;
+    const channels: WorkerChannel[] = [];
+    if (active && uid) channels.push(firestoreChannel(uid));
+    if (driveActive && drive) channels.push(driveChannel(drive));
+    if (!channels.length) return;
 
-    const beat = () =>
-      setDoc(doc(db, DESKTOP_STATUS_COLLECTION, uid), {
-        lastSeenAt: new Date().toISOString(),
-      }).catch((err) =>
-        console.warn(
-          'Desktop heartbeat failed (is the desktopStatus rule in the Firebase store?)',
-          err
-        )
-      );
-    void beat();
-    const timer = setInterval(() => void beat(), HEARTBEAT_MS);
-
-    // One request at a time: the refresh drives a single browser tab.
+    // One refresh at a time, whichever channel asked: it drives a single browser tab.
     let queue: Promise<void> = Promise.resolve();
-    const inFlight = new Set<string>();
-
-    const handle = (id: string) => {
-      const ref = doc(db, REFRESH_REQUESTS_COLLECTION, id);
-      queue = queue
-        .then(async () => {
-          let claimed: RefreshRequest | null = null;
-          try {
-            claimed = await runTransaction(db, async (tx) => {
-              const snap = await tx.get(ref);
-              const req = snap.data() as RefreshRequest | undefined;
-              if (!shouldClaim(req)) return null;
-              tx.update(ref, { status: 'running', claimedAt: new Date().toISOString() });
-              return req!;
-            });
-          } catch (err) {
-            console.warn('Could not claim refresh request', id, err);
-          }
-          if (!claimed) return;
-
-          try {
-            if (!runRef.current) throw new Error('The desktop app is not ready to refresh');
-            await runRef.current(claimed.kind, claimed.setIds);
-            await updateDoc(ref, { status: 'done', finishedAt: new Date().toISOString() });
-          } catch (err) {
-            console.error('Refresh request failed', id, err);
-            await updateDoc(ref, {
-              status: 'failed',
-              finishedAt: new Date().toISOString(),
-              error: String((err as Error)?.message || err).slice(0, 300),
-            }).catch(() => {});
-          }
-        })
-        .finally(() => inFlight.delete(id));
+    const submit = (job: RefreshJob) => {
+      queue = queue.then(async () => {
+        if (!(await job.claim())) return;
+        try {
+          if (!runRef.current) throw new Error('The desktop app is not ready to refresh');
+          await runRef.current(job.kind, job.setIds);
+          await job.finish('done');
+        } catch (err) {
+          console.error('Refresh request failed', err);
+          await job.finish('failed', String((err as Error)?.message || err)).catch(() => {});
+        }
+      });
     };
-
-    const pending = query(
-      collection(db, REFRESH_REQUESTS_COLLECTION),
-      where('userId', '==', uid),
-      where('status', '==', 'pending')
-    );
-    const unsubscribe = onSnapshot(
-      pending,
-      (snap) => {
-        snap.docs.forEach((d) => {
-          if (inFlight.has(d.id) || !shouldClaim(d.data() as RefreshRequest)) return;
-          inFlight.add(d.id);
-          handle(d.id);
-        });
-      },
-      (err) =>
-        console.warn(
-          'Refresh request subscription failed (is the refreshRequests rule in the Firebase store?)',
-          err
-        )
-    );
-
-    return () => {
-      clearInterval(timer);
-      unsubscribe();
-    };
-  }, [active, uid]);
-
+    const stops = channels.map((c) => c.start(submit));
+    return () => stops.forEach((stop) => stop());
+  }, [active, uid, driveActive, drive]);
   // ---- Website role -------------------------------------------------------
 
   const [lastSeenAt, setLastSeenAt] = useState<string | null>(null);

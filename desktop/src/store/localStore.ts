@@ -38,6 +38,7 @@ import {
   type StoreStatus,
 } from '../../../lib/data/storeBridge';
 import { isAutoId, isValidDocId } from '../../../lib/data/ids';
+import { applyOps, type CheckedBatch, type OpsResult } from '../../../lib/data/ops';
 import {
   plannedListResponse,
   type PayloadSet,
@@ -254,7 +255,44 @@ export class LocalStore extends EventEmitter {
     this.sharedList = sharedListOf(
       await readJsonFile<unknown>(path.join(this.backupDir, 'plannedList.json'))
     );
+    // The Drive worker (desktop/src/drive) follows the open account.
+    this.emit('opened', sub);
     return this.status();
+  }
+
+  /** The open account's folder, for files kept beside the copy (drive.json). */
+  accountDir(): string | null {
+    return this.sub ? this.dir : null;
+  }
+
+  /** What the Drive snapshot publishes: the sets the app shows and the price sources. */
+  driveView(): { sets: SetRecord[]; priceSources: unknown[] | null } {
+    this.requireOpen();
+    return { sets: visibleSets(this.state), priceSources: this.state.priceSources };
+  }
+
+  /**
+   * A batch of changes from the website (through Drive), checked by
+   * validateOpBatch: applied as local changes, history rows written to their
+   * files. Returns what could not apply here and the refreshes it asks for.
+   */
+  applyOpsBatch(batch: CheckedBatch): Promise<Pick<OpsResult, 'rejected' | 'refreshes'>> {
+    const run = async () => {
+      this.requireOpen();
+      const result = applyOps(this.state, batch, this.now().toISOString());
+      for (const { setId, row } of result.historyAppends) {
+        const file = this.historyFile(setId);
+        const existing = (await readJsonFile<HistoryRow[]>(file)) ?? [];
+        await writeFileAtomic(file, JSON.stringify(mergeHistory(existing, [row])));
+        this.emit('history', setId);
+      }
+      if (result.state !== this.state)
+        this.commit({ state: result.state, changed: result.changed, removed: result.removed });
+      return { rejected: result.rejected, refreshes: result.refreshes };
+    };
+    const result = this.historyQueue.then(run, run);
+    this.historyQueue = result.catch(() => {});
+    return result;
   }
 
   isOpen() {
@@ -306,6 +344,7 @@ export class LocalStore extends EventEmitter {
         const file = this.historyFile(setId);
         const existing = (await readJsonFile<HistoryRow[]>(file)) ?? [];
         await writeFileAtomic(file, JSON.stringify(mergeHistory(existing, page.rows)));
+        this.emit('history', setId);
       }
       const last = page.rows.length ? page.rows[page.rows.length - 1] : null;
       this.state = spendReads(
@@ -406,6 +445,7 @@ export class LocalStore extends EventEmitter {
         const file = this.historyFile(setId);
         const existing = (await readJsonFile<HistoryRow[]>(file)) ?? [];
         await writeFileAtomic(file, JSON.stringify(mergeHistory(existing, [row])));
+        this.emit('history', setId);
       }
       this.commit(result);
       return this.status();

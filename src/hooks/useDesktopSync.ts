@@ -6,6 +6,7 @@ import { syncSummary } from '../lib/localBackupText';
 import { startFirestoreSync, type Sync } from '../data/firestoreSync';
 import type { SessionUser } from '../data/types';
 import type { HeldChoice, StoreStatus } from '../../lib/data/storeBridge';
+import type { DriveWorkerStatus } from '../../lib/drive/bridge';
 
 /**
  * Desktop app only: keeps the copy on this PC (which the app reads and writes)
@@ -86,7 +87,43 @@ export function useDesktopSync(user: SessionUser, isDemoMode: boolean) {
   const retryNow = useCallback(() => sync.current?.retryNow(), []);
   const setAccountRefused = useCallback(() => sync.current?.setAccountRefused(), []);
 
-  return { active, mode, status, health, resolveHeld, retryNow, setAccountRefused };
+  // Google Drive (the phone and website reach this PC's copy): the main
+  // process runs it; this only shows how it is going.
+  const driveBridge = bridge?.drive;
+  const [drive, setDrive] = useState<DriveWorkerStatus | null>(null);
+  useEffect(() => {
+    if (!active || !driveBridge) {
+      setDrive(null);
+      return;
+    }
+    let stopped = false;
+    driveBridge.status().then(
+      (s) => {
+        if (!stopped) setDrive(s);
+      },
+      () => {}
+    );
+    const off = driveBridge.onStatus(setDrive);
+    return () => {
+      stopped = true;
+      off();
+    };
+  }, [active, driveBridge]);
+  const connectDrive = useCallback(async () => {
+    if (driveBridge) setDrive(await driveBridge.connect());
+  }, [driveBridge]);
+
+  return {
+    active,
+    mode,
+    status,
+    health,
+    resolveHeld,
+    retryNow,
+    setAccountRefused,
+    drive,
+    connectDrive,
+  };
 }
 
 export type DesktopSyncState = ReturnType<typeof useDesktopSync>;

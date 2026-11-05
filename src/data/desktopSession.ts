@@ -78,8 +78,21 @@ export const desktopSession: SessionProvider = {
       };
     }
     try {
+      let triedGoogle = false;
       return firebaseSession.subscribe((user) => {
         if (user) remember(user);
+        // No Firebase session, but the desktop holds a Google one (Drive):
+        // sign in to Firebase with a fresh ID token, once, instead of asking.
+        const desktop = typeof window !== 'undefined' ? window.legoTrackerDesktop : undefined;
+        if (!user && !triedGoogle && desktop?.googleIdToken) {
+          triedGoogle = true;
+          void desktop
+            .googleIdToken()
+            .then((idToken) => (idToken ? firebaseSession.signInWithIdToken(idToken) : undefined))
+            .catch((err: unknown) =>
+              console.warn('Signing in again from the Drive session failed', err)
+            );
+        }
         listener(user);
       });
     } catch (err) {
@@ -100,6 +113,9 @@ export const desktopSession: SessionProvider = {
   },
   signOut: async () => {
     forget();
+    // The desktop's Google session (Drive) goes too; it is not revoked.
+    const desktop = typeof window !== 'undefined' ? window.legoTrackerDesktop : undefined;
+    await desktop?.googleSignedOut?.().catch(() => {});
     if (firebaseAvailable) await firebaseSession.signOut();
     else tellLocal(null);
   },

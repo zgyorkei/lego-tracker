@@ -1,5 +1,6 @@
 import type { StoreStatus } from '../../lib/data/storeBridge';
 import type { HeldSnapshot, RemoteSource } from '../../lib/data/store';
+import type { DriveWorkerStatus } from '../../lib/drive/bridge';
 import { isProblem, stepsFor, type Health } from './dataHealth';
 
 export type PillTone = 'ok' | 'busy' | 'problem';
@@ -57,6 +58,55 @@ export function syncSummary(
     return status.pending ? `offline, ${changes(status.pending)} saved on this PC` : 'offline';
   if (status.pending) return `syncing ${changes(status.pending)}`;
   return `in sync, ${setsText(status.sets)}`;
+}
+
+/**
+ * The Google Drive line of the storage dialog, and whether to offer
+ * "Connect Google Drive". Null when Drive is off.
+ */
+export function driveLine(
+  drive: DriveWorkerStatus | null
+): { text: string; problem: boolean; connect: boolean } | null {
+  if (!drive || drive.state === 'off') return null;
+  const when = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString() : null);
+  switch (drive.state) {
+    case 'not-connected':
+      return {
+        text: drive.account
+          ? `Signed in as ${drive.account} without the Google Drive permission.`
+          : 'Not connected yet.',
+        problem: true,
+        connect: true,
+      };
+    case 'wrong-account':
+      return {
+        text: `Connected as ${drive.account ?? 'another account'}, not the account of this copy.`,
+        problem: true,
+        connect: true,
+      };
+    case 'starting':
+      return { text: 'Starting...', problem: false, connect: false };
+    case 'publishing': {
+      const at = when(drive.lastPublishedAt);
+      return {
+        text: `Your phone and website can reach this copy${at ? `; last shared ${at}` : ''}.`,
+        problem: false,
+        connect: false,
+      };
+    }
+    case 'paused':
+      return {
+        text: `Another PC${drive.otherPublisher ? ` (${drive.otherPublisher})` : ''} shares its copy through Google Drive, so this one waits.`,
+        problem: false,
+        connect: false,
+      };
+    case 'error':
+      return {
+        text: `Problem: ${drive.detail ?? 'Google Drive did not answer'}. Tried again shortly.`,
+        problem: true,
+        connect: false,
+      };
+  }
 }
 
 /** What a held snapshot means, in the user's terms. */

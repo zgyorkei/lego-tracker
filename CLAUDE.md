@@ -110,6 +110,30 @@ creates it, history after its set in `writeBatch` chunks. Dev runs can use
 `BRICK_TRACKER_USER_DATA` / `BRICK_TRACKER_PORT` for a separate profile
 beside the installed app (ignored when packaged).
 
+**The Google Drive mailbox** (Phase 5, `storage.drive`): the phone and
+website reach this PC's copy through the account's Drive app-data folder
+(`drive.appdata`, one Cloud project holds the Desktop and Web clients and
+they share the folder). Layout and single-writer rule in
+`lib/drive/layout.ts`: only the desktop writes `snapshot.json.gz`,
+`status.json`, `history-*.json.gz` and `reply-*.json`; websites only create
+`ops-<ts>-<batchId>.json`. `desktop/src/drive/` (main process only):
+`publisher.ts` publishes (snapshot at most every 10 s, heartbeat 2 min,
+history files one at a time when changed; pauses while another PC's
+heartbeat is fresh; republishes a wiped folder), `inbox.ts` polls every 15 s
+and applies each batch through `validateOpBatch` / `applyOps`
+(`lib/data/ops.ts`, the rules' shapes and caps, refusals reported per op in
+the snapshot), names it in the snapshot, then deletes the file (idempotent
+by `batchId`, kept in `<sub>/drive.json`). Refresh ops reach the page as a
+`useDesktopWorker` channel sharing one run queue with the Firestore
+requests; replies go back as files. The desktop's Google session
+(`googleSession.ts`) exists only with Drive on: sign-in then asks for
+offline access, the refresh token is kept with `safeStorage` in
+`google-session.bin` (excluded from packaging and leak-checked), Drive
+access tokens never leave main, and the page gets only ID tokens (it signs
+in to Firebase from one when Firebase has no session). Signing out forgets
+the token and **never revokes it**: Google ties consent to the project, so a
+revoke would cut every client's access (the website's, other PCs').
+
 **Routing is hand-rolled** in `src/main.tsx` by matching `window.location.pathname`.
 There is no router library. `App` and `RegistryView` are lazy-loaded and mutually
 exclusive.
@@ -227,7 +251,8 @@ exclusive.
   working); upload that one file from `desktop/release`, never
   `win-unpacked/`, `builder-debug.yml` or a bundle with secrets.
 - **Desktop secrets and setup** (`desktop/.env`, `desktop/oauth-client.json`,
-  `desktop/app-config.json`) are gitignored and must never be committed or
+  `desktop/app-config.json`, and `google-session.bin` in the data folder) are
+  gitignored or outside the tree and must never be committed or
   packaged. A packaged app reads them from `%APPDATA%\Brick Tracker`.
 - **7-Zip: only the installed 26.03 or newer.** Older and bundled copies
   fail the build machine's security check. `npm run dist` builds a per-user

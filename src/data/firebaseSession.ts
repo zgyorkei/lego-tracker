@@ -22,8 +22,15 @@ export function toAuthUser(user: User | null): AuthUser | null {
 }
 
 /** Sign-in through Firebase Authentication with Google. */
-export const firebaseSession: SessionProvider = {
+export const firebaseSession: SessionProvider & {
+  /** Desktop: signs in with a Google ID token the desktop already has (its Drive session). */
+  signInWithIdToken(idToken: string): Promise<void>;
+} = {
   subscribe: (listener) => onAuthStateChanged(getFirebaseAuth(), (u) => listener(toAuthUser(u))),
+
+  signInWithIdToken: async (idToken) => {
+    await signInWithCredential(getFirebaseAuth(), GoogleAuthProvider.credential(idToken));
+  },
 
   // Google blocks its sign-in page inside embedded browsers, so the desktop app
   // runs the OAuth flow in the system browser and hands back an ID token, which
