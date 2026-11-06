@@ -37,8 +37,10 @@ middleware) and `api/index.ts` (Vercel serverless). Add routes only in
 explicit `.js` extension, which Vercel's ESM resolution requires.
 
 **No backend database access.** There is no Firebase Admin SDK. The Express
-layer never touches Firestore and never verifies an ID token, so *all* data
-authorisation lives in `firestore.rules`. Treat that file as security-critical.
+layer never touches Firestore and never verifies an ID token for data
+access, so *all* Firestore authorisation lives in `firestore.rules`. Treat
+that file as security-critical. (The session routes read the ID token Google
+returns from its own token endpoint, only to name the account; see below.)
 
 **Client data goes through `src/data/`.** `useSets` and `usePriceSources` talk
 to a `DataBackend` (`createFirestoreBackend(uid)` on the website,
@@ -58,7 +60,8 @@ and writes its copy in `<userData>/data/<googleSub>/` through `LocalBackend`
 and the `store` IPC bridge (`lib/data/storeBridge.ts`, `desktop/src/store/`),
 and `src/data/firestoreSync.ts` keeps that copy and Firestore in step (pull
 live, push `planPush` with a few writes in flight, `ackPush` back). The
-website still uses `FirestoreBackend` directly. The reducer
+website uses `FirestoreBackend` or `DriveBackend` (see "The website reads
+the desktop's copy" below). The reducer
 `lib/data/store.ts` holds the rules: field-level dirty tracking (an unsynced
 local edit wins per field), deletes win both ways, creates use Firestore-style
 ids and wait for a server snapshot, history waits for its set, `userId` is
@@ -137,6 +140,26 @@ in to Firebase from one when Firebase has no session). Signing out forgets
 the token and **never revokes it**: Google ties consent to the project, so a
 revoke would cut every client's access (the website's, other PCs').
 
+**The website reads the desktop's copy through Drive** (Phase 6), with or
+without Firebase. Its Google sign-in is a server-held session
+(`lib/session.ts`, `registerSessionRoutes` in `lib/server-api.ts`): the GIS
+code popup (`src/data/googleWebSession.ts`), the code exchanged by the server
+(`redirect_uri: 'postmessage'`), the refresh token sealed (AES-256-GCM, HKDF
+from `SESSION_SECRET`) in the `__Host-bt_session` cookie; the page only gets
+short-lived access tokens from `/api/session/token`. 403 `drive-scope` when
+Drive was not ticked, 409 `needs-consent` without a refresh token (the next
+click asks with `prompt=consent`; a second popup without a click would be
+blocked). `src/data/driveBackend.ts` polls while visible, overlays its own
+pending batches on the snapshot (`driveOverlay.ts`, pure), keeps an outbox in
+localStorage (`bt.drive.outbox.<sub>`), flushes 1 s after the last change or
+when hidden, loads history lazily and reports refusals once per batch; it
+never seeds price sources. `chooseDataSource` (`src/lib/dataSource.ts`)
+picks `firestore`, `drive` or `local` from what is configured, the
+per-device preference (`brickTrackerDataSource`: auto, firebase, desktop) and
+Firestore's health: in Auto a classified Firestore failure switches to Drive
+when a Drive session exists, else the banner's "Use my desktop's copy" is
+the sign-in click; `probeFirestore` every 5 min offers "Switch back".
+
 **Routing is hand-rolled** in `src/main.tsx` by matching `window.location.pathname`.
 There is no router library. `App` and `RegistryView` are lazy-loaded and mutually
 exclusive.
@@ -169,8 +192,24 @@ exclusive.
   `isPriceQuote` from `src/types.ts` rather than indexing and casting.
 - **`getMockSets()` seeds Demo Mode from `localStorage.cachedSets`**, which also
   holds the signed-in user's real sets. `firebaseSession.signOut`
-  (`src/data/firebaseSession.ts`) clears that key; keep it that way or the next person on the machine sees the
+  (`src/data/firebaseSession.ts`) and `googleWebSession.signOut` (which also
+  drops the Drive outbox and snapshot caches through `onWebSignOut`) clear
+  that key; keep it that way or the next person on the machine sees the
   previous user's collection pre-login.
+- **`addedAt` is when a set joined the collection.** Written on create only
+  (a create-only field, like `createdAt`, so no rules change); sort by
+  `addedAt ?? createdAt` (`src/lib/sortSets.ts`). It exists because the
+  rules pin `createdAt` to `request.time`, so a set uploaded from a local copy
+  would otherwise lose its date added. Keep it on every create path
+  (`FirestoreBackend.addSet`, the store reducer, Drive ops).
+- **Website session settings:** `VITE_GOOGLE_CLIENT_ID` (one setting, read
+  by the page and the server), and server-only `GOOGLE_CLIENT_SECRET` and
+  `SESSION_SECRET` (32+ characters; changing it signs everyone out). Never
+  give the last two a `VITE_` prefix. `sessionConfig` wants all three or
+  treats the session as not set up (503). The session routes keep
+  `X-Requested-With: brick-tracker` plus own-`Origin` checks, no CORS
+  headers and `no-store`; do not loosen them. The desktop passes
+  `webSession: false`, and `googleClientId` is null in a desktop build.
 - **Sign-in can be limited to listed accounts.** `isSignedIn()` in
   `firestore.rules` also requires `isAllowedUser()`: when the
   `access/allowlist` doc exists (console-only, `emails` in lower case), other
@@ -204,7 +243,10 @@ exclusive.
   and runs them with the normal refresh (`useDesktopWorker`,
   `src/lib/desktopWorker.ts`). Claim and cancel are transactions, so only one
   side acts on a request. The website falls back to Gemini when the desktop
-  is offline, does not claim within 45 s, or fails. `handleBatchRefresh`
+  is offline, does not claim within 45 s, or fails. Through Drive the
+  request is a `refresh` op (`DriveBackend.delegateRefresh`): replies polled
+  every 5 s, the ops file removed if the desktop has not started in 60 s,
+  and the Gemini run's writes held (`hold()`) and sent as one batch. `handleBatchRefresh`
   takes explicit `targets`, so keep it free of filter assumptions. The 4AM
   run is the same kind of request with a fixed per-day id
   (`scheduleDailyRun` / `dailyRunAction`), so several desktops signed in to
@@ -247,8 +289,9 @@ exclusive.
   choice, the user's project and website address as `app-config.json`
   (`lib/appConfig.ts`), and the preload hands it to the page synchronously.
   A first run defaults to "On this PC only".
-  `package.mjs` refuses a web build that contains a Firebase API key or the
-  builder's project. Never bake a project or domain into the desktop build.
+  `package.mjs` refuses a web build that contains a Firebase API key, the
+  builder's project or a Google client id (`*.apps.googleusercontent.com`).
+  Never bake a project, client or domain into the desktop build.
   Releases go to GitHub Releases as `Brick-Tracker-Setup.exe` (a fixed
   asset name, so the intro page's `releases/latest/download/...` link keeps
   working); upload that one file from `desktop/release`, never
@@ -322,9 +365,13 @@ exclusive.
 - **Client Firebase config** resolves in `src/lib/firebaseConfig.ts`: the
   desktop setup on desktop, else `VITE_FIREBASE_*` env vars, else a gitignored
   `firebase-applet-config.json` (see `firebase-applet-config.example.json`
-  for the shape). With none, `main.tsx` shows a "not set up" screen, and a
-  website build stops (`checkFirebaseConfig` in `vite.config.ts`); CI opts
-  out with `ALLOW_MISSING_FIREBASE_CONFIG=1`, real deployments must not.
+  for the shape). A website without Firebase is valid when it has
+  `VITE_GOOGLE_CLIENT_ID` (it then reads the desktop's copy through Drive);
+  with neither, `main.tsx` shows a "not set up" screen, and a website build
+  stops (`checkFirebaseConfig` in `vite.config.ts`); CI opts out with
+  `ALLOW_MISSING_FIREBASE_CONFIG=1`, real deployments must not. Registries
+  need Firebase: without it `/registry/:id` says why (`/registry/demo`
+  still works).
 
 ## Conventions
 

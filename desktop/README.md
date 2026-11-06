@@ -31,16 +31,18 @@ keeps running when its window is closed. Use the tray menu to quit.
      itself is on localhost, which nobody else can open); optional on this PC
      only;
    - "Let my phone and website reach this PC's copy (Google Drive)": the app
-     then shares its copy through your Google Drive's hidden app folder (the
-     website side arrives with Phase 6). The Google sign-in asks for that
-     folder too; tick the Drive box on Google's screen. Already signed in?
-     The storage dialog offers "Connect Google Drive". The Google Cloud
+     then shares its copy through your Google Drive's hidden app folder, and
+     the website (with `VITE_GOOGLE_CLIENT_ID` set) reads and changes it
+     there; see "The Google Drive mailbox" below. The Google sign-in asks for
+     that folder too; tick the Drive box on Google's screen. Already signed
+     in? The storage dialog offers "Connect Google Drive". The Google Cloud
      project needs the Drive API enabled and the `drive.appdata` scope;
      signing out forgets the Drive sign-in on this PC without revoking it
      (revoking would cut the website's access too);
    - the Google OAuth client for the desktop app: the JSON downloaded from
      Google Cloud console, Credentials, OAuth client of type "Desktop app", in
-     the Firebase project;
+     the same project as the website's Web client (the Firebase project, when
+     there is one);
    - optionally a Gemini key, for teaching sources. It is shared with your
      other apps (the `shop-teacher` package keeps it in Windows Credential
      Manager), so if BrickBudget already has one there is nothing to enter.
@@ -82,6 +84,66 @@ free port. Both are ignored by the packaged app.
   exchanged for a Firebase session with `signInWithCredential`; on this PC
   only, the token just says which Google account's copy to open.
 
+## Your data on this PC
+
+The desktop is local-first in both modes. The main process owns the store
+(`src/store/`): a pure reducer (`lib/data/store.ts`), atomic JSON writes
+(tmp, fsync, rename, retried while Windows holds the file) and one folder per
+Google account:
+
+```
+%APPDATA%\Brick Tracker\data\<google sub>\state.json          sets, price sources, sync state
+%APPDATA%\Brick Tracker\data\<google sub>\history\<setId>.json
+%APPDATA%\Brick Tracker\data\<google sub>\backup\              7 daily .bak files, registry and planned-list backups
+```
+
+The page reads and writes it over IPC only (`window.legoTrackerDesktop.store`,
+sender-checked like the setup window). Nothing serves it over HTTP: the only
+local data the server answers with is the planned list, read-only, to a
+caller holding its token (`ApiOptions.localPlannedList`).
+
+With Firebase, the page's `FirestoreSync` (`src/data/firestoreSync.ts`) puts
+Firestore snapshots into the store and pushes dirty fields back: each set
+keeps `value`, a server-confirmed `base` and `dirty` field revisions, so
+unsynced local edits win per field and no clocks are compared. Deletes win
+both ways; new sets get Firestore-style ids and keep `addedAt` when uploaded;
+`userId` is never stored locally (the pusher writes the uid). Guards keep the
+copy a backup:
+
+- remote removals are applied only from server snapshots (`fromCache` false);
+- a snapshot that would remove more than max(3, 10%) of the synced sets, or
+  comes from another project or account, is held, and the storage dialog asks;
+- an empty store is never written over one with sets.
+
+Firebase problems are classified (`src/lib/dataHealth.ts`) and shown as a
+banner with steps; the app keeps working on the copy and retries every 5
+minutes, on focus and on "Retry now".
+
+## The Google Drive mailbox
+
+With Google Drive on, `src/drive/` runs a mailbox in the account's
+`appDataFolder` (`lib/drive/layout.ts`). Only the desktop writes the published
+files; websites only create change batches:
+
+| File | Writer | When |
+| --- | --- | --- |
+| `snapshot.json.gz` | desktop | at most every 10 s after a change, with the ids of the batches applied |
+| `status.json` | desktop | heartbeat every 2 min: mode, version, publisher |
+| `history-<setId>.json.gz` | desktop | throttled; the website loads one when a set's history opens |
+| `reply-<requestId>.json` | desktop | the outcome of a refresh asked for over Drive |
+| `ops-<ts>-<batchId>.json` | website | a batch of changes, 1 s after the last edit |
+
+The inbox polls every 15 s, validates each batch with `lib/data/ops.ts`
+(`validateOpBatch`: the rules' shapes and caps, 200 ops and 512 KB per batch,
+`userId` dropped), applies it, publishes the snapshot naming the batch, and
+only then deletes the ops file; a batch id seen in `applied` is never applied
+again. Refused ops are reported back per op. `refresh` ops go to the page's
+worker queue, and the answer is a `reply-*.json`. The publisher warns when
+another PC already publishes for the account, and publishes again if the
+folder was emptied. Google's tokens stay in the main process
+(`src/googleSession.ts`, the refresh token encrypted with `safeStorage` in
+`google-session.bin`).
+
 ## Scraping
 
 `src/scraper/engine.ts` reads shop pages one at a time with person-paced
@@ -112,8 +174,9 @@ In the desktop app, open Price Sources, add the shop with its search URL
    excerpts (`lib/teachSource.ts`, from the `shop-teacher` package).
 3. The recipe is run on the same live pages. If it finds nothing, Gemini gets
    one retry with what the test saw.
-4. The prices found are shown; **Save** stores the recipe on the source in
-   Firestore (`userSettings`), so every device has it.
+4. The prices found are shown; **Save** stores the recipe on the source, in
+   the price sources on this PC (and in Firestore `userSettings` with
+   Firebase, or in the Drive snapshot), so every device has it.
 
 Changing a source's URL to another host drops its recipe. Teaching takes one
 to two minutes and a couple of Gemini calls; daily refreshes use none.
@@ -141,16 +204,20 @@ Set `SCRAPER_DEBUG=1` to print the cards the engine read.
 ## Refreshing for the website
 
 While the desktop app runs (signed in, even just in the tray), it is also the
-website's scraper. It writes a heartbeat to Firestore every 2 minutes; when
-you press "Update all" or a card's refresh on the website, the website hands
-the job to the desktop app instead of asking Gemini, and the desktop runs it
-with its normal refresh. The results reach the website through the live set
-updates, from any device, including your phone.
+website's scraper. It writes a heartbeat every 2 minutes (to Firestore, and
+`status.json` in Drive when Drive is on); when you press "Update all" or a
+card's refresh on the website, the website hands the job to the desktop app
+instead of asking Gemini, and the desktop runs it with its normal refresh.
+The results reach the website through the live set updates or the next
+snapshot, from any device, including your phone. Both channels share one run
+queue (`WorkerChannel` in `src/hooks/useDesktopWorker.ts`).
 
 The website uses Gemini as before when the desktop app has not been seen for
-5 minutes, does not pick the request up within 45 seconds, or reports a
-failure. Requests are claimed and cancelled in Firestore transactions, so a
-request is never run by both.
+5 minutes, reports a failure, or does not start the request in time: 45
+seconds through Firestore, 60 seconds through Drive (the website removes its
+ops file first). Firestore requests are claimed and cancelled in
+transactions, so a request is never run by both. Over Drive, Gemini's results
+go back to the desktop's copy as one batch.
 
 The desktop app can run on more than one Windows machine signed in to the
 same Google account. Every one of them sees each request, but only the first
@@ -214,18 +281,25 @@ replaces them.
 
 **The installer is not tied to anybody's project, and secrets are never
 packaged.** `package.mjs` fails the build if the web build contains a
-Firebase API key or the builder's project, or if a secret file or key value
-appears in `app.asar`. So one installer can be given to anybody: each install
-runs the setup window on first start and keeps the result in its data folder:
+Firebase API key, the builder's project or a Google OAuth client id
+(`*.apps.googleusercontent.com`), or if a secret file (`.env`,
+`oauth-client.json`, `app-config.json`, `google-session.bin`) or a key value
+(`AIza...`, `GOCSPX-...`) appears in the package. So one installer can be
+given to anybody: each install runs the setup window on first start and keeps
+the result in its data folder:
 
 ```
-%APPDATA%\Brick Tracker\app-config.json     (Firebase project, website address)
-%APPDATA%\Brick Tracker\oauth-client.json   (sign-in)
-%APPDATA%\Brick Tracker\.env                (optional: GEMINI_API_KEY, moved to the shared store at start)
+%APPDATA%\Brick Tracker\app-config.json      (storage mode, Firebase project, website address, Drive on/off)
+%APPDATA%\Brick Tracker\oauth-client.json    (sign-in)
+%APPDATA%\Brick Tracker\google-session.bin   (Google Drive sign-in, encrypted for this Windows user)
+%APPDATA%\Brick Tracker\data\                (your sets; see "Your data on this PC")
+%APPDATA%\Brick Tracker\.env                 (optional: GEMINI_API_KEY, moved to the shared store at start)
 ```
 
 Moving to another PC: install there and run the setup again, or copy those
-files into the same folder first.
+files into the same folder first (`google-session.bin` only opens for the
+Windows user that wrote it; on another PC, connect Google Drive again). On
+this PC only, copy `data\` too: it is the only copy of your sets.
 
 The Gemini key itself is in Windows Credential Manager (service
 `shop-teacher`), shared with BrickBudget and BLOK.AI.

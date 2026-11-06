@@ -37,10 +37,7 @@ const NotConfigured = (
         </li>
       </ul>
       <p className="mb-3">Set them and build it again.</p>
-      <a
-        className="underline font-bold"
-        href="https://zgyorkei.github.io/lego-tracker/#setup-firebase"
-      >
+      <a className="underline font-bold" href="https://zgyorkei.github.io/lego-tracker/#setup-plan">
         Setup guide
       </a>
     </div>

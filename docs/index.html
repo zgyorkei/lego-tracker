@@ -251,6 +251,7 @@
   </nav>
   <nav class="menu" data-menu="desktop">
     <a class="top" href="#d-what">What it adds</a>
+    <a class="top" href="#d-storage">Where your sets are kept</a>
     <a class="top" href="#d-scraping">Reading shops with a real browser</a>
     <a class="top" href="#d-daily">The 4AM refresh</a>
     <a class="top" href="#d-details">Set details from LEGO.com</a>
@@ -260,6 +261,8 @@
   </nav>
   <nav class="menu" data-menu="sync">
     <a class="top" href="#s-live">Live sync between devices</a>
+    <a class="top" href="#s-drive">Without Firebase: Google Drive</a>
+    <a class="top" href="#s-fallback">When Firebase breaks</a>
     <a class="top" href="#s-handoff">The desktop does the website's work</a>
     <a class="top" href="#s-machines">Several desktops</a>
     <a class="top" href="#s-api">Other apps: the Planned Sets API</a>
@@ -271,11 +274,12 @@
     <a class="top" href="#setup-plan">What you will set up</a>
     <a class="top" href="#setup-code">1. Get the code</a>
     <a class="top" href="#setup-firebase">2. Firebase</a>
-    <a class="top" href="#setup-gemini">3. Gemini API key</a>
-    <a class="top" href="#setup-local">4. Run it locally</a>
-    <a class="top" href="#setup-deploy">5. Deploy the website</a>
-    <a class="top" href="#setup-install">6. Install it on devices</a>
-    <a class="top" href="#setup-desktop">7. The desktop app</a>
+    <a class="top" href="#setup-google">3. Google Cloud and Drive</a>
+    <a class="top" href="#setup-gemini">4. Gemini API key</a>
+    <a class="top" href="#setup-local">5. Run it locally</a>
+    <a class="top" href="#setup-deploy">6. Deploy the website</a>
+    <a class="top" href="#setup-install">7. Install it on devices</a>
+    <a class="top" href="#setup-desktop">8. The desktop app</a>
     <a class="top" href="#setup-update">Updating</a>
     <a class="top" href="#setup-costs">Costs</a>
     <a class="top" href="#setup-trouble">Troubleshooting</a>
@@ -306,15 +310,16 @@
   </section>
 
   <section id="how-it-works">
-    <div class="section-head"><h2>How it works</h2><p>Three parts, each optional beyond the first. Your data lives in your own Firebase project, under your Google account.</p></div>
+    <div class="section-head"><h2>How it works</h2><p>Three parts. Your data lives in your own accounts: in your Firebase project, or on your PC with your Google Drive as the mailbox between the website and the PC. Either way it is under your Google account and nobody else's.</p></div>
     <div class="arch">
-      <div class="node web"><span class="k">Any device</span><h3>The website</h3><ul><li>A React app, also installable (PWA)</li><li>Sign in with Google</li><li>Its server (Vercel) looks sets up on Brickset, BrickLink and LEGO.com, and asks Gemini for shop prices when no desktop app is running</li></ul></div>
-      <div class="node store"><span class="k">Your Firebase project</span><h3>Firestore</h3><ul><li>Your sets, price history and price sources, private to your account</li><li>Live: a change on one device shows on all of them at once</li><li>The meeting point of website and desktop app</li><li>Public only where you share: registries and the Planned Sets API</li></ul></div>
-      <div class="node desk"><span class="k">Optional, Windows</span><h3>The desktop app</h3><ul><li>The same app, plus a real browser (Playwright, Chromium)</li><li>Reads shop pages itself: no AI</li><li>Refreshes daily at 4AM, sits in the tray</li><li>Picks up refreshes the website hands it</li></ul></div>
+      <div class="node web"><span class="k">Any device</span><h3>The website</h3><ul><li>A React app, also installable (PWA)</li><li>Sign in with Google</li><li>Shows your sets from Firebase, or your desktop's copy through Google Drive</li><li>Its server (Vercel) looks sets up on Brickset, BrickLink and LEGO.com, and asks Gemini for shop prices when no desktop app is running</li></ul></div>
+      <div class="node store"><span class="k">Your choice</span><h3>Where your sets are kept</h3><ul><li><strong>Firebase + a copy on your PC:</strong> Firestore, live on every device, and the desktop keeps a full copy as the backup</li><li><strong>On your PC only:</strong> no Firebase at all; the website and your phone reach the PC's copy through a hidden app folder in your Google Drive</li><li>Public only where you share: registries and the Planned Sets API (these need Firebase)</li></ul></div>
+      <div class="node desk"><span class="k">Windows</span><h3>The desktop app</h3><ul><li>The same app, plus a real browser (Playwright, Chromium)</li><li>Keeps every set on the PC, and keeps working when Firebase is down</li><li>Reads shop pages itself: no AI</li><li>Refreshes daily at 4AM, sits in the tray, and picks up refreshes the website hands it</li></ul></div>
     </div>
     <div class="flows">
-      <div class="flow"><b>Pressing refresh on the website</b> with the desktop app running: the website writes a request to Firestore, the desktop app claims it, reads the shops, and the new prices appear on every device.</div>
+      <div class="flow"><b>Pressing refresh on the website</b> with the desktop app running: the website hands it a request (through Firestore, or as a file in your Google Drive), the desktop app reads the shops, and the new prices appear on every device.</div>
       <div class="flow"><b>With no desktop app running</b>, the website's server asks Gemini (with Google Search) for the shop prices instead, and reads BrickLink directly.</div>
+      <div class="flow"><b>When Firebase breaks</b>, the desktop app carries on with its copy and sends the changes later, and the website offers to show the desktop's copy through Google Drive until Firebase answers again.</div>
     </div>
   </section>
 
@@ -336,7 +341,9 @@
     <div class="section-head"><h2>Keys and services</h2><p>All of them are yours: nothing is shared with the author or anybody else.</p></div>
     <div class="table-box"><table>
       <tr><th>Service</th><th>Used for</th><th>Key</th><th>Cost</th></tr>
-      <tr><td>Firebase (Google)</td><td>Sign-in and the Firestore database</td><td>A free project; the web config is not secret</td><td>The free tier covers personal use many times over</td></tr>
+      <tr><td>Firebase (Google), optional</td><td>Sign-in and the Firestore database; gift registries and the public Planned Sets API</td><td>A free project; the web config is not secret</td><td>The free tier covers personal use many times over</td></tr>
+      <tr><td>Google OAuth "Web application" client</td><td>The website's own Google sign-in, to read the desktop's copy through your Google Drive</td><td>A client ID (public), plus <span class="badge key">client secret</span> and <span class="badge key">session secret</span> server side only</td><td>Free</td></tr>
+      <tr><td>Google Drive (your own)</td><td>The mailbox between the website and the desktop app: a hidden app folder only this app can see</td><td>None: your Google sign-in</td><td>Free; it holds a few MB at most</td></tr>
       <tr><td>Vercel</td><td>Hosts the website and its small server</td><td>An account linked to your GitHub fork</td><td>Free (Hobby plan)</td></tr>
       <tr><td>Google Gemini API</td><td>Website price checks without the desktop app; teaching shops</td><td><span class="badge key">API key</span> server side only, never in the browser</td><td>Pay per use; the free tier covers light use</td></tr>
       <tr><td>Google OAuth "Desktop app" client</td><td>Signing in to the desktop app</td><td>A client file, kept on your PC</td><td>Free</td></tr>
@@ -348,7 +355,7 @@
     <div class="section-head"><h2>What you need</h2></div>
     <ul>
       <li>To use it: a browser (Chrome, Edge, Firefox, Safari) and a Google account. Install it as an app from Chrome on Android, ChromeOS or a Googlebook.</li>
-      <li>To run your own copy: a GitHub account, a Firebase project, a Vercel account and a Gemini API key. About an hour, following the <a href="#setup">setup guide</a>.</li>
+      <li>To run your own copy: a GitHub account, a Vercel account, and either a Firebase project or a Google Cloud project with the desktop app; a Gemini API key is recommended. About an hour, following the <a href="#setup">setup guide</a>.</li>
       <li>For the desktop app: Windows 10 or 11, Node.js 20 or newer to build it, and about 1 GB of disk for the app and its bundled browser.</li>
     </ul>
   </section>
@@ -545,9 +552,26 @@
       <li><strong>A daily refresh at 4AM,</strong> or at the first start after it if the PC was off. Nobody needs to open anything.</li>
       <li><strong>Work for the website.</strong> Press refresh on your phone and the desktop app at home does it; see <a href="#s-handoff">the hand-off</a>.</li>
       <li><strong>New shops, learnt once.</strong> Teach it any shop's search page; see <a href="#d-teach">teaching</a>.</li>
-      <li><strong>Everything else is identical:</strong> the same screens, the same account, the same data, live.</li>
+      <li><strong>Your sets on your PC.</strong> It keeps every set as files on the PC: with Firebase as a live copy and a backup, or on its own with no Firebase at all; see <a href="#d-storage">where your sets are kept</a>.</li>
+      <li><strong>Everything else is identical:</strong> the same screens, the same account, the same data.</li>
     </ul>
     <p><a class="btn red" href="https://github.com/zgyorkei/lego-tracker/releases/latest/download/Brick-Tracker-Setup.exe">Download for Windows</a> &nbsp;installer, about 240 MB. Run it and follow <a href="#setup-desktop">the setup steps</a>.</p>
+  </section>
+
+  <section id="d-storage" class="prose">
+    <div class="section-head"><h2>Where your sets are kept</h2><p>Chosen in the setup window, and changed later from <em>Settings...</em> in the tray menu or the storage pill in the app's header.</p></div>
+    <div class="table-box"><table>
+      <tr><th></th><th>On this PC only</th><th>Firebase + a copy on this PC</th></tr>
+      <tr><td>Firebase project</td><td>Not needed</td><td>Yours, as for the website</td></tr>
+      <tr><td>Your other devices</td><td>Through your Google Drive, when you allow it (see <a href="#s-drive">the mailbox</a>)</td><td>Live through Firestore; Google Drive as a fallback when you allow it</td></tr>
+      <tr><td>Firebase down or misconfigured</td><td class="muted">Not affected</td><td>The app keeps working on its copy, says what is wrong and how to fix it, and sends the changes when Firebase answers again</td></tr>
+      <tr><td>Gift registries, public Planned Sets link</td><td>Not available; programs on this PC can still read the planned list at <code>http://localhost:47321/...</code></td><td>Available</td></tr>
+    </table></div>
+    <ul style="margin-top:14px">
+      <li>The copy is a folder per Google account in <code>%APPDATA%\Brick Tracker\data</code>: the sets, a price-history file per set, and the last 7 days' backups. The storage pill in the header shows when it was last saved and opens that folder's details.</li>
+      <li><strong>It is guarded.</strong> Sets are removed from the copy only when Firestore itself says so, never from a cached answer. A change from Firebase that would remove many sets at once (more than 3, and more than a tenth), or that comes from another project or account, is held, and the app asks: delete them here too, or keep the copy and upload it again. An empty copy is never saved over one with sets in it.</li>
+      <li><strong>Switching</strong> from Firebase to this PC only stops syncing and leaves Firestore as it is (a Firebase-backed website then shows older data). Switching back asks before the sets on this PC are uploaded to the project, keeping each set's date added and its price history.</li>
+    </ul>
   </section>
 
   <section id="d-scraping" class="prose">
@@ -605,7 +629,8 @@
     <div class="section-head"><h2>What stays on your PC</h2></div>
     <ul>
       <li>The Gemini key (used only for teaching) is kept in Windows Credential Manager; the sign-in client file sits in <code>%APPDATA%\Brick Tracker</code>. Neither is ever part of a build.</li>
-      <li>The app's server listens on this PC only (<code>localhost</code>), never on the network.</li>
+      <li>Your sets, in <code>%APPDATA%\Brick Tracker\data</code>. The Google Drive sign-in, when you allow Drive, is in <code>%APPDATA%\Brick Tracker\google-session.bin</code>, encrypted by Windows for your Windows account only. Signing out forgets it on this PC.</li>
+      <li>The app's server listens on this PC only (<code>localhost</code>), never on the network, and never serves your sets: the only data it answers with is the planned list, to a program holding that list's link.</li>
       <li>The browser profile it reads shops with is its own, separate from yours.</li>
     </ul>
   </section>
@@ -616,71 +641,99 @@
   <div class="tab-head sync"><span class="label">Data</span><h2>Sync</h2><p>How your data moves between devices, between the website and the desktop app, and out to other people and apps.</p></div>
 
   <section id="s-live" class="prose">
-    <div class="section-head"><h2>Live sync between devices</h2></div>
+    <div class="section-head"><h2>Live sync between devices</h2><p>With Firebase.</p></div>
     <p>Your sets, their price history and your price sources are stored in Firestore under your Google account. Every open copy of the app listens for changes, so a set added on the phone, a price refreshed on the desktop, or a source taught on another PC shows everywhere within a second or two. Access is enforced by Firestore's security rules: nobody else can read or change your sets.</p>
+    <p>The desktop app works from its own copy on the PC: a change made there is saved on the PC first and sent to Firestore field by field. So an edit made while Firebase was unreachable is sent later, and a change on the phone to one field never overwrites a different field changed on the PC.</p>
+  </section>
+
+  <section id="s-drive" class="prose">
+    <div class="section-head"><h2>Without Firebase: the Google Drive mailbox</h2><p>When the desktop app keeps your sets on the PC only, the website and your phone reach them through a hidden app folder in your Google Drive. Only this app can see that folder, and it cannot see anything else in your Drive.</p></div>
+    <ol>
+      <li>The desktop app publishes its copy there: your sets within 10 seconds of a change, an "I'm online" note every 2 minutes, and each set's price history, read only when you open it.</li>
+      <li>The website signs in with its own Google sign-in (tick Google Drive on Google's screen, once) and reads that copy every 10 seconds while it is open.</li>
+      <li>A change on the website (a new set, a purchase, a price source) is written to the folder as a small file a second after your last edit. Your own changes show at once, also while the PC is off.</li>
+      <li>The desktop app picks those files up within 15 seconds, checks every change as strictly as Firestore's rules would, applies it, and publishes its copy again. A change it refuses shows on the website with the reason.</li>
+    </ol>
+    <p class="callout info">The desktop app is the only one that writes the published copy; websites only add change files, and each file is applied once, however often it is seen. With the PC off, changes wait in your Drive, and the website says when the desktop was last seen.</p>
+  </section>
+
+  <section id="s-fallback" class="prose">
+    <div class="section-head"><h2>When Firebase breaks</h2><p>With both Firebase and Google Drive set up for the website.</p></div>
+    <p>If Firestore fails (a database that is not found, outdated rules, a used-up quota), the website can show your desktop's copy instead. The header's <em>Data</em> choice is <em>Auto</em> on every device until you change it: in Auto the website switches by itself when it already has its Google Drive sign-in, and otherwise offers <em>Use my desktop's copy</em>, which signs in. It checks Firebase again every 5 minutes and offers <em>Switch back</em> once it answers. Choose <em>Firebase</em> or <em>Desktop copy</em> there to fix the choice for that device.</p>
+    <p>If the desktop app was switched to "On this PC only", the website says so: Firebase no longer receives the desktop's changes.</p>
   </section>
 
   <section id="s-handoff" class="prose">
-    <div class="section-head"><h2>The desktop does the website's work</h2><p>While the desktop app runs, the website hands it every refresh instead of asking Gemini.</p></div>
+    <div class="section-head"><h2>The desktop does the website's work</h2><p>While the desktop app runs, the website hands it every refresh instead of asking Gemini, through Firestore or through Google Drive.</p></div>
     <ol>
-      <li>The desktop app writes an "I'm online" signal to Firestore every 2 minutes.</li>
+      <li>The desktop app says it is online every 2 minutes.</li>
       <li>You press <em>Update all</em>, or refresh a card, on any device. The website writes a request: which sets, and whether details, prices or both.</li>
-      <li>The desktop app claims the request and runs its normal local-browser refresh. The website shows "Refreshing in the desktop app (local browser, no AI)".</li>
-      <li>The new prices arrive on every device through live sync, and the request is cleared.</li>
+      <li>The desktop app takes the request and runs its normal local-browser refresh. The website shows "Refreshing in the desktop app (local browser, no AI)".</li>
+      <li>The new prices arrive on every device, and the request is cleared.</li>
     </ol>
-    <p class="callout warn">The website falls back to Gemini when the desktop app has not been seen for 5 minutes, does not pick the request up within 45 seconds, or reports a failure. Claiming and cancelling are Firestore transactions, so a request is never done twice.</p>
+    <p class="callout warn">The website falls back to Gemini when the desktop app has not been seen for 5 minutes, reports a failure, or does not start the request in time: 45 seconds through Firestore, 60 seconds through Google Drive (where the request is withdrawn first). In Firestore, claiming and cancelling are transactions, so a request is never done twice.</p>
   </section>
 
   <section id="s-machines" class="prose">
     <div class="section-head"><h2>Several desktops</h2></div>
-    <p>Sign the desktop app in on more than one Windows PC with the same Google account and they share the work: each request is claimed by exactly one of them, and the 4AM refresh runs once a day, on whichever machine claims it. Moving to a new PC is just installing and signing in there.</p>
+    <p>With Firebase, sign the desktop app in on more than one Windows PC with the same Google account and they share the work: each request is claimed by exactly one of them, and the 4AM refresh runs once a day, on whichever machine claims it. Moving to a new PC is just installing and signing in there.</p>
+    <p>On this PC only, each PC keeps its own copy. Let only one of them publish to Google Drive for an account: the app warns when another PC already does.</p>
   </section>
 
   <section id="s-api" class="prose">
     <div class="section-head"><h2>Other apps: the Planned Sets API</h2></div>
     <p>The app keeps a public snapshot of your planned sets and purchases, at a link with a random token, up to date whenever your sets change. Other apps read it as JSON at <code>/api/planned-sets/&lt;token&gt;</code>; see <a href="#f-api">the feature</a>. Deleting the link revokes access at once.</p>
+    <p>The public link needs Firebase. On this PC only, the desktop app answers the same request for programs on the same PC, at <code>http://localhost:47321/api/planned-sets/&lt;token&gt;</code>.</p>
   </section>
 
   <section id="s-links" class="prose">
     <div class="section-head"><h2>Share links</h2></div>
-    <p>Gift registries are public by their link, like the API: only the fields a gift-giver needs are copied into the registry, and reservations are written by visitors, first come first served. Links always point at your own deployment.</p>
+    <p>Gift registries are public by their link, like the API: only the fields a gift-giver needs are copied into the registry, and reservations are written by visitors, first come first served. Links always point at your own deployment. Registries live in Firebase; without it a registry link says why it shows nothing.</p>
   </section>
 
   <section id="s-offline" class="prose">
     <div class="section-head"><h2>Offline</h2></div>
-    <p>The installed app opens without a network, from its cached files, and shows the sets the browser last saw; fetching prices and syncing need a connection again.</p>
+    <p>The installed app opens without a network, from its cached files, and shows the sets the browser last saw; fetching prices and syncing need a connection again. The desktop app works fully on its copy without a network, and syncs once the connection is back.</p>
   </section>
 
   <section id="s-table">
     <div class="section-head"><h2>At a glance</h2></div>
     <div class="table-box"><table>
-      <tr><th>Data</th><th>Where it lives</th><th>Who can read it</th><th>Reaches</th></tr>
-      <tr><td>Sets, purchases, minifigure ticks</td><td>Firestore <code>sets</code></td><td>You</td><td>Every device, live</td></tr>
-      <tr><td>Price history</td><td>Firestore, under each set</td><td>You</td><td>Every device</td></tr>
-      <tr><td>Price sources and taught shops</td><td>Firestore <code>userSettings</code></td><td>You</td><td>Every device and desktop</td></tr>
-      <tr><td>Desktop heartbeat and refresh requests</td><td>Firestore <code>desktopStatus</code>, <code>refreshRequests</code></td><td>You</td><td>Website and desktop apps</td></tr>
-      <tr><td>Planned Sets API snapshot</td><td>Firestore <code>plannedLists</code></td><td>Anyone with the link</td><td>Other apps</td></tr>
-      <tr><td>Gift registries</td><td>Firestore <code>registries</code></td><td>Anyone with the link</td><td>Family and friends</td></tr>
-      <tr><td>Gemini key, sign-in client</td><td>Vercel env (website); your PC (desktop)</td><td>Your servers only</td><td>Never the browser</td></tr>
+      <tr><th>Data</th><th>With Firebase</th><th>On the PC only</th><th>Who can read it</th></tr>
+      <tr><td>Sets, purchases, minifigure ticks</td><td>Firestore <code>sets</code>, plus the desktop's copy</td><td>The desktop's copy, published to your Drive's app folder</td><td>You</td></tr>
+      <tr><td>Price history</td><td>Firestore, under each set, plus the copy</td><td>The copy, published per set</td><td>You</td></tr>
+      <tr><td>Price sources and taught shops</td><td>Firestore <code>userSettings</code>, plus the copy</td><td>The copy, published with the sets</td><td>You</td></tr>
+      <tr><td>Desktop heartbeat and refresh requests</td><td>Firestore <code>desktopStatus</code>, <code>refreshRequests</code></td><td>Files in your Drive's app folder</td><td>You</td></tr>
+      <tr><td>Planned Sets API snapshot</td><td>Firestore <code>plannedLists</code></td><td>Served by the desktop app to this PC only</td><td>Anyone with the link</td></tr>
+      <tr><td>Gift registries</td><td>Firestore <code>registries</code></td><td class="muted">Not available</td><td>Anyone with the link</td></tr>
+      <tr><td>The website's Google sign-in</td><td colspan="2">An encrypted cookie in your browser, which only your website's server can read; the page itself gets short-lived Drive access only</td><td>Your server</td></tr>
+      <tr><td>Gemini key, sign-in clients, session secret</td><td colspan="2">Vercel environment (website); your PC (desktop)</td><td>Your servers only, never the browser</td></tr>
     </table></div>
   </section>
 </div>
 
 <!-- ============================ SETUP ============================ -->
 <div class="panel" data-panel="setup" id="setup">
-  <div class="tab-head setup"><span class="label">Your own copy</span><h2>Setup guide</h2><p>Run Brick Tracker for yourself and your family: your own Firebase project for the data, Vercel for the website, and optionally the Windows desktop app. About an hour, most of it clicking through consoles.</p></div>
+  <div class="tab-head setup"><span class="label">Your own copy</span><h2>Setup guide</h2><p>Run Brick Tracker for yourself and your family: Vercel for the website, Firebase or your own PC for the data, and the Windows desktop app. About an hour, most of it clicking through consoles.</p></div>
 
   <section id="setup-plan" class="prose">
-    <div class="section-head"><h2>What you will set up</h2></div>
+    <div class="section-head"><h2>What you will set up</h2><p>First choose where your sets are kept.</p></div>
     <div class="table-box"><table>
+      <tr><th></th><th>With Firebase</th><th>Without Firebase</th></tr>
+      <tr><td>Your sets</td><td>In Firestore, live on every device; the desktop app (optional) keeps a copy as the backup</td><td>On your Windows PC, in the desktop app; the website and your phone reach them through your Google Drive</td></tr>
+      <tr><td>Gift registries, public Planned Sets link</td><td>Yes</td><td>No</td></tr>
+      <tr><td>Steps</td><td>1, 2, 4 to 7; 8 for the desktop app; 3 as well if the website should fall back to the desktop's copy when Firebase breaks</td><td>1, 3 to 8 (skip 2)</td></tr>
+    </table></div>
+    <div class="table-box" style="margin-top:14px"><table>
       <tr><th>Part</th><th>What for</th><th>Needed?</th></tr>
       <tr><td>A fork of the repository</td><td>Your copy of the code, for Vercel to build</td><td>Yes</td></tr>
-      <tr><td>Firebase project (Authentication + Firestore)</td><td>Sign-in and all the data</td><td>Yes</td></tr>
+      <tr><td>Firebase project (Authentication + Firestore)</td><td>Sign-in and all the data, live</td><td>With Firebase</td></tr>
+      <tr><td>Google Cloud: Drive API and a "Web application" client</td><td>The website's own sign-in, reading the desktop's copy through Google Drive</td><td>Without Firebase; optional with it</td></tr>
       <tr><td>Gemini API key</td><td>Website price checks without the desktop app</td><td>Recommended</td></tr>
       <tr><td>Vercel project</td><td>Hosting the website and its server</td><td>Yes</td></tr>
-      <tr><td>Google OAuth "Desktop app" client</td><td>Signing in to the desktop app</td><td>Only for the desktop app</td></tr>
+      <tr><td>Google OAuth "Desktop app" client</td><td>Signing in to the desktop app</td><td>For the desktop app (always without Firebase)</td></tr>
     </table></div>
-    <p>You need Node.js 20 or newer and Git on your computer for steps 1 and 4, and Windows for step 7.</p>
+    <p>You need Node.js 20 or newer and Git on your computer for steps 1 and 5, and Windows for step 8.</p>
   </section>
 
   <section id="setup-steps">
@@ -698,7 +751,7 @@ npm install</code></pre>
     </div>
 
     <div class="step" id="setup-firebase">
-      <h3>Firebase: sign-in and the database</h3>
+      <h3>Firebase: sign-in and the database <span class="opt">with Firebase</span></h3>
       <ol>
         <li>At <a href="https://console.firebase.google.com/">console.firebase.google.com</a>, <em>Create a project</em> (Google Analytics is not needed).</li>
         <li><strong>Authentication</strong> &rarr; <em>Get started</em> &rarr; <em>Sign-in method</em> &rarr; enable <strong>Google</strong>, choose a support email, save.</li>
@@ -710,10 +763,23 @@ npm install</code></pre>
       <p><strong>Only your accounts, optionally.</strong> Anyone with a Google account can sign in to your site and keep their own list there, using your quota. To allow only yourself and your family: in Firestore, in the same database as the rules (check the picker at the top), <em>Start collection</em> <code>access</code>, document ID <code>allowlist</code>, with a field <code>emails</code> of type <em>array</em> holding each Google address in lower case. With the current rules published (paste them again if you set up before 0.1.0; older rules ignore the list), every other account is refused, and the app signs it out with a message. Gift-registry links keep working for everyone. Edit the list there to add someone; delete the document to open the site again.</p>
     </div>
 
+    <div class="step" id="setup-google">
+      <h3>Google Cloud: Drive and the website's sign-in <span class="opt">without Firebase, or as its fallback</span></h3>
+      <p>One Google Cloud project holds both sign-in clients, the website's and the desktop app's, so both see the same hidden folder in your Drive. With Firebase, use the project Firebase created; without it, create one at <a href="https://console.cloud.google.com/">console.cloud.google.com</a>.</p>
+      <ol>
+        <li><em>APIs &amp; Services</em> &rarr; <em>Library</em> &rarr; <strong>Google Drive API</strong> &rarr; <em>Enable</em>.</li>
+        <li><em>Google Auth Platform</em> (the <em>OAuth consent screen</em>): an app name and a support email, audience <em>External</em>. Under <em>Data Access</em> &rarr; <em>Add or remove scopes</em>, add <code>.../auth/drive.appdata</code> (the app's own folder in Drive, nothing else; Google classes it as non-sensitive, so no Google review is needed). Set the publishing status to <strong>In production</strong>: in "Testing", Google ends every sign-in after 7 days, the website's and the desktop's alike.</li>
+        <li><em>Clients</em> (or <em>Credentials</em>) &rarr; <em>Create client</em> &rarr; type <strong>Web application</strong>. Under <em>Authorized JavaScript origins</em> add <code>http://localhost:3000</code> and every address your site is opened at (for example <code>https://bricks.example.com</code> and <code>https://your-project.vercel.app</code>). No redirect URIs: the sign-in is a popup. <em>Create</em>, and keep its client ID (for <code>VITE_GOOGLE_CLIENT_ID</code>) and client secret (for <code>GOOGLE_CLIENT_SECRET</code>, server side only).</li>
+        <li>Make a session secret for <code>SESSION_SECRET</code>: at least 32 random characters, for example from <code>node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"</code>. It encrypts the website's sign-in cookie; changing it signs everyone out of the website.</li>
+      </ol>
+      <p>The desktop app's own client (type <em>Desktop app</em>) is made in this same project, in <a href="#setup-desktop">step 8a</a>.</p>
+      <p class="callout info">Neither side revokes Google's permission when you sign out: it only forgets the sign-in. Removing Brick Tracker under <em>Third-party connections</em> in your Google Account cuts the website and the desktop app at once, because Google grants the permission per project, not per client.</p>
+    </div>
+
     <div class="step" id="setup-gemini">
       <h3>A Gemini API key</h3>
       <ol>
-        <li>At <a href="https://aistudio.google.com/apikey">aistudio.google.com/apikey</a>, <em>Create API key</em>, in the Google Cloud project Firebase made (it is listed by the same name).</li>
+        <li>At <a href="https://aistudio.google.com/apikey">aistudio.google.com/apikey</a>, <em>Create API key</em>, in the Google Cloud project Firebase made (it is listed by the same name), or the one from step 3.</li>
         <li>Keep it for the <code>GEMINI_API_KEY</code> variable. It only ever goes into the server's environment, never into the website's code.</li>
       </ol>
       <p>Without a key the app still works: BrickLink, Brickset and LEGO.com need none, and with the desktop app running no shop price needs AI either. Only the website's own price checks, and teaching new shops, use it.</p>
@@ -729,9 +795,15 @@ VITE_FIREBASE_PROJECT_ID=your-project
 VITE_FIREBASE_STORAGE_BUCKET=your-project.firebasestorage.app
 VITE_FIREBASE_MESSAGING_SENDER_ID=...
 VITE_FIREBASE_APP_ID=...
-VITE_FIREBASE_DATABASE_ID=(default)</code></pre>
+VITE_FIREBASE_DATABASE_ID=(default)
+
+# Step 3 (without Firebase, or as its fallback)
+VITE_GOOGLE_CLIENT_ID=123456789012-abc.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+SESSION_SECRET=at-least-32-random-characters</code></pre>
+      <p>Leave out the lines of the part you skipped: without Firebase, the <code>VITE_FIREBASE_*</code> lines; with Firebase only, the last three.</p>
 <pre><code>npm run dev      # http://localhost:3000</code></pre>
-      <p>Open <a href="http://localhost:3000">localhost:3000</a> and sign in with Google; <code>localhost</code> is allowed by Firebase out of the box. Add a set to check that lookups and saving work.</p>
+      <p>Open <a href="http://localhost:3000">localhost:3000</a> and sign in with Google; <code>localhost</code> is allowed by Firebase out of the box. Add a set to check that lookups and saving work. Without Firebase, tick Google Drive on Google's screen; the sets appear once the desktop app publishes its copy (step 8).</p>
     </div>
 
     <div class="step" id="setup-deploy">
@@ -740,7 +812,8 @@ VITE_FIREBASE_DATABASE_ID=(default)</code></pre>
         <li>At <a href="https://vercel.com/new">vercel.com/new</a>, import your fork. Vercel detects the Vite preset: build command <code>npm run build</code>, output directory <code>dist</code>. <code>vercel.json</code> makes <code>/api</code> a serverless function.</li>
         <li>Under <em>Environment Variables</em>, add every line of your <code>.env</code>. Optionally set <code>VITE_PUBLIC_APP_URL</code> to your final address (for example <code>https://bricks.example.com</code>).</li>
         <li><em>Deploy</em>. Optionally add your own domain under <em>Settings</em> &rarr; <em>Domains</em>.</li>
-        <li>Back in Firebase: <strong>Authentication</strong> &rarr; <em>Settings</em> &rarr; <em>Authorized domains</em> &rarr; add your Vercel address (<code>your-project.vercel.app</code>) and your own domain. Without this, Google sign-in is refused there.</li>
+        <li>With Firebase, back in Firebase: <strong>Authentication</strong> &rarr; <em>Settings</em> &rarr; <em>Authorized domains</em> &rarr; add your Vercel address (<code>your-project.vercel.app</code>) and your own domain. Without this, Google sign-in is refused there.</li>
+        <li>With step 3: the same addresses must be in the Web client's <em>Authorized JavaScript origins</em>. Keep <code>GOOGLE_CLIENT_SECRET</code> and <code>SESSION_SECRET</code> as plain (not <code>VITE_</code>) variables: only the server reads them.</li>
       </ol>
       <p>Every push to your fork's <code>main</code> deploys again by itself.</p>
     </div>
@@ -757,9 +830,9 @@ VITE_FIREBASE_DATABASE_ID=(default)</code></pre>
 
     <div class="step" id="setup-desktop">
       <h3>The desktop app <span class="opt">optional, Windows</span></h3>
-      <p><strong>a. A sign-in client.</strong> In the <a href="https://console.cloud.google.com/">Google Cloud console</a>, open the project Firebase created:</p>
+      <p><strong>a. A sign-in client.</strong> In the <a href="https://console.cloud.google.com/">Google Cloud console</a>, open the project Firebase created, or the one from step 3:</p>
       <ol>
-        <li><em>APIs &amp; Services</em> &rarr; <em>OAuth consent screen</em>: it already exists for Firebase's web sign-in. Make sure its publishing status is <strong>In production</strong> (in "Testing", sign-ins expire every 7 days). The app only asks for name and email, so no Google review is needed.</li>
+        <li><em>APIs &amp; Services</em> &rarr; <em>OAuth consent screen</em>: it already exists for Firebase's web sign-in or from step 3. Make sure its publishing status is <strong>In production</strong> (in "Testing", sign-ins expire every 7 days). The app asks for name and email, plus its own Drive folder when you allow Drive, so no Google review is needed.</li>
         <li><em>Credentials</em> &rarr; <em>Create credentials</em> &rarr; <em>OAuth client ID</em> &rarr; type <strong>Desktop app</strong> &rarr; <em>Create</em> &rarr; <em>Download JSON</em>.</li>
       </ol>
       <p><strong>b. Get the installer.</strong> It carries no Firebase project, yours or anybody's: each install is connected to a project in its own setup window (step d), so the same build works for everyone.</p>
@@ -773,13 +846,15 @@ npm run dist</code></pre>
       <p><strong>c. Install it.</strong> Run <code>Brick-Tracker-Setup.exe</code> (no admin rights needed). It installs the app to <code>%LOCALAPPDATA%\Programs\Brick Tracker</code>, adds a Start menu shortcut, makes it start with Windows, and starts it. It can be removed again from Windows' list of apps; your settings in <code>%APPDATA%\Brick Tracker</code> are kept. The app is not code-signed, so Windows SmartScreen may warn the first time: <em>More info</em> &rarr; <em>Run anyway</em>.</p>
       <p><strong>d. Connect it.</strong> The first start opens the setup window:</p>
       <ul>
-        <li><strong>Firebase config:</strong> paste the <code>firebaseConfig</code> snippet from step 2 as the console shows it, and the database ID if it is not <code>(default)</code>.</li>
-        <li><strong>Website address:</strong> your site from step 5 (for example <code>https://bricks.example.com</code>). Gift-registry and Planned Sets links point there, since the app itself runs on <code>localhost</code>, which nobody else can open.</li>
+        <li><strong>Where your sets are kept:</strong> <em>On this PC only</em> (without Firebase; the first-run choice) or <em>Firebase + a copy on this PC</em>; see <a href="#d-storage">the difference</a>.</li>
+        <li><strong>Firebase config</strong>, with Firebase only: paste the <code>firebaseConfig</code> snippet from step 2 as the console shows it, and the database ID if it is not <code>(default)</code>.</li>
+        <li><strong>Website address:</strong> your site from step 6 (for example <code>https://bricks.example.com</code>). Gift-registry and Planned Sets links point there, since the app itself runs on <code>localhost</code>, which nobody else can open. Optional on this PC only.</li>
+        <li><strong>Let my phone and website reach this PC's copy (Google Drive):</strong> tick it when you did step 3. The website reads this PC's copy through your Drive (<a href="#s-drive">how</a>).</li>
         <li><strong>Google sign-in client:</strong> choose the JSON downloaded in step a.</li>
         <li><strong>Gemini API key</strong>, optional: only for teaching new shops. It is kept in Windows Credential Manager, never in a file or a build.</li>
       </ul>
       <p>The settings are saved in <code>%APPDATA%\Brick Tracker</code>. The tray menu's <em>Settings...</em> opens the window again; saving restarts the app.</p>
-      <p><strong>e. Sign in.</strong> <em>Login with Google</em>: Google opens in your normal browser; approve, and you are signed in. From then on the app lives in the tray, refreshes at 4AM, and does the website's refreshes while it runs.</p>
+      <p><strong>e. Sign in.</strong> <em>Login with Google</em>: Google opens in your normal browser; approve (with Drive allowed, tick Google Drive there too), and you are signed in. If you allow Drive later, the storage pill in the header offers <em>Connect Google Drive</em>. From then on the app lives in the tray, refreshes at 4AM, and does the website's refreshes while it runs.</p>
       <p class="callout warn">If you build from a terminal inside VS Code, <code>npm start</code> already copes with VS Code's <code>ELECTRON_RUN_AS_NODE</code> variable; other Electron tools may need it cleared.</p>
     </div>
   </div>
@@ -797,7 +872,8 @@ npm run dist</code></pre>
     <div class="section-head"><h2>Costs</h2></div>
     <div class="table-box"><table>
       <tr><th>Service</th><th>Typical personal use</th><th>Cost</th></tr>
-      <tr><td>Firestore</td><td>A few hundred reads and writes a day, plus about 720 heartbeat writes while the desktop app runs. The free tier is 50,000 reads and 20,000 writes a day.</td><td>Free</td></tr>
+      <tr><td>Firestore, with Firebase</td><td>A few hundred reads and writes a day, plus about 720 heartbeat writes while the desktop app runs. The free tier is 50,000 reads and 20,000 writes a day.</td><td>Free</td></tr>
+      <tr><td>Google Drive, with step 3</td><td>A few MB in the app's hidden folder; the Drive API has no charge</td><td>Free</td></tr>
       <tr><td>Vercel (Hobby)</td><td>Small serverless calls on refresh</td><td>Free</td></tr>
       <tr><td>Gemini API</td><td>Only website price checks without the desktop app, and teaching a shop (a couple of calls each)</td><td>Pay per use; zero while the desktop app does the work</td></tr>
       <tr><td>Desktop app</td><td>Your PC and your connection</td><td>Free</td></tr>
@@ -809,15 +885,19 @@ npm run dist</code></pre>
     <div class="section-head"><h2>Troubleshooting</h2></div>
     <div class="table-box"><table>
       <tr><th>What you see</th><th>Likely cause and fix</th></tr>
-      <tr><td>Google sign-in fails on the deployed site, but works on localhost</td><td>The address is not in Firebase's <em>Authorized domains</em> (step 5).</td></tr>
+      <tr><td>Google sign-in fails on the deployed site, but works on localhost</td><td>The address is not in Firebase's <em>Authorized domains</em>, or, without Firebase, not in the Web client's <em>Authorized JavaScript origins</em> (steps 3 and 6).</td></tr>
+      <tr><td>"Tick the Google Drive box when you sign in"</td><td>The Drive permission was not ticked on Google's screen: sign in again and tick it.</td></tr>
+      <tr><td>"Google needs you to confirm access once more"</td><td>Google remembered an earlier sign-in and gave no lasting access: click sign in again, and Google shows its consent screen.</td></tr>
+      <tr><td>"Signing in on this website is not set up"</td><td>The server lacks <code>VITE_GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code> or <code>SESSION_SECRET</code>, or the session secret is shorter than 32 characters (step 6).</td></tr>
+      <tr><td>"No desktop is publishing its copy right now"</td><td>The desktop app is not running, its Google Drive box is not ticked (tray menu &rarr; <em>Settings...</em>), or Drive is not connected: open the storage pill in its header. Its <em>Desktop app</em> client must be in the same Google Cloud project as the Web client.</td></tr>
       <tr><td>"Allow pop-ups for this site" on the sign-in screen</td><td>The browser blocked Google's window: allow pop-ups for your address.</td></tr>
       <tr><td>"You do not have access to this data", or price sources not saving</td><td>The Firestore rules in the console are older than <code>firestore.rules</code>: paste and publish them again, in the right database.</td></tr>
-      <tr><td>The API link answers 502</td><td>Same: the <code>plannedLists</code> rule is not published yet. A 503 means the server lacks <code>VITE_FIREBASE_PROJECT_ID</code>.</td></tr>
+      <tr><td>The API link answers 502</td><td>Same: the <code>plannedLists</code> rule is not published yet. A 503 means the server lacks <code>VITE_FIREBASE_PROJECT_ID</code>: the public link needs Firebase.</td></tr>
       <tr><td>The website still says "via Gemini" with the desktop app running</td><td>The desktop app is not signed in, or the rules lack <code>desktopStatus</code> and <code>refreshRequests</code>. Give it two minutes after starting for its first "I'm online".</td></tr>
-      <tr><td>"Sign-in is not set up yet" in the desktop app</td><td>The sign-in client file is missing: tray menu &rarr; <em>Settings...</em> &rarr; <em>Choose file...</em> (step 7d).</td></tr>
-      <tr><td>The Vercel build fails with "No Firebase project configured"</td><td>The <code>VITE_FIREBASE_*</code> variables are missing for that environment: add them under <em>Environment Variables</em> (step 5) and deploy again. The build stops rather than publish a site nobody can sign in to.</td></tr>
-      <tr><td>Desktop sign-ins expire after a week</td><td>The OAuth consent screen is in "Testing": set it to "In production" (step 7a).</td></tr>
-      <tr><td>Gift-registry links from the desktop app point at the wrong site</td><td>Fix the website address in the tray menu's <em>Settings...</em> (step 7d).</td></tr>
+      <tr><td>"Sign-in is not set up yet" in the desktop app</td><td>The sign-in client file is missing: tray menu &rarr; <em>Settings...</em> &rarr; <em>Choose file...</em> (step 8d).</td></tr>
+      <tr><td>The Vercel build fails with "Nowhere to keep sets"</td><td>Neither the <code>VITE_FIREBASE_*</code> variables nor <code>VITE_GOOGLE_CLIENT_ID</code> are set for that environment: add them under <em>Environment Variables</em> (step 6) and deploy again. The build stops rather than publish a site nobody can sign in to.</td></tr>
+      <tr><td>Sign-ins expire after a week, on the website or the desktop</td><td>The OAuth consent screen is in "Testing": set it to "In production" (steps 3 and 8a).</td></tr>
+      <tr><td>Gift-registry links from the desktop app point at the wrong site</td><td>Fix the website address in the tray menu's <em>Settings...</em> (step 8d).</td></tr>
       <tr><td>A shop shows no price in the desktop app</td><td>It may not sell that set itself, or not be taught yet: open Price Sources and press <em>Teach</em>.</td></tr>
     </table></div>
   </section>
