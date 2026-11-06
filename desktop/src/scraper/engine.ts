@@ -14,10 +14,18 @@ import {
 } from '../../../lib/scrapeRecipe';
 import type { PageCapture, PriceScraper, ScrapedPrice } from '../../../lib/server-api';
 import { builtinRecipeFor } from '../../../lib/builtinRecipes';
+import { scraperUnavailable } from '../../../lib/scraperErrors';
 
 // Close the browser after this long without work, so it is not left running
 // all day between the 4AM refresh and the next one.
 const IDLE_CLOSE_MS = 2 * 60 * 1000;
+// Playwright's own default is 180 s. A refresh is interactive (the website or
+// the Drive mailbox waits on it), and a persistent profile starts in seconds
+// even on a busy machine, so a minute is ample before saying it failed.
+const LAUNCH_TIMEOUT_MS = 60_000;
+// A launch that failed a moment ago fails the pages queued behind it at once,
+// rather than each waiting out a launch of its own.
+const LAUNCH_RETRY_MS = 60_000;
 const NAV_TIMEOUT_MS = 30_000;
 // Cloudflare's interstitial (Arukereso) usually clears in a few seconds.
 const CHALLENGE_TIMEOUT_MS = 40_000;
@@ -43,13 +51,56 @@ const politePause = () => sleep(1500 + Math.random() * 2000);
  *   between runs, as they would for a person.
  * All page loads go through one queue: one tab, one page at a time.
  */
+export type Launch = (profileDir: string, timeoutMs: number) => Promise<BrowserContext>;
+
+export interface ScraperOptions {
+  /** Tests: the browser launch (default: Playwright's bundled Chromium, below). */
+  launch?: Launch;
+  launchRetryMs?: number;
+  now?: () => number;
+}
+
+/**
+ * Playwright's bundled Chromium with the settings above. Loaded on first use,
+ * not at startup: Playwright resolves its browser location when the module
+ * loads, and the packaged app points PLAYWRIGHT_BROWSERS_PATH at its bundled
+ * Chromium only after start.
+ */
+const launchChromium: Launch = (profileDir, timeout) =>
+  import('playwright').then(({ chromium }) =>
+    chromium.launchPersistentContext(profileDir, {
+      timeout,
+      headless: false,
+      // Sets Accept-Language and navigator.languages together.
+      locale: 'en-US',
+      // Real window size rather than an emulated viewport, which is an
+      // automation tell in a headed browser.
+      viewport: null,
+      args: [
+        '--window-position=-32000,-32000',
+        '--window-size=1280,900',
+        '--disable-blink-features=AutomationControlled',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--mute-audio',
+      ],
+      // Without this the browser sets navigator.webdriver and shows the
+      // "controlled by automated software" bar.
+      ignoreDefaultArgs: ['--enable-automation'],
+    })
+  );
+
 export class PlaywrightScraper implements PriceScraper {
   private context: Promise<BrowserContext> | null = null;
   private queue: Promise<unknown> = Promise.resolve();
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private cookiesSet = new Set<string>();
+  private launchFailure: { at: number; error: Error } | null = null;
 
-  constructor(private readonly profileDir: string) {}
+  constructor(
+    private readonly profileDir: string,
+    private readonly opts: ScraperOptions = {}
+  ) {}
 
   async scrapePrice(
     source: { id: string; urlTemplate: string; scraper?: unknown },
@@ -123,37 +174,30 @@ export class PlaywrightScraper implements PriceScraper {
     return run;
   }
 
+  /**
+   * The browser, started on first use. A launch failure is marked
+   * scraperUnavailable (lib/scraperErrors.ts), so the route answers 503 and the
+   * refresh ends as failed; for a while after it, a new page fails at once.
+   */
   private getContext(): Promise<BrowserContext> {
     if (!this.context) {
-      // Loaded on first use, not at startup: Playwright resolves its browser
-      // location when the module loads, and the packaged app points
-      // PLAYWRIGHT_BROWSERS_PATH at its bundled Chromium only after start.
-      this.context = import('playwright')
-        .then(({ chromium }) =>
-          chromium.launchPersistentContext(this.profileDir, {
-            headless: false,
-            // Sets Accept-Language and navigator.languages together.
-            locale: 'en-US',
-            // Real window size rather than an emulated viewport, which is an
-            // automation tell in a headed browser.
-            viewport: null,
-            args: [
-              '--window-position=-32000,-32000',
-              '--window-size=1280,900',
-              '--disable-blink-features=AutomationControlled',
-              '--no-first-run',
-              '--no-default-browser-check',
-              '--mute-audio',
-            ],
-            // Without this the browser sets navigator.webdriver and shows the
-            // "controlled by automated software" bar.
-            ignoreDefaultArgs: ['--enable-automation'],
-          })
-        )
-        .catch((e) => {
+      const now = this.opts.now ?? Date.now;
+      const last = this.launchFailure;
+      if (last && now() - last.at < (this.opts.launchRetryMs ?? LAUNCH_RETRY_MS))
+        return Promise.reject(last.error);
+      this.context = (this.opts.launch ?? launchChromium)(this.profileDir, LAUNCH_TIMEOUT_MS).then(
+        (ctx) => {
+          this.launchFailure = null;
+          return ctx;
+        },
+        (e) => {
           this.context = null;
-          throw e;
-        });
+          const why = String((e as Error)?.message || e).split('\n')[0];
+          const error = scraperUnavailable(`The desktop browser did not start: ${why}`);
+          this.launchFailure = { at: now(), error };
+          throw error;
+        }
+      );
     }
     return this.context;
   }

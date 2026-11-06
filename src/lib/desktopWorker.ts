@@ -18,6 +18,8 @@
 // in src/hooks/useDesktopWorker.ts.
 // ---------------------------------------------------------------------------
 
+import { SCRAPER_UNAVAILABLE_STATUS } from '../../lib/scraperErrors';
+
 export const DESKTOP_STATUS_COLLECTION = 'desktopStatus';
 export const REFRESH_REQUESTS_COLLECTION = 'refreshRequests';
 
@@ -158,4 +160,26 @@ export function newRequestId(): string {
   const bytes = new Uint8Array(12);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * The reason a route answered "the desktop browser did not start" (503 with
+ * scraperUnavailable, lib/scraperErrors.ts), or null for any other answer. A
+ * refresh stops at it and fails with the reason: every later page would fail
+ * the same way, and a request run for the website or the Drive mailbox must
+ * end as failed, not done.
+ */
+export async function scraperFailureOf(
+  res: Pick<Response, 'status' | 'json'>
+): Promise<string | null> {
+  if (res.status !== SCRAPER_UNAVAILABLE_STATUS) return null;
+  try {
+    const body = (await res.json()) as { error?: unknown; scraperUnavailable?: unknown } | null;
+    if (body?.scraperUnavailable !== true) return null;
+    return typeof body.error === 'string' && body.error
+      ? body.error
+      : 'The desktop browser did not start';
+  } catch {
+    return null;
+  }
 }

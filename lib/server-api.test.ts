@@ -21,6 +21,7 @@ import {
   parseBricksetSeriesSearch,
   registerApiRoutes,
 } from './server-api.js';
+import { scraperUnavailable } from './scraperErrors.js';
 
 describe('page parsers', () => {
   it('reads a Brickset set page', () => {
@@ -433,5 +434,57 @@ describe('GET /api/planned-sets/:token from the desktop copy', () => {
       expect(res.headers.get('access-control-allow-private-network')).toBe('true');
       expect(res.headers.get('access-control-allow-methods')).toBe('GET');
     });
+  });
+});
+
+describe('GET /api/lego/:setNumber when the desktop browser fails', () => {
+  // LEGO.com is read through the browser first, so the stub's rejection comes before any network request.
+  async function withScraper(
+    fetchPageHtml: () => Promise<string | null>,
+    run: (base: string) => Promise<void>
+  ) {
+    const app = express();
+    registerApiRoutes(app, {
+      rateLimit: false,
+      scraper: { scrapePrice: async () => null, fetchPageHtml },
+    });
+    const server = app.listen(0, '127.0.0.1');
+    await new Promise((r) => server.once('listening', r));
+    try {
+      await run(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+    } finally {
+      server.close();
+    }
+  }
+
+  it('answers 503 with the reason when the browser did not start, at once rather than never', async () => {
+    let asked = 0;
+    const reason = 'The desktop browser did not start: Timeout 60000ms exceeded.';
+    await withScraper(
+      async () => {
+        asked += 1;
+        throw scraperUnavailable(reason);
+      },
+      async (base) => {
+        const res = await fetch(`${base}/api/lego/99992`, { signal: AbortSignal.timeout(10_000) });
+        expect(res.status).toBe(503);
+        expect(await res.json()).toEqual({ error: reason, scraperUnavailable: true });
+      }
+    );
+    // the first page failed: no further page was asked for
+    expect(asked).toBe(1);
+  });
+
+  it('answers 500 for any other failure of the lookup, instead of leaving the request open', async () => {
+    await withScraper(
+      async () => {
+        throw new Error('page crashed');
+      },
+      async (base) => {
+        const res = await fetch(`${base}/api/lego/99992`, { signal: AbortSignal.timeout(10_000) });
+        expect(res.status).toBe(500);
+        expect(await res.json()).toEqual({ error: 'Set info lookup failed: page crashed' });
+      }
+    );
   });
 });

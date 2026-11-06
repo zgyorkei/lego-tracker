@@ -56,6 +56,7 @@ import { DEMO_SETS, demoPriceHistory } from './demoData';
 import { readStoredString, readStoredJson, writeStored } from './lib/storage';
 import { usePriceSources } from './hooks/usePriceSources';
 import { desktopMode, isDesktopApp, openDesktopSettings } from './lib/platform';
+import { scraperFailureOf } from './lib/desktopWorker';
 import { firebaseAvailable } from './lib/firebase';
 
 // The desktop app works from its copy on this PC (desktop/src/store, through
@@ -316,10 +317,17 @@ export default function App() {
     }
     const targets = setsRef.current.filter((s) => setIds.includes(s.id));
     if (targets.length === 0) return;
+    const down: { reason?: string } = {};
     const ran = await batchRefreshRef.current(kind === 'prices', {
       targets,
       skipPrices: kind === 'details',
+      onScraperDown: (reason) => {
+        down.reason = reason;
+      },
     });
+    // The browser did not start: the request fails with the reason (the Drive
+    // reply and the website's request both carry it), rather than "done".
+    if (down.reason) throw new Error(down.reason);
     if (!ran) throw new Error('Another refresh started first');
   }, []);
 
@@ -341,7 +349,12 @@ export default function App() {
    */
   const handleBatchRefresh = async (
     skipLegoInfo = false,
-    opts: { targets?: LegoSet[]; skipPrices?: boolean } = {}
+    opts: {
+      targets?: LegoSet[];
+      skipPrices?: boolean;
+      /** The desktop browser did not start: the run stopped there (runDesktopRequest fails it). */
+      onScraperDown?: (reason: string) => void;
+    } = {}
   ): Promise<boolean> => {
     const targets = opts.targets ?? filteredSets;
     if (isBatchRefreshingRef.current || targets.length === 0) return false;
@@ -373,6 +386,9 @@ export default function App() {
       // before the run, so without this a name the details step just found
       // would still look like a placeholder when the price step fills gaps.
       const resolved = new Map<string, Partial<LegoSet>>();
+      // Set when a route says the desktop browser did not start: every later
+      // page would fail the same way, so the run stops there.
+      let scraperDown: string | null = null;
 
       if (!skipLegoInfo) {
         setBatchProgress({ current: 0, total: targets.length });
@@ -395,6 +411,11 @@ export default function App() {
             setActiveOperation({ setId: set.setNumber, message: 'Fetching Set Data & Image' });
 
             const legoRes = await fetch(`/api/lego/${set.setNumber}`, { headers });
+            const down = await scraperFailureOf(legoRes);
+            if (down) {
+              scraperDown = down;
+              break;
+            }
             if (legoRes.status === 429) {
               setActionError(
                 'Rate limit reached while fetching set info. Please wait a minute and try again.'
@@ -452,7 +473,7 @@ export default function App() {
         // call (cheerio-first; misses go to Gemini on the web, the local browser
         // on desktop).
         const setsMissingImage = targets.filter((s) => !imagesResolved.has(s.setNumber));
-        if (setsMissingImage.length > 0) {
+        if (setsMissingImage.length > 0 && !scraperDown) {
           try {
             setActiveOperation({ setId: 'Bulk', message: 'Fetching Missing Images...' });
             const imgRes = await fetch('/api/batch-images', {
@@ -460,7 +481,9 @@ export default function App() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ setNumbers: setsMissingImage.map((s) => s.setNumber) }),
             });
-            if (imgRes.ok) {
+            const imgDown = await scraperFailureOf(imgRes);
+            if (imgDown) scraperDown = imgDown;
+            else if (imgRes.ok) {
               const imageMap: Record<string, string> = await imgRes.json();
               // Parallel rather than one sequential write per set.
               await Promise.allSettled(
@@ -482,7 +505,7 @@ export default function App() {
       }
 
       // Batch market prices
-      if (!opts.skipPrices)
+      if (!opts.skipPrices && !scraperDown)
         try {
           setBatchProgress(null);
           setActiveOperation({
@@ -499,7 +522,10 @@ export default function App() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ setNumbers, sources: priceSources }),
           });
-          if (marketRes.status === 429) {
+          const priceDown = await scraperFailureOf(marketRes);
+          if (priceDown) {
+            scraperDown = priceDown;
+          } else if (marketRes.status === 429) {
             setActionError(
               'Rate limit reached while fetching market prices. Please wait a minute and try again.'
             );
@@ -565,6 +591,10 @@ export default function App() {
           console.error('Batch market prices failed', e);
           setActionError('Could not refresh market prices. Please try again.');
         }
+      if (scraperDown) {
+        setActionError(scraperDown);
+        opts.onScraperDown?.(scraperDown);
+      }
       return true;
     } finally {
       isBatchRefreshingRef.current = false;

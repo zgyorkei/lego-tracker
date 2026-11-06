@@ -13,8 +13,35 @@ import {
   newRequest,
   newRequestId,
   outcomeFor,
+  scraperFailureOf,
   shouldClaim,
 } from './desktopWorker';
+
+describe('scraperFailureOf', () => {
+  const answer = (status: number, body: unknown) => ({
+    status,
+    json: async () => (typeof body === 'string' ? JSON.parse(body) : body),
+  });
+
+  it('reads the reason of a "the desktop browser did not start" answer', async () => {
+    const reason = 'The desktop browser did not start: Timeout 60000ms exceeded.';
+    expect(await scraperFailureOf(answer(503, { error: reason, scraperUnavailable: true }))).toBe(
+      reason
+    );
+    expect(await scraperFailureOf(answer(503, { scraperUnavailable: true }))).toBe(
+      'The desktop browser did not start'
+    );
+  });
+
+  it('is null for any other answer: success, another 503, a body that is not JSON', async () => {
+    expect(await scraperFailureOf(answer(200, { name: 'x' }))).toBeNull();
+    expect(
+      await scraperFailureOf(answer(500, { error: 'x', scraperUnavailable: true }))
+    ).toBeNull();
+    expect(await scraperFailureOf(answer(503, { error: 'Service Unavailable' }))).toBeNull();
+    expect(await scraperFailureOf(answer(503, 'not json'))).toBeNull();
+  });
+});
 
 const now = Date.parse('2026-10-26T12:00:00Z');
 const ago = (msAgo: number) => new Date(now - msAgo).toISOString();

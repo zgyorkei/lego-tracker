@@ -10,6 +10,7 @@ import type { PlannedListResponse } from './plannedListPayload.js';
 import { SET_NUMBER_RE } from './setNumber.js';
 import type { RecipeTestResult, ScrapeRecipe } from './scrapeRecipe.js';
 import { MAX_TEACH_SAMPLES, teachSource } from './teachSource.js';
+import { isScraperUnavailable, SCRAPER_UNAVAILABLE_STATUS } from './scraperErrors.js';
 
 // ---------------------------------------------------------------------------
 // Shared backend logic for both the local dev server (server.ts) and the
@@ -988,6 +989,18 @@ export interface ApiOptions {
 const noLimit = (_req: Request, _res: Response, next: NextFunction) => next();
 
 /**
+ * Desktop: answers a request whose browser could not start (lib/scraperErrors.ts) with 503 and the reason, so the
+ * refresh behind it ends as failed at once; false for any other error, which the route handles as before.
+ */
+function answerScraperUnavailable(res: Response, e: unknown): boolean {
+  if (!isScraperUnavailable(e)) return false;
+  console.warn(e.message);
+  if (!res.headersSent)
+    res.status(SCRAPER_UNAVAILABLE_STATUS).json({ error: e.message, scraperUnavailable: true });
+  return true;
+}
+
+/**
  * Prices every (set, source) pair with the browser scraper, one at a time so a
  * shop sees a person-paced stream of page loads rather than a burst. Shapes the
  * result exactly like the Gemini path, so the client cannot tell them apart.
@@ -1016,6 +1029,8 @@ async function scrapeSourcesWithBrowser(
       const r = await scraper
         .scrapePrice({ id: s.id, urlTemplate: s.urlTemplate, scraper: s.scraper }, setNumber)
         .catch((e) => {
+          // No browser: every other source would fail too, so the whole request does.
+          if (isScraperUnavailable(e)) throw e;
           console.warn(`Browser scrape failed for ${s.id} / ${setNumber}:`, e?.message || e);
           return null;
         });
@@ -1102,6 +1117,7 @@ export function registerApiRoutes(app: Express, options: ApiOptions = {}): void 
 
       res.json({ figures: results });
     } catch (error) {
+      if (answerScraperUnavailable(res, error)) return;
       console.error('Error fetching minifigures:', error);
       res.status(500).json({ error: 'Failed to fetch minifigures' });
     }
@@ -1173,6 +1189,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
 
       res.json(results);
     } catch (error: any) {
+      if (answerScraperUnavailable(res, error)) return;
       console.error('Batch image search error:', error);
       // Return whatever was scraped so far rather than dropping everything.
       res.status(200).json(results);
@@ -1306,9 +1323,20 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
     // 1-2. Desktop: LEGO.com in the local browser first, Brickset for gaps.
     // Web: Brickset, then LEGO.com, by plain request (LEGO.com often blocks
     // or renders its price client-side, hence Brickset first there).
-    const info = browserHtml
-      ? await scrapeLegoInfoViaBrowser(setNumber, skipImage, browserHtml)
-      : await scrapeLegoInfo(setNumber, skipImage, axiosHtml);
+    // Express 4 does not catch an async handler's rejection: unanswered, the
+    // request would hang and the process log an unhandled rejection.
+    let info: Awaited<ReturnType<typeof scrapeLegoInfo>>;
+    try {
+      info = browserHtml
+        ? await scrapeLegoInfoViaBrowser(setNumber, skipImage, browserHtml)
+        : await scrapeLegoInfo(setNumber, skipImage, axiosHtml);
+    } catch (e) {
+      if (answerScraperUnavailable(res, e)) return;
+      console.error(`Set info lookup failed for ${setNumber}:`, e);
+      return res
+        .status(500)
+        .json({ error: `Set info lookup failed: ${(e as Error)?.message || String(e)}` });
+    }
     if (info.result) {
       console.log(`Set info fetched for ${setNumber}:`, info.result);
       return res.json(info.result);
@@ -1491,6 +1519,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
 
       res.json(result);
     } catch (error: any) {
+      if (answerScraperUnavailable(res, error)) return;
       console.error('Batch Price Error:', error);
       if (error?.isRateLimit) {
         return res
@@ -1641,6 +1670,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
 
       res.json(responseData);
     } catch (error: any) {
+      if (answerScraperUnavailable(res, error)) return;
       console.error('Error fetching market prices:', error);
       if (error?.isRateLimit) {
         return res
@@ -1747,6 +1777,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       );
       res.json(result);
     } catch (error: any) {
+      if (answerScraperUnavailable(res, error)) return;
       console.error('Teaching source failed:', error);
       if (error?.isRateLimit) {
         return res.status(429).json({
