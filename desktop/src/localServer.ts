@@ -30,6 +30,8 @@ export function startLocalServer(opts: {
     scraper: opts.scraper,
     rateLimit: false,
     localPlannedList: opts.localPlannedList,
+    // The website's Google session routes: the desktop's session lives in main.
+    webSession: false,
   });
   app.use(express.static(opts.distDir, { index: false }));
   // SPA fallback (registry links etc.); /api/* already ended in a JSON 404.

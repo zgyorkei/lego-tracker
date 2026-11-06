@@ -5,20 +5,24 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 
 /**
- * Stops a website build that has no Firebase project: it would deploy fine
- * and then fail for every visitor. Desktop builds (`--mode desktop`) carry no
- * project on purpose; the desktop app's setup supplies one at run time (see
- * src/lib/firebaseConfig.ts). CI only checks that the code builds, so it sets
- * ALLOW_MISSING_FIREBASE_CONFIG=1.
+ * Stops a website build that has nowhere to keep sets: it would deploy fine
+ * and then fail for every visitor. A website needs a Firebase project, or a
+ * Google client id to read the desktop app's copy through Google Drive (its
+ * two server-only secrets are set where the API runs, not here). Desktop
+ * builds (`--mode desktop`) carry neither on purpose; the desktop app's setup
+ * supplies a project at run time (see src/lib/firebaseConfig.ts). CI only
+ * checks that the code builds, so it sets ALLOW_MISSING_FIREBASE_CONFIG=1.
  */
 function checkFirebaseConfig(mode: string) {
   if (mode === 'desktop') return;
   const env = loadEnv(mode, __dirname, 'VITE_');
   if (env.VITE_FIREBASE_API_KEY && env.VITE_FIREBASE_PROJECT_ID) return;
   if (existsSync(path.join(__dirname, 'firebase-applet-config.json'))) return;
+  if (/\.apps\.googleusercontent\.com$/.test(env.VITE_GOOGLE_CLIENT_ID?.trim() ?? '')) return;
   const message =
-    'No Firebase project configured: set the VITE_FIREBASE_* variables (see .env.example) ' +
-    'or add firebase-applet-config.json. For the desktop app, run npm run build:desktop instead.';
+    'Nowhere to keep sets: set the VITE_FIREBASE_* variables or add firebase-applet-config.json ' +
+    "(Firebase), or VITE_GOOGLE_CLIENT_ID (the desktop app's copy through Google Drive; see " +
+    '.env.example). For the desktop app, run npm run build:desktop instead.';
   if (process.env.ALLOW_MISSING_FIREBASE_CONFIG === '1') {
     console.warn(`warning: ${message}`);
     return;

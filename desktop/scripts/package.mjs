@@ -64,7 +64,9 @@ console.log(`Using 7-Zip ${sevenZip.version} at ${sevenZip.exe}`);
 
 // The installer must not carry the builder's Firebase project: every install
 // gets its own from the setup window (src/setup.ts). `npm run build:desktop`
-// leaves it out; a plain website build would bake it in.
+// leaves it out; a plain website build would bake it in. The same goes for
+// the website's Google client id (VITE_GOOGLE_CLIENT_ID): the desktop signs in
+// with its own Desktop client, read at run time.
 const firebaseValues = new Set();
 for (const f of [path.join(desktop, '..', 'firebase-applet-config.json'), path.join(desktop, 'app-config.json')]) {
   if (!existsSync(f)) continue;
@@ -76,11 +78,15 @@ for (const k of ['VITE_FIREBASE_API_KEY', 'VITE_FIREBASE_PROJECT_ID', 'VITE_FIRE
 const webFiles = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? webFiles(path.join(dir, e.name)) : [path.join(dir, e.name)]));
 const baked = webFiles(path.join(desktop, '..', 'dist')).filter((f) => {
   const text = readFileSync(f).toString('latin1');
-  return /AIza[0-9A-Za-z_-]{35}/.test(text) || [...firebaseValues].some((v) => text.includes(v));
+  return (
+    /AIza[0-9A-Za-z_-]{35}/.test(text) ||
+    /[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com/.test(text) ||
+    [...firebaseValues].some((v) => text.includes(v))
+  );
 });
 if (baked.length) {
   throw new Error(
-    `The web build contains a Firebase project (${baked.map((f) => path.basename(f)).join(', ')}). ` +
+    `The web build contains a Firebase project or a Google client id (${baked.map((f) => path.basename(f)).join(', ')}). ` +
       'Build it with npm run build:desktop in the repo root (npm run dist does).'
   );
 }

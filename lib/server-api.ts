@@ -11,6 +11,22 @@ import { SET_NUMBER_RE } from './setNumber.js';
 import type { RecipeTestResult, ScrapeRecipe } from './scrapeRecipe.js';
 import { MAX_TEACH_SAMPLES, teachSource } from './teachSource.js';
 import { isScraperUnavailable, SCRAPER_UNAVAILABLE_STATUS } from './scraperErrors.js';
+import {
+  SESSION_COOKIE,
+  checkIdToken,
+  clearedSessionCookie,
+  decodeJwtPayload,
+  grantsDrive,
+  isSameSiteCall,
+  readCookie,
+  seal,
+  sessionConfig,
+  sessionCookie,
+  unseal,
+  type GoogleIdentity,
+  type SessionConfig,
+  type WebSession,
+} from './session.js';
 
 // ---------------------------------------------------------------------------
 // Shared backend logic for both the local dev server (server.ts) and the
@@ -984,9 +1000,187 @@ export interface ApiOptions {
    * Firestore read; null for a token it does not know.
    */
   localPlannedList?: (token: string) => PlannedListResponse | null;
+  /**
+   * The website's own Google session routes, /api/session* (default on). The
+   * desktop app turns them off: its Google session lives in the main process.
+   */
+  webSession?: boolean;
+  /** Tests: the fetch the session routes reach Google's token endpoint with. */
+  sessionFetch?: typeof fetch;
 }
 
 const noLimit = (_req: Request, _res: Response, next: NextFunction) => next();
+
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+
+interface GoogleTokenAnswer {
+  access_token?: string;
+  expires_in?: number;
+  refresh_token?: string;
+  id_token?: string;
+  scope?: string;
+  error?: string;
+}
+
+/** One call to Google's token endpoint: its status and answer (an empty one when not JSON). */
+async function googleToken(
+  fetchImpl: typeof fetch,
+  params: Record<string, string>
+): Promise<{ status: number; body: GoogleTokenAnswer }> {
+  const res = await withTimeout(
+    fetchImpl(GOOGLE_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(params).toString(),
+      redirect: 'error',
+    }),
+    10_000
+  );
+  let body: GoogleTokenAnswer = {};
+  try {
+    body = (await res.json()) as GoogleTokenAnswer;
+  } catch {
+    // Not JSON: the status says enough.
+  }
+  return { status: res.status, body };
+}
+
+/**
+ * The website's own Google session (lib/session.ts), for a copy that reads the
+ * desktop's data through Google Drive. The page signs in with Google Identity
+ * Services' code popup and posts the code here; the refresh token stays sealed
+ * in an httpOnly cookie, and the page gets short-lived Drive access tokens.
+ * Same-site only (our X-Requested-With, the site's own Origin, a SameSite=Strict
+ * cookie), never cached, and no CORS headers. Signing out never revokes the
+ * grant: Google ties it to the project, so a revoke would also cut the
+ * desktop's and every other browser's Drive access.
+ */
+function registerSessionRoutes(app: Express, limited: boolean, fetchImpl: typeof fetch): void {
+  const limit = limited ? rateLimit({ windowMs: 60_000, max: 30, name: 'session' }) : noLimit;
+  const sameSite = (req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const ok = isSameSiteCall({
+      method: req.method,
+      origin: req.get('origin'),
+      requestedWith: req.get('x-requested-with'),
+      host: req.get('host'),
+      forwardedHost: req.get('x-forwarded-host'),
+      forwardedProto: req.get('x-forwarded-proto'),
+      encrypted: Boolean((req.socket as { encrypted?: boolean }).encrypted),
+    });
+    if (!ok) return res.status(403).json({ error: 'Forbidden' });
+    next();
+  };
+  const config = () => sessionConfig(process.env);
+  const notSetUp = (res: Response) =>
+    res.status(503).json({
+      error:
+        'Signing in on this website is not set up (VITE_GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and SESSION_SECRET on the server).',
+    });
+  const current = (req: Request, cfg: SessionConfig) =>
+    unseal(readCookie(req.headers.cookie, SESSION_COOKIE), cfg.secret);
+  const userOf = (s: GoogleIdentity) => ({ sub: s.sub, email: s.email, name: s.name });
+  const accessOf = (body: GoogleTokenAnswer) => ({
+    accessToken: body.access_token,
+    expiresAt: Date.now() + Math.max(60, Number(body.expires_in) || 3600) * 1000,
+  });
+  const unreachable = (res: Response, err: unknown) => {
+    console.error('Google token call failed:', err);
+    res.status(502).json({ error: 'Could not reach Google. Please try again.' });
+  };
+
+  app.get('/api/session', limit, sameSite, (req, res) => {
+    const cfg = config();
+    if (!cfg) return res.json({ configured: false, user: null });
+    const s = current(req, cfg);
+    res.json({ configured: true, user: s ? userOf(s) : null });
+  });
+
+  app.post('/api/session/google', limit, sameSite, async (req, res) => {
+    const cfg = config();
+    if (!cfg) return notSetUp(res);
+    const code = req.body?.code;
+    if (typeof code !== 'string' || !code || code.length > 2048)
+      return res.status(400).json({ error: 'The sign-in code is missing' });
+    try {
+      const { status, body } = await googleToken(fetchImpl, {
+        code,
+        client_id: cfg.clientId,
+        client_secret: cfg.clientSecret,
+        redirect_uri: 'postmessage',
+        grant_type: 'authorization_code',
+      });
+      if (status !== 200 || !body.access_token) {
+        console.warn('Google refused the sign-in code:', status, body.error);
+        return res.status(401).json({ error: 'Google refused the sign-in. Please try again.' });
+      }
+      const checked = checkIdToken(
+        decodeJwtPayload(body.id_token),
+        cfg.clientId,
+        Math.floor(Date.now() / 1000)
+      );
+      if ('reason' in checked) return res.status(401).json({ error: checked.reason });
+      if (!grantsDrive(body.scope))
+        return res.status(403).json({
+          error:
+            "Tick the Google Drive box when you sign in: the website reads your desktop's copy through it.",
+          code: 'drive-scope',
+        });
+      // Without a refresh token the session could not outlive this hour; Google
+      // gives one again only when asked to show its consent screen.
+      if (!body.refresh_token)
+        return res
+          .status(409)
+          .json({ error: 'Google did not grant lasting access.', code: 'needs-consent' });
+      const session: WebSession = {
+        v: 1,
+        ...checked.identity,
+        refreshToken: body.refresh_token,
+        issuedAt: Date.now(),
+      };
+      res.setHeader('Set-Cookie', sessionCookie(seal(session, cfg.secret)));
+      res.json({ user: userOf(session), ...accessOf(body) });
+    } catch (err) {
+      unreachable(res, err);
+    }
+  });
+
+  app.post('/api/session/token', limit, sameSite, async (req, res) => {
+    const cfg = config();
+    if (!cfg) return notSetUp(res);
+    const s = current(req, cfg);
+    if (!s) return res.status(401).json({ error: 'Not signed in', signedOut: true });
+    try {
+      const { status, body } = await googleToken(fetchImpl, {
+        refresh_token: s.refreshToken,
+        client_id: cfg.clientId,
+        client_secret: cfg.clientSecret,
+        grant_type: 'refresh_token',
+      });
+      if (status === 400 && body.error === 'invalid_grant') {
+        // Revoked, or unused for six months: the session is over.
+        res.setHeader('Set-Cookie', clearedSessionCookie());
+        return res
+          .status(401)
+          .json({ error: 'Your Google sign-in has ended. Sign in again.', signedOut: true });
+      }
+      if (status !== 200 || !body.access_token) {
+        console.warn('Google refused to refresh the Drive token:', status, body.error);
+        return res
+          .status(502)
+          .json({ error: 'Google did not give a Drive token. Please try again.' });
+      }
+      res.json({ user: userOf(s), ...accessOf(body) });
+    } catch (err) {
+      unreachable(res, err);
+    }
+  });
+
+  app.post('/api/session/logout', limit, sameSite, (_req, res) => {
+    res.setHeader('Set-Cookie', clearedSessionCookie());
+    res.json({ ok: true });
+  });
+}
 
 /**
  * Desktop: answers a request whose browser could not start (lib/scraperErrors.ts) with 503 and the reason, so the
@@ -1870,6 +2064,9 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       res.status(502).json({ error: 'Could not read the planned list' });
     }
   });
+
+  if (options.webSession !== false)
+    registerSessionRoutes(app, limited, options.sessionFetch ?? fetch);
 
   // Unknown /api/* paths should be JSON 404s, not the SPA HTML fallback.
   app.use('/api', (_req, res) => {

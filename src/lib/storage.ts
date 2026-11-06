@@ -30,3 +30,11 @@ export const writeStored = (key: string, value: unknown): void => {
     console.warn(`Could not persist ${key} to localStorage`, e);
   }
 };
+
+export const removeStored = (key: string): void => {
+  try {
+    localStorage.removeItem(key);
+  } catch (e) {
+    console.warn(`Could not remove ${key} from localStorage`, e);
+  }
+};

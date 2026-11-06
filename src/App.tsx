@@ -24,9 +24,30 @@ import { DataStatusBanner } from './components/DataStatusBanner';
 import { usePlannedList } from './hooks/usePlannedList';
 import { firebaseSession } from './data/firebaseSession';
 import { desktopSession } from './data/desktopSession';
-import { createFirestoreBackend } from './data/firestoreBackend';
+import { createFirestoreBackend, probeFirestore } from './data/firestoreBackend';
 import { createLocalBackend } from './data/localBackend';
-import { isProblem } from './lib/dataHealth';
+import { createDriveBackend, type DriveBackend } from './data/driveBackend';
+import {
+  SessionError,
+  driveAccessToken,
+  googleWebSession,
+  isCancelledSignIn,
+  loadGoogleSignIn,
+} from './data/googleWebSession';
+import type { DataBackend, SessionProvider } from './data/types';
+import { DataSourceBanner } from './components/DataSourceBanner';
+import { classifyFirebaseError, isProblem, type Health } from './lib/dataHealth';
+import {
+  FIRESTORE_PROBE_MS,
+  canChooseSource,
+  chooseDataSource,
+  readSourcePreference,
+  writeSourcePreference,
+  type SourcePreference,
+} from './lib/dataSource';
+import { googleClientId } from './lib/googleConfig';
+import { createDriveClient } from '../lib/drive/client';
+import { isFresh, type DriveStatus } from '../lib/drive/layout';
 import { quotaDay, shouldRunLocally } from './lib/dailyRun';
 import { formatPrice as formatPriceUtil } from './lib/currency';
 import { ClassicSpaceLogo } from './components/ClassicSpaceLogo';
@@ -60,12 +81,49 @@ import { scraperFailureOf } from './lib/desktopWorker';
 import { firebaseAvailable } from './lib/firebase';
 
 // The desktop app works from its copy on this PC (desktop/src/store, through
-// the preload bridge) with its own session; the website signs in to Firebase
-// and reads and writes Firestore directly.
+// the preload bridge) with its own session. The website signs in to Firebase
+// and reads and writes Firestore directly, or, with a Google client id, reads
+// the desktop's copy through the account's Google Drive (src/lib/dataSource.ts).
 const desktopStore = isDesktopApp ? window.legoTrackerDesktop?.store : undefined;
-const SESSION = desktopStore ? desktopSession : firebaseSession;
+// Never signed in: a website's Firebase session without Firebase, or its Google one without a client id.
+const noSession: SessionProvider = {
+  subscribe(listener) {
+    listener(null);
+    return () => {};
+  },
+  async signIn() {},
+  async signOut() {},
+  async hasAccess() {
+    return true;
+  },
+};
+const PRIMARY_SESSION = desktopStore
+  ? desktopSession
+  : firebaseAvailable
+    ? firebaseSession
+    : noSession;
+const DRIVE_SESSION = !desktopStore && googleClientId ? googleWebSession : noSession;
+const driveClient = createDriveClient(driveAccessToken);
 // The desktop app "On this PC only": no Firebase at all.
 const localOnly = Boolean(desktopStore) && desktopMode === 'local';
+// A website with both Firebase and a Google client id lets each device choose.
+const canChoose = canChooseSource({
+  desktopApp: Boolean(desktopStore),
+  firebase: firebaseAvailable,
+  google: Boolean(googleClientId),
+});
+
+/** Reports a Firestore failure of the set list (classified) before the hooks see it. */
+function watchFirestore(backend: DataBackend, onFailure: (err: unknown) => void): DataBackend {
+  return {
+    ...backend,
+    subscribeSets: (onSets, onError) =>
+      backend.subscribeSets(onSets, (err) => {
+        onFailure(err);
+        onError(err);
+      }),
+  };
+}
 
 // Same rule as isValidSetNumber on the server; /api/teach-source rejects the
 // whole request if any sample fails it.
@@ -130,20 +188,93 @@ const AVAILABLE_THEMES = [
 
 export default function App() {
   // undefined while a remembered session is being restored, then the user or null.
-  const { user } = useSession(SESSION);
+  // The desktop's own session, or the website's Firebase one; and the website's
+  // Google session for the desktop's copy through Drive.
+  const { user: primaryUser } = useSession(PRIMARY_SESSION);
+  const { user: driveUser } = useSession(DRIVE_SESSION);
+  const [preference, setPreference] = useState<SourcePreference>(() => readSourcePreference());
+  // Why Firestore failed (a problem, not just offline); kept until "Switch back".
+  const [firestoreHealth, setFirestoreHealth] = useState<Health | null>(null);
+  const choice = chooseDataSource({
+    desktopApp: Boolean(desktopStore),
+    firebase: firebaseAvailable,
+    google: Boolean(googleClientId),
+    preference,
+    firestoreFailed: firestoreHealth !== null,
+    driveSignedIn: Boolean(driveUser),
+  });
+  const source = choice.source;
+  const SESSION = source === 'drive' ? DRIVE_SESSION : PRIMARY_SESSION;
+  const user = source === 'drive' ? driveUser : primaryUser;
   const uid = user?.uid ?? null;
   const googleSub = user?.googleSub ?? null;
+  const email = user?.email ?? null;
+  const onFirestoreFailure = useCallback((err: unknown) => {
+    const health = classifyFirebaseError(err);
+    if (isProblem(health)) setFirestoreHealth(health);
+  }, []);
   // One backend per signed-in account, so the data hooks resubscribe only
   // when the account changes. The desktop app works from its copy on this PC
-  // (kept in step with Firestore by useDesktopSync); the website uses Firestore.
-  const backend = useMemo(() => {
+  // (kept in step with Firestore by useDesktopSync); the website uses
+  // Firestore, or the desktop's copy through Google Drive.
+  const backend = useMemo<DataBackend | null>(() => {
     if (!uid) return null;
     if (desktopStore && googleSub)
       return createLocalBackend(desktopStore, googleSub, { localOnly });
-    return createFirestoreBackend(uid);
-  }, [uid, googleSub]);
-  // What needs Firebase: off "On this PC only", where nothing reads Firestore.
-  const firebaseUser = firebaseAvailable ? (user ?? null) : null;
+    if (source === 'drive' && googleSub)
+      return createDriveBackend({ sub: googleSub, by: email, client: driveClient });
+    return watchFirestore(createFirestoreBackend(uid), onFirestoreFailure);
+  }, [uid, googleSub, source, email, onFirestoreFailure]);
+  const driveBackend = useMemo(
+    () => (backend && 'delegateRefresh' in backend ? (backend as DriveBackend) : null),
+    [backend]
+  );
+  // What the publishing desktop says about itself (status.json), through Drive.
+  const [driveStatus, setDriveStatus] = useState<DriveStatus | null>(null);
+  const [driveChecked, setDriveChecked] = useState(false);
+  useEffect(() => {
+    setDriveStatus(null);
+    setDriveChecked(false);
+    if (!driveBackend) return;
+    let first = true;
+    return driveBackend.subscribeStatus((status) => {
+      setDriveStatus(status);
+      if (!first) setDriveChecked(true);
+      first = false;
+    });
+  }, [driveBackend]);
+  // While the desktop's copy stands in for a failed Firestore, Firestore is
+  // tried again every 5 minutes; "Switch back" is offered once it answers.
+  const [firestoreBack, setFirestoreBack] = useState(false);
+  const probeUid = choice.switched ? (primaryUser?.uid ?? null) : null;
+  useEffect(() => {
+    setFirestoreBack(false);
+    if (!probeUid) return;
+    let stopped = false;
+    const probe = () =>
+      probeFirestore(probeUid).then(
+        () => !stopped && setFirestoreBack(true),
+        () => !stopped && setFirestoreBack(false)
+      );
+    void probe();
+    const timer = setInterval(() => void probe(), FIRESTORE_PROBE_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [probeUid]);
+  const switchBack = () => {
+    setFirestoreHealth(null);
+    setFirestoreBack(false);
+  };
+  // The sign-in popup needs the user's click, so the Google script loads before it.
+  useEffect(() => {
+    if (source === 'drive' || choice.offerDesktop) void loadGoogleSignIn().catch(() => {});
+  }, [source, choice.offerDesktop]);
+  const [signingInToDrive, setSigningInToDrive] = useState(false);
+  // What needs Firebase: off "On this PC only", where nothing reads Firestore,
+  // and while the website shows the desktop's copy through Drive.
+  const firebaseUser = firebaseAvailable && source !== 'drive' ? (user ?? null) : null;
   const registriesAvailable = backend?.capabilities.registries !== false;
   const {
     sets,
@@ -203,15 +334,34 @@ export default function App() {
     } catch (err) {
       const code = (err as { code?: string } | null)?.code;
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return;
+      if (isCancelledSignIn(err)) return;
       console.error('Sign-in failed', err);
       setSignInError(
         code === 'auth/popup-blocked'
           ? 'Your browser blocked the Google sign-in window. Allow pop-ups for this site, then try again.'
-          : err instanceof Error && err.message.startsWith('Sign-in')
+          : err instanceof SessionError ||
+              (err instanceof Error && err.message.startsWith('Sign-in'))
             ? err.message
             : 'Sign-in failed. Please try again.'
       );
     }
+  };
+  // Firebase failed: the click the Google sign-in popup needs, to show the desktop's copy.
+  const handleUseDesktop = async () => {
+    setSigningInToDrive(true);
+    try {
+      await googleWebSession.signIn();
+    } catch (err) {
+      if (!isCancelledSignIn(err))
+        setActionError(err instanceof Error ? err.message : 'Sign-in failed. Please try again.');
+    } finally {
+      setSigningInToDrive(false);
+    }
+  };
+  // Changes still waiting for the desktop go out before the session ends.
+  const handleSignOut = async () => {
+    await driveBackend?.flush().catch(() => {});
+    await SESSION.signOut();
   };
   // An account that is not on this copy's allowlist (firestore.rules) is
   // signed straight out again on the website, with the reason on the sign-in
@@ -236,7 +386,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [user, setAccountRefused]);
+  }, [user, setAccountRefused, SESSION]);
   const [displayCurrency, setDisplayCurrency] = useState<string>(() =>
     readStoredString('legoDisplayCurrency', 'HUF')
   );
@@ -285,8 +435,9 @@ export default function App() {
   // whenever the app is open, not only while the dialog is showing. Held back
   // while sets are loading or failed, so an empty/cached array is never synced.
   // On this PC only, the list is the copy's own, served by the desktop itself.
+  // Not through Drive: the public list is a Firestore document.
   const plannedList = usePlannedList(
-    isDemoMode ? null : (user ?? null),
+    isDemoMode || source === 'drive' ? null : (user ?? null),
     sets,
     priceSources,
     !isDemoMode && !loading && !setsError,
@@ -340,6 +491,12 @@ export default function App() {
     // With Google Drive on, refreshes asked for over Drive come in too.
     { driveUser: user ?? null }
   );
+  // Website through Drive: the refresh goes to the desktop as a refresh op instead.
+  const desktopReachable = driveBackend ? isFresh(driveStatus) : desktopOnline;
+  const delegateRefresh = useMemo(
+    () => (driveBackend ? driveBackend.delegateRefresh : delegate),
+    [driveBackend, delegate]
+  );
 
   /**
    * Refreshes set details and/or market prices. `targets` defaults to the sets
@@ -360,17 +517,18 @@ export default function App() {
     if (isBatchRefreshingRef.current || targets.length === 0) return false;
     isBatchRefreshingRef.current = true;
     setIsBatchRefreshing(true);
+    let release: (() => void) | undefined;
 
     try {
       // Website: hand the whole job to the desktop app when it is running. It
       // reads the shops in its own browser, so no AI is spent, and the results
       // arrive through the live sets subscription. Gemini only if it can't.
-      if (!opts.targets && !isDesktopApp && desktopOnline) {
+      if (!opts.targets && !isDesktopApp && desktopReachable) {
         setActiveOperation({
           setId: 'Bulk',
           message: `Refreshing ${targets.length} sets in the desktop app (local browser, no AI). This can take a while...`,
         });
-        const outcome = await delegate(
+        const outcome = await delegateRefresh(
           skipLegoInfo ? 'prices' : 'all',
           targets.map((s) => s.id)
         );
@@ -380,6 +538,8 @@ export default function App() {
             'The desktop app could not finish the refresh, so Gemini is used instead.'
           );
       }
+      // Through Drive the results reach the desktop as one batch, sent when the run ends.
+      release = driveBackend?.hold();
 
       const headers = {};
       // What this run has already written per set. targets is a snapshot from
@@ -597,6 +757,7 @@ export default function App() {
       }
       return true;
     } finally {
+      release?.();
       isBatchRefreshingRef.current = false;
       setIsBatchRefreshing(false);
       setBatchProgress(null);
@@ -851,6 +1012,19 @@ export default function App() {
   return (
     <div className="min-h-screen pb-20">
       <DataStatusBanner sync={desktopSync} />
+      {!desktopStore && !isDemoMode && (
+        <DataSourceBanner
+          choice={choice}
+          firestoreHealth={firestoreHealth}
+          firestoreBack={firestoreBack}
+          firebase={firebaseAvailable}
+          driveStatus={driveStatus}
+          driveChecked={driveChecked}
+          signingIn={signingInToDrive}
+          onUseDesktop={() => void handleUseDesktop()}
+          onSwitchBack={switchBack}
+        />
+      )}
       <header className="bg-lego-yellow border-b-4 border-black p-4 sticky top-0 z-50 shadow-md">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -883,6 +1057,28 @@ export default function App() {
                 ))}
               </select>
             </div>
+            {canChoose && !isDemoMode && (
+              <div className="flex items-center gap-2">
+                <label htmlFor="data-source" className="sr-only">
+                  Where your sets come from on this device
+                </label>
+                <select
+                  id="data-source"
+                  value={preference}
+                  title="Where your sets come from on this device"
+                  onChange={(e) => {
+                    const next = e.target.value as SourcePreference;
+                    setPreference(next);
+                    writeSourcePreference(next);
+                  }}
+                  className="px-2 py-1.5 bg-gray-100 border-2 border-black rounded font-black text-[10px] uppercase cursor-pointer outline-none hover:bg-gray-200 transition-colors"
+                >
+                  <option value="auto">Data: Auto</option>
+                  <option value="firebase">Data: Firebase</option>
+                  <option value="desktop">Data: Desktop copy</option>
+                </select>
+              </div>
+            )}
             <button
               onClick={() => setShowPriceSourcesSetting(true)}
               className="px-3 py-1.5 bg-black text-white rounded font-black text-[10px] uppercase flex items-center gap-2 hover:bg-gray-800 transition-colors"
@@ -900,7 +1096,7 @@ export default function App() {
               </button>
             ) : (
               <button
-                onClick={() => void SESSION.signOut()}
+                onClick={() => void handleSignOut()}
                 className="p-2 hover:bg-black/5 rounded-full transition-colors flex items-center gap-2 font-black text-xs uppercase"
               >
                 <span className="hidden sm:inline">{user?.displayName?.split(' ')[0]}</span>
@@ -985,7 +1181,7 @@ export default function App() {
                 <Gift size={14} /> <span>Gift Registry</span>
               </button>
             )}
-            {filter === 'planned' && !isDemoMode && (
+            {filter === 'planned' && !isDemoMode && source !== 'drive' && (
               <button
                 onClick={() => setShowPlannedList(true)}
                 className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white border-2 border-black px-4 py-1.5 rounded-lg font-black uppercase text-xs shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
@@ -1099,7 +1295,7 @@ export default function App() {
                     onDelete={handleDeleteSet}
                     // Website only: hand the card's refreshes to the desktop
                     // app when it runs. Stable identity, so the memo holds.
-                    delegateRefresh={!isDemoMode && !isDesktopApp ? delegate : undefined}
+                    delegateRefresh={!isDemoMode && !isDesktopApp ? delegateRefresh : undefined}
                     getPriceHistory={priceHistoryFor}
                     onAddPriceHistory={addPriceHistory}
                     priceSources={priceSources}
@@ -1456,17 +1652,22 @@ export default function App() {
               <h2 className="text-xl font-black uppercase mb-3">Gift registries need Firebase</h2>
               <p className="text-sm text-gray-700 mb-4">
                 A registry link is opened by other people on your website, which reads it from
-                Firestore. Brick Tracker keeps your sets on this PC only, so there is nowhere to
-                publish one. Choose &quot;Firebase + a copy on this PC&quot; in Settings to use
-                registries.
+                Firestore.{' '}
+                {desktopStore
+                  ? 'Brick Tracker keeps your sets on this PC only, so there is nowhere to publish one. Choose "Firebase + a copy on this PC" in Settings to use registries.'
+                  : canChoose
+                    ? "This page shows your desktop's copy through Google Drive, which has no registries. Choose Data: Firebase to use them."
+                    : "This website reads your desktop's copy through Google Drive and has no Firebase project, so there is nowhere to publish one."}
               </p>
               <div className="flex justify-end gap-2">
-                <button
-                  onClick={openDesktopSettings}
-                  className="px-4 py-2 border-2 border-black rounded font-black uppercase text-xs bg-lego-yellow"
-                >
-                  Settings
-                </button>
+                {desktopStore && (
+                  <button
+                    onClick={openDesktopSettings}
+                    className="px-4 py-2 border-2 border-black rounded font-black uppercase text-xs bg-lego-yellow"
+                  >
+                    Settings
+                  </button>
+                )}
                 <button
                   onClick={() => setShowRegistriesNeedFirebase(false)}
                   className="px-4 py-2 border-2 border-black rounded font-black uppercase text-xs bg-white"

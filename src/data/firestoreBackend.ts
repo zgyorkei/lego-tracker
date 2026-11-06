@@ -4,6 +4,8 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  getDocsFromServer,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -41,6 +43,27 @@ export function historyRowFromDoc(d: QueryDocumentSnapshot): PriceHistory {
 /** The query every reader of the account's sets uses, so the SDK shares one listener. */
 export const setsQuery = (uid: string) =>
   query(collection(getDb(), 'sets'), where('userId', '==', uid), orderBy('createdAt', 'desc'));
+
+/**
+ * Resolves when the server answers one of the account's sets, rejects when it
+ * fails or stays silent (a missing database only logs and retries, so the
+ * timeout is what ends that). The website tries a failed Firestore again with
+ * this while it shows the desktop's copy instead.
+ */
+export async function probeFirestore(uid: string, timeoutMs = 20_000): Promise<void> {
+  const q = query(collection(getDb(), 'sets'), where('userId', '==', uid), limit(1));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      getDocsFromServer(q),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Firestore did not answer')), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** One user's data in Firestore: sets/, sets/{id}/priceHistory and userSettings/{uid}. */
 export function createFirestoreBackend(uid: string): DataBackend {
