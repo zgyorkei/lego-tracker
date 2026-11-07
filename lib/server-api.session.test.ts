@@ -201,6 +201,35 @@ describe("the website's Google session", () => {
     });
   });
 
+  it("names Google's reason when it refuses the code, and the setting when it refuses the client", async () => {
+    await withServer(async (base) => {
+      answers.push({ status: 401, body: { error: 'invalid_client' } });
+      const badClient = await call(base, '/api/session/google', {
+        method: 'POST',
+        body: '{"code":"c"}',
+      });
+      expect(badClient.status).toBe(401);
+      const refused = await badClient.json();
+      expect(refused.google).toBe('invalid_client');
+      expect(refused.error).toContain('client secret on the server');
+
+      answers.push({ status: 400, body: { error: 'invalid_grant' } });
+      const badCode = await (
+        await call(base, '/api/session/google', { method: 'POST', body: '{"code":"c"}' })
+      ).json();
+      expect(badCode).toEqual({
+        error: 'Google refused the sign-in (invalid_grant). Please try again.',
+        google: 'invalid_grant',
+      });
+
+      answers.push({ status: 400, body: { error: '<b>not a code</b>' } });
+      const odd = await (
+        await call(base, '/api/session/google', { method: 'POST', body: '{"code":"c"}' })
+      ).json();
+      expect(odd.google).toBe('unknown');
+    });
+  });
+
   it('ends the session when Google no longer honours the grant', async () => {
     await withServer(async (base) => {
       answers.push({

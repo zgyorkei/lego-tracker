@@ -243,3 +243,27 @@ export function sessionConfig(env: Record<string, string | undefined>): SessionC
   if (!clientId || !clientSecret || !secret || secret.length < MIN_SECRET_LENGTH) return null;
   return { clientId, clientSecret, secret };
 }
+
+// ---- Google's refusals --------------------------------------------------------------------------
+
+/** Google's error code from a refused token call when it is a plain code word, else 'unknown'. */
+export function googleErrorCode(error: unknown): string {
+  return typeof error === 'string' && /^[a-z_]{1,40}$/.test(error) ? error : 'unknown';
+}
+
+/**
+ * The website's message for a token call Google refused. A refused client
+ * means the server's settings are wrong, which no retry fixes, so it says
+ * which setting; anything else names Google's code and asks to try again.
+ */
+export function googleRefusalMessage(code: string, call: 'sign-in' | 'token'): string {
+  if (code === 'invalid_client' || code === 'unauthorized_client')
+    return (
+      `Google refused this website's sign-in client (${code}): the client secret on the ` +
+      "server is not the secret of the website's Google client id. Set the Web client's " +
+      'secret on the server and deploy again.'
+    );
+  return call === 'sign-in'
+    ? `Google refused the sign-in (${code}). Please try again.`
+    : `Google did not give a Drive token (${code}). Please try again.`;
+}

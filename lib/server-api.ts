@@ -16,6 +16,8 @@ import {
   checkIdToken,
   clearedSessionCookie,
   decodeJwtPayload,
+  googleErrorCode,
+  googleRefusalMessage,
   grantsDrive,
   isSameSiteCall,
   readCookie,
@@ -1111,8 +1113,11 @@ function registerSessionRoutes(app: Express, limited: boolean, fetchImpl: typeof
         grant_type: 'authorization_code',
       });
       if (status !== 200 || !body.access_token) {
-        console.warn('Google refused the sign-in code:', status, body.error);
-        return res.status(401).json({ error: 'Google refused the sign-in. Please try again.' });
+        const reason = googleErrorCode(body.error);
+        console.warn('Google refused the sign-in code:', status, reason);
+        return res
+          .status(401)
+          .json({ error: googleRefusalMessage(reason, 'sign-in'), google: reason });
       }
       const checked = checkIdToken(
         decodeJwtPayload(body.id_token),
@@ -1165,10 +1170,11 @@ function registerSessionRoutes(app: Express, limited: boolean, fetchImpl: typeof
           .json({ error: 'Your Google sign-in has ended. Sign in again.', signedOut: true });
       }
       if (status !== 200 || !body.access_token) {
-        console.warn('Google refused to refresh the Drive token:', status, body.error);
+        const reason = googleErrorCode(body.error);
+        console.warn('Google refused to refresh the Drive token:', status, reason);
         return res
           .status(502)
-          .json({ error: 'Google did not give a Drive token. Please try again.' });
+          .json({ error: googleRefusalMessage(reason, 'token'), google: reason });
       }
       res.json({ user: userOf(s), ...accessOf(body) });
     } catch (err) {
