@@ -280,6 +280,7 @@
     <a class="top" href="#setup-deploy">6. Deploy the website</a>
     <a class="top" href="#setup-install">7. Install it on devices</a>
     <a class="top" href="#setup-desktop">8. The desktop app</a>
+    <a class="top" href="#setup-later">Adding the website later</a>
     <a class="top" href="#setup-update">Updating</a>
     <a class="top" href="#setup-costs">Costs</a>
     <a class="top" href="#setup-trouble">Troubleshooting</a>
@@ -344,7 +345,7 @@
       <tr><td>Firebase (Google), optional</td><td>Sign-in and the Firestore database; gift registries and the public Planned Sets API</td><td>A free project; the web config is not secret</td><td>The free tier covers personal use many times over</td></tr>
       <tr><td>Google OAuth "Web application" client</td><td>The website's own Google sign-in, to read the desktop's copy through your Google Drive</td><td>A client ID (public), plus <span class="badge key">client secret</span> and <span class="badge key">session secret</span> server side only</td><td>Free</td></tr>
       <tr><td>Google Drive (your own)</td><td>The mailbox between the website and the desktop app: a hidden app folder only this app can see</td><td>None: your Google sign-in</td><td>Free; it holds a few MB at most</td></tr>
-      <tr><td>Vercel</td><td>Hosts the website and its small server</td><td>An account linked to your GitHub fork</td><td>Free (Hobby plan)</td></tr>
+      <tr><td>Vercel, for the website</td><td>Hosts the website and its small server; the desktop app on its own does not need it</td><td>An account linked to your GitHub fork</td><td>Free (Hobby plan)</td></tr>
       <tr><td>Google Gemini API</td><td>Website price checks without the desktop app; teaching shops</td><td><span class="badge key">API key</span> server side only, never in the browser</td><td>Pay per use; the free tier covers light use</td></tr>
       <tr><td>Google OAuth "Desktop app" client</td><td>Signing in to the desktop app</td><td>A client file, kept on your PC</td><td>Free</td></tr>
       <tr><td>Brickset, BrickLink, LEGO.com, exchange rates (Frankfurter)</td><td>Set details, BrickLink prices, currency conversion</td><td>None</td><td>Free</td></tr>
@@ -355,7 +356,8 @@
     <div class="section-head"><h2>What you need</h2></div>
     <ul>
       <li>To use it: a browser (Chrome, Edge, Firefox, Safari) and a Google account. Install it as an app from Chrome on Android, ChromeOS or a Googlebook.</li>
-      <li>To run your own copy: a GitHub account, a Vercel account, and either a Firebase project or a Google Cloud project with the desktop app; a Gemini API key is recommended. About an hour, following the <a href="#setup">setup guide</a>.</li>
+      <li>To run your own copy with a website: a GitHub account, a Vercel account, and either a Firebase project or a Google Cloud project with the desktop app; a Gemini API key is recommended. About an hour, following the <a href="#setup">setup guide</a>.</li>
+      <li>To run the desktop app on its own, with no website: Windows and a Google account, with a Google Cloud project for its sign-in (<a href="#setup-desktop">step 8</a>). You can <a href="#setup-later">add the website later</a>.</li>
       <li>For the desktop app: Windows 10 or 11, Node.js 20 or newer to build it, and about 1 GB of disk for the app and its bundled browser.</li>
     </ul>
   </section>
@@ -714,26 +716,26 @@
 
 <!-- ============================ SETUP ============================ -->
 <div class="panel" data-panel="setup" id="setup">
-  <div class="tab-head setup"><span class="label">Your own copy</span><h2>Setup guide</h2><p>Run Brick Tracker for yourself and your family: Vercel for the website, Firebase or your own PC for the data, and the Windows desktop app. About an hour, most of it clicking through consoles.</p></div>
+  <div class="tab-head setup"><span class="label">Your own copy</span><h2>Setup guide</h2><p>Run Brick Tracker for yourself and your family: Vercel for the website, Firebase or your own PC for the data, and the Windows desktop app. Or just the desktop app, with no website: you can add one later. About an hour, most of it clicking through consoles.</p></div>
 
   <section id="setup-plan" class="prose">
     <div class="section-head"><h2>What you will set up</h2><p>First choose where your sets are kept.</p></div>
     <div class="table-box"><table>
-      <tr><th></th><th>With Firebase</th><th>Without Firebase</th></tr>
-      <tr><td>Your sets</td><td>In Firestore, live on every device; the desktop app (optional) keeps a copy as the backup</td><td>On your Windows PC, in the desktop app; the website and your phone reach them through your Google Drive</td></tr>
-      <tr><td>Gift registries, public Planned Sets link</td><td>Yes</td><td>No</td></tr>
-      <tr><td>Steps</td><td>1, 2, 4 to 7; 8 for the desktop app; 3 as well if the website should fall back to the desktop's copy when Firebase breaks</td><td>1, 3 to 8 (skip 2)</td></tr>
+      <tr><th></th><th>With Firebase</th><th>Without Firebase</th><th>Desktop only (no website)</th></tr>
+      <tr><td>Your sets</td><td>In Firestore, live on every device; the desktop app (optional) keeps a copy as the backup</td><td>On your Windows PC, in the desktop app; the website and your phone reach them through your Google Drive</td><td>On your Windows PC, in the desktop app; no phone or website until you <a href="#setup-later">add one</a></td></tr>
+      <tr><td>Gift registries, public Planned Sets link</td><td>Yes</td><td>No</td><td>No; programs on the same PC can still read the planned list</td></tr>
+      <tr><td>Steps</td><td>1, 2, 4 to 7; 8 for the desktop app; 3 as well if the website should fall back to the desktop's copy when Firebase breaks</td><td>1, 3 to 8 (skip 2)</td><td>8 only; 4 as well to teach new shops</td></tr>
     </table></div>
     <div class="table-box" style="margin-top:14px"><table>
       <tr><th>Part</th><th>What for</th><th>Needed?</th></tr>
-      <tr><td>A fork of the repository</td><td>Your copy of the code, for Vercel to build</td><td>Yes</td></tr>
+      <tr><td>A fork of the repository</td><td>Your copy of the code, for Vercel to build</td><td>For the website</td></tr>
       <tr><td>Firebase project (Authentication + Firestore)</td><td>Sign-in and all the data, live</td><td>With Firebase</td></tr>
-      <tr><td>Google Cloud: Drive API and a "Web application" client</td><td>The website's own sign-in, reading the desktop's copy through Google Drive</td><td>Without Firebase; optional with it</td></tr>
-      <tr><td>Gemini API key</td><td>Website price checks without the desktop app</td><td>Recommended</td></tr>
-      <tr><td>Vercel project</td><td>Hosting the website and its server</td><td>Yes</td></tr>
-      <tr><td>Google OAuth "Desktop app" client</td><td>Signing in to the desktop app</td><td>For the desktop app (always without Firebase)</td></tr>
+      <tr><td>Google Cloud: a consent screen and a "Desktop app" client</td><td>Signing in to the desktop app</td><td>For the desktop app (always without Firebase)</td></tr>
+      <tr><td>Google Cloud: Drive API and a "Web application" client</td><td>The website's own sign-in, reading the desktop's copy through Google Drive</td><td>For the website without Firebase; optional with it</td></tr>
+      <tr><td>Gemini API key</td><td>Website price checks without the desktop app; teaching new shops</td><td>Recommended</td></tr>
+      <tr><td>Vercel project</td><td>Hosting the website and its server</td><td>For the website</td></tr>
     </table></div>
-    <p>You need Node.js 20 or newer and Git on your computer for steps 1 and 5, and Windows for step 8.</p>
+    <p>For the website you need Node.js 20 or newer and Git on your computer (steps 1 and 5). The desktop app needs Windows (step 8), and Node.js and Git only if you build it yourself.</p>
   </section>
 
   <section id="setup-steps">
@@ -829,15 +831,15 @@ SESSION_SECRET=at-least-32-random-characters</code></pre>
     </div>
 
     <div class="step" id="setup-desktop">
-      <h3>The desktop app <span class="opt">optional, Windows</span></h3>
-      <p><strong>a. A sign-in client.</strong> In the <a href="https://console.cloud.google.com/">Google Cloud console</a>, open the project Firebase created, or the one from step 3:</p>
+      <h3>The desktop app <span class="opt">Windows; optional with Firebase</span></h3>
+      <p><strong>a. A sign-in client.</strong> In the <a href="https://console.cloud.google.com/">Google Cloud console</a>, open the project Firebase created, or the one from step 3. Desktop only, with no website: create a project (the project picker at the top &rarr; <em>New project</em>).</p>
       <ol>
-        <li><em>APIs &amp; Services</em> &rarr; <em>OAuth consent screen</em>: it already exists for Firebase's web sign-in or from step 3. Make sure its publishing status is <strong>In production</strong> (in "Testing", sign-ins expire every 7 days). The app asks for name and email, plus its own Drive folder when you allow Drive, so no Google review is needed.</li>
+        <li><em>APIs &amp; Services</em> &rarr; <em>OAuth consent screen</em>: it already exists for Firebase's web sign-in or from step 3. Desktop only: <em>Google Auth Platform</em> &rarr; <em>Get started</em>, with an app name, a support email and audience <em>External</em>; it needs no scopes added. Make sure its publishing status is <strong>In production</strong> (in "Testing", sign-ins expire every 7 days and only listed test users can sign in). The app asks for name and email, plus its own Drive folder when you allow Drive, so no Google review is needed.</li>
         <li><em>Credentials</em> &rarr; <em>Create credentials</em> &rarr; <em>OAuth client ID</em> &rarr; type <strong>Desktop app</strong> &rarr; <em>Create</em> &rarr; <em>Download JSON</em>.</li>
       </ol>
       <p><strong>b. Get the installer.</strong> It carries no Firebase project, yours or anybody's: each install is connected to a project in its own setup window (step d), so the same build works for everyone.</p>
       <p><a class="btn red" href="https://github.com/zgyorkei/lego-tracker/releases/latest/download/Brick-Tracker-Setup.exe">Download for Windows</a> &nbsp;installer, about 240 MB (<a href="https://github.com/zgyorkei/lego-tracker/releases">all releases</a>)</p>
-      <p>Or build it yourself from your fork; it needs no <code>.env</code>, but it does need <a href="https://www.7-zip.org/">7-Zip</a> 26.03 or newer installed (in <code>C:\Program Files\7-Zip</code>, or point <code>SEVENZIP_PATH</code> at its <code>7z.exe</code>):</p>
+      <p>Or build it yourself from your fork, or from a clone of the repository if you have no website; it needs no <code>.env</code>, but it does need <a href="https://www.7-zip.org/">7-Zip</a> 26.03 or newer installed (in <code>C:\Program Files\7-Zip</code>, or point <code>SEVENZIP_PATH</code> at its <code>7z.exe</code>):</p>
 <pre><code>cd desktop
 npm install
 npx playwright install chromium
@@ -858,6 +860,17 @@ npm run dist</code></pre>
       <p class="callout warn">If you build from a terminal inside VS Code, <code>npm start</code> already copes with VS Code's <code>ELECTRON_RUN_AS_NODE</code> variable; other Electron tools may need it cleared.</p>
     </div>
   </div>
+  </section>
+
+  <section id="setup-later" class="prose">
+    <div class="section-head"><h2>Adding the website later</h2><p>When you started with the desktop app on its own. Your sets stay where they are: the desktop app publishes its copy to your Google Drive within 10 seconds once you allow it, so nothing is moved or copied by hand.</p></div>
+    <ol>
+      <li><strong>Google Cloud, in the same project</strong> (<a href="#setup-google">step 3</a>): enable the Google Drive API, add the <code>.../auth/drive.appdata</code> scope to the consent screen and keep it <strong>In production</strong>, and create a <strong>Web application</strong> client with your site's addresses as JavaScript origins. Make a session secret.</li>
+      <li><strong>The website:</strong> fork and clone the repository (<a href="#setup-code">step 1</a>), then deploy it on Vercel with only the three Google settings from step 3, no <code>VITE_FIREBASE_*</code> lines (<a href="#setup-deploy">step 6</a>). The build accepts the Google client ID alone.</li>
+      <li><strong>The desktop app:</strong> tray menu &rarr; <em>Settings...</em>, tick <em>Let my phone and website reach this PC's copy (Google Drive)</em> and save (the app restarts). Then the storage pill in the header &rarr; <em>Connect Google Drive</em>: sign in once more and tick Google Drive on Google's screen. Optionally enter the website address there too.</li>
+      <li><strong>Your website and phone:</strong> open the site, sign in with Google and tick Google Drive. Your sets appear from the desktop's copy; install it on your phone as in <a href="#setup-install">step 7</a>.</li>
+    </ol>
+    <p>To move to Firebase later, set it up (<a href="#setup-firebase">step 2</a>) and choose <em>Firebase + a copy on this PC</em> in the desktop app's settings: it asks first, then uploads your sets with their dates and price history.</p>
   </section>
 
   <section id="setup-update" class="prose">
