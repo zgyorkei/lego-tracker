@@ -1075,7 +1075,7 @@ function registerSessionRoutes(app: Express, limited: boolean, fetchImpl: typeof
   const notSetUp = (res: Response) =>
     res.status(503).json({
       error:
-        'Signing in on this website is not set up (VITE_GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and SESSION_SECRET on the server).',
+        'Signing in on this website is not set up: the server needs the Google client id, client secret and session secret (the names are in .env.example).',
     });
   const current = (req: Request, cfg: SessionConfig) =>
     unseal(readCookie(req.headers.cookie, SESSION_COOKIE), cfg.secret);

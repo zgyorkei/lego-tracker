@@ -8,6 +8,7 @@
 // every rule here is tested. Server-only: never import this from src/.
 import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from 'node:crypto';
 import { isGoogleSub } from './data/storeBridge.js';
+import { ENV_NAMES, readEnv } from './envSettings.js';
 import { DRIVE_APPDATA_SCOPE, REQUESTED_WITH } from './sessionProtocol.js';
 
 export { DRIVE_APPDATA_SCOPE, REQUESTED_WITH, SESSION_SCOPES } from './sessionProtocol.js';
@@ -233,13 +234,12 @@ export interface SessionConfig {
 /**
  * The website's Google session settings from the environment, or null when
  * any is missing (the routes then say sign-in is not set up). The client id is
- * the one the page uses too (VITE_GOOGLE_CLIENT_ID); the other two are
- * server-only.
+ * the one the page uses too; the other two are server-only. Names: ENV_NAMES.
  */
 export function sessionConfig(env: Record<string, string | undefined>): SessionConfig | null {
-  const clientId = env.VITE_GOOGLE_CLIENT_ID?.trim();
-  const clientSecret = env.GOOGLE_CLIENT_SECRET?.trim();
-  const secret = env.SESSION_SECRET?.trim();
+  const clientId = readEnv(env, ENV_NAMES.googleClientId);
+  const clientSecret = readEnv(env, ENV_NAMES.googleClientSecret);
+  const secret = readEnv(env, ENV_NAMES.sessionSecret);
   if (!clientId || !clientSecret || !secret || secret.length < MIN_SECRET_LENGTH) return null;
   return { clientId, clientSecret, secret };
 }

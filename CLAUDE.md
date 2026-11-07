@@ -205,7 +205,12 @@ exclusive.
 - **Website session settings:** `VITE_GOOGLE_CLIENT_ID` (one setting, read
   by the page and the server), and server-only `GOOGLE_CLIENT_SECRET` and
   `SESSION_SECRET` (32+ characters; changing it signs everyone out). Never
-  give the last two a `VITE_` prefix. `sessionConfig` wants all three or
+  give the last two a `VITE_` prefix. Each also has other accepted names
+  (`ENV_NAMES` in `lib/envSettings.ts`, first set wins; the user's Vercel
+  uses `NEW_GOOGLE_CLIENT_CONFIG`, `GOOGLE_CLIENT_CONFIG` and
+  `SESSION_CONFIG_2`). Vite's `envPrefix` is `CLIENT_ENV_PREFIXES`, so
+  anything starting `NEW_GOOGLE_CLIENT_CONFIG` reaches the page too; never
+  give a secret such a name. `sessionConfig` wants all three or
   treats the session as not set up (503). The session routes keep
   `X-Requested-With: brick-tracker` plus own-`Origin` checks, no CORS
   headers and `no-store`; do not loosen them. The desktop passes

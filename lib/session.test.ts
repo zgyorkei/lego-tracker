@@ -191,4 +191,19 @@ describe('sessionConfig', () => {
     expect(sessionConfig({ ...env, VITE_GOOGLE_CLIENT_ID: undefined })).toBeNull();
     expect(sessionConfig({ ...env, SESSION_SECRET: 'short' })).toBeNull();
   });
+
+  it('reads the alternative names first', () => {
+    const renamed = {
+      ...env,
+      NEW_GOOGLE_CLIENT_CONFIG: 'new.apps.googleusercontent.com',
+      GOOGLE_CLIENT_CONFIG: 'new-secret',
+      SESSION_CONFIG_2: 'y'.repeat(32),
+    };
+    expect(sessionConfig(renamed)).toEqual({
+      clientId: 'new.apps.googleusercontent.com',
+      clientSecret: 'new-secret',
+      secret: 'y'.repeat(32),
+    });
+    expect(sessionConfig({ ...renamed, SESSION_CONFIG_2: 'short' })).toBeNull();
+  });
 });

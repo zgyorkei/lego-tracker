@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { existsSync } from 'fs';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
+import { CLIENT_ENV_PREFIXES, ENV_NAMES, readEnv } from './lib/envSettings';
 
 /**
  * Stops a website build that has nowhere to keep sets: it would deploy fine
@@ -15,13 +16,13 @@ import { defineConfig, loadEnv } from 'vite';
  */
 function checkFirebaseConfig(mode: string) {
   if (mode === 'desktop') return;
-  const env = loadEnv(mode, __dirname, 'VITE_');
+  const env = loadEnv(mode, __dirname, CLIENT_ENV_PREFIXES);
   if (env.VITE_FIREBASE_API_KEY && env.VITE_FIREBASE_PROJECT_ID) return;
   if (existsSync(path.join(__dirname, 'firebase-applet-config.json'))) return;
-  if (/\.apps\.googleusercontent\.com$/.test(env.VITE_GOOGLE_CLIENT_ID?.trim() ?? '')) return;
+  if (/\.apps\.googleusercontent\.com$/.test(readEnv(env, ENV_NAMES.googleClientId) ?? '')) return;
   const message =
     'Nowhere to keep sets: set the VITE_FIREBASE_* variables or add firebase-applet-config.json ' +
-    "(Firebase), or VITE_GOOGLE_CLIENT_ID (the desktop app's copy through Google Drive; see " +
+    `(Firebase), or ${ENV_NAMES.googleClientId.join(' or ')} (the desktop app's copy through Google Drive; see ` +
     '.env.example). For the desktop app, run npm run build:desktop instead.';
   if (process.env.ALLOW_MISSING_FIREBASE_CONFIG === '1') {
     console.warn(`warning: ${message}`);
@@ -35,6 +36,8 @@ export default defineConfig(({ command, mode }) => {
   // NOTE: GEMINI_API_KEY is intentionally NOT exposed to the client bundle.
   // It is a billable secret and must only be used server-side (see server.ts / api/index.ts).
   return {
+    // Only these prefixes reach the page: VITE_* and the client id's other name.
+    envPrefix: CLIENT_ENV_PREFIXES,
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
