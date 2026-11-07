@@ -2,7 +2,7 @@
   "name": "lego-tracker-desktop",
   "productName": "Brick Tracker",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Electron shell for Brick Tracker: scrapes prices with a local browser and refreshes daily.",
   "author": "zgyorkei",
   "main": "dist/main.cjs",
