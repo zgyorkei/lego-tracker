@@ -1117,7 +1117,7 @@ function registerSessionRoutes(app: Express, limited: boolean, fetchImpl: typeof
         console.warn('Google refused the sign-in code:', status, reason);
         return res
           .status(401)
-          .json({ error: googleRefusalMessage(reason, 'sign-in'), google: reason });
+          .json({ error: googleRefusalMessage(reason, 'sign-in', cfg), google: reason });
       }
       const checked = checkIdToken(
         decodeJwtPayload(body.id_token),
@@ -1174,7 +1174,7 @@ function registerSessionRoutes(app: Express, limited: boolean, fetchImpl: typeof
         console.warn('Google refused to refresh the Drive token:', status, reason);
         return res
           .status(502)
-          .json({ error: googleRefusalMessage(reason, 'token'), google: reason });
+          .json({ error: googleRefusalMessage(reason, 'token', cfg), google: reason });
       }
       res.json({ user: userOf(s), ...accessOf(body) });
     } catch (err) {

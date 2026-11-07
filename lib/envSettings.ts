@@ -18,14 +18,22 @@ export const ENV_NAMES = {
  */
 export const CLIENT_ENV_PREFIXES = ['VITE_', 'NEW_GOOGLE_CLIENT_CONFIG'];
 
+/** The first non-blank value among `names`, trimmed, with the name it was read from. */
+export function readEnvNamed(
+  env: Record<string, unknown>,
+  names: readonly string[]
+): { name: string; value: string } | undefined {
+  for (const name of names) {
+    const value = env[name];
+    if (typeof value === 'string' && value.trim()) return { name, value: value.trim() };
+  }
+  return undefined;
+}
+
 /** The first non-blank value among `names`, trimmed, or undefined. */
 export function readEnv(
   env: Record<string, unknown>,
   names: readonly string[]
 ): string | undefined {
-  for (const name of names) {
-    const value = env[name];
-    if (typeof value === 'string' && value.trim()) return value.trim();
-  }
-  return undefined;
+  return readEnvNamed(env, names)?.value;
 }

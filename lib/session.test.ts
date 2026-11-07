@@ -185,6 +185,7 @@ describe('sessionConfig', () => {
     expect(sessionConfig(env)).toEqual({
       clientId: env.VITE_GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
+      clientSecretFrom: 'GOOGLE_CLIENT_SECRET',
       secret: env.SESSION_SECRET,
     });
     expect(sessionConfig({ ...env, GOOGLE_CLIENT_SECRET: '' })).toBeNull();
@@ -202,6 +203,7 @@ describe('sessionConfig', () => {
     expect(sessionConfig(renamed)).toEqual({
       clientId: 'new.apps.googleusercontent.com',
       clientSecret: 'new-secret',
+      clientSecretFrom: 'GOOGLE_CLIENT_CONFIG',
       secret: 'y'.repeat(32),
     });
     expect(sessionConfig({ ...renamed, SESSION_CONFIG_2: 'short' })).toBeNull();

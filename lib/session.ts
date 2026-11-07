@@ -8,7 +8,7 @@
 // every rule here is tested. Server-only: never import this from src/.
 import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from 'node:crypto';
 import { isGoogleSub } from './data/storeBridge.js';
-import { ENV_NAMES, readEnv } from './envSettings.js';
+import { ENV_NAMES, readEnv, readEnvNamed } from './envSettings.js';
 import { DRIVE_APPDATA_SCOPE, REQUESTED_WITH } from './sessionProtocol.js';
 
 export { DRIVE_APPDATA_SCOPE, REQUESTED_WITH, SESSION_SCOPES } from './sessionProtocol.js';
@@ -228,6 +228,8 @@ export function isSameSiteCall(h: CallHeaders): boolean {
 export interface SessionConfig {
   clientId: string;
   clientSecret: string;
+  /** The variable the client secret was read from (a name, never the value). */
+  clientSecretFrom: string;
   secret: string;
 }
 
@@ -238,10 +240,10 @@ export interface SessionConfig {
  */
 export function sessionConfig(env: Record<string, string | undefined>): SessionConfig | null {
   const clientId = readEnv(env, ENV_NAMES.googleClientId);
-  const clientSecret = readEnv(env, ENV_NAMES.googleClientSecret);
+  const client = readEnvNamed(env, ENV_NAMES.googleClientSecret);
   const secret = readEnv(env, ENV_NAMES.sessionSecret);
-  if (!clientId || !clientSecret || !secret || secret.length < MIN_SECRET_LENGTH) return null;
-  return { clientId, clientSecret, secret };
+  if (!clientId || !client || !secret || secret.length < MIN_SECRET_LENGTH) return null;
+  return { clientId, clientSecret: client.value, clientSecretFrom: client.name, secret };
 }
 
 // ---- Google's refusals --------------------------------------------------------------------------
@@ -256,12 +258,16 @@ export function googleErrorCode(error: unknown): string {
  * means the server's settings are wrong, which no retry fixes, so it says
  * which setting; anything else names Google's code and asks to try again.
  */
-export function googleRefusalMessage(code: string, call: 'sign-in' | 'token'): string {
+export function googleRefusalMessage(
+  code: string,
+  call: 'sign-in' | 'token',
+  cfg: Pick<SessionConfig, 'clientId' | 'clientSecretFrom'>
+): string {
   if (code === 'invalid_client' || code === 'unauthorized_client')
     return (
-      `Google refused this website's sign-in client (${code}): the client secret on the ` +
-      "server is not the secret of the website's Google client id. Set the Web client's " +
-      'secret on the server and deploy again.'
+      `Google refused this website's sign-in client (${code}): the client secret the server ` +
+      `read from ${cfg.clientSecretFrom} is not the secret of the Google client ${cfg.clientId}. ` +
+      "Set that client's secret there and deploy again."
     );
   return call === 'sign-in'
     ? `Google refused the sign-in (${code}). Please try again.`

@@ -211,7 +211,10 @@ describe("the website's Google session", () => {
       expect(badClient.status).toBe(401);
       const refused = await badClient.json();
       expect(refused.google).toBe('invalid_client');
-      expect(refused.error).toContain('client secret on the server');
+      expect(refused.error).toContain(
+        `read from GOOGLE_CLIENT_SECRET is not the secret of the Google client ${CLIENT}`
+      );
+      expect(refused.error).not.toContain('client-secret');
 
       answers.push({ status: 400, body: { error: 'invalid_grant' } });
       const badCode = await (
