@@ -11,6 +11,9 @@ import {
 } from '../../../lib/data/store';
 import type { StoreChange } from '../../../lib/data/storeBridge';
 import { validateOpBatch } from '../../../lib/data/ops';
+// The shops the page shows: its own imports (src/hooks/usePriceSources.ts).
+import { ensureBrickLinkSources } from '../../../src/lib/priceSources';
+import { DEFAULT_PRICE_SOURCES } from '../../../src/types';
 
 const SUB = '112233445566778899';
 const SRC = { projectId: 'p', databaseId: '(default)', uid: 'u1' };
@@ -195,6 +198,63 @@ describe('LocalStore', () => {
     expect(s.plannedListResponse('shared-token-1234567')?.title).toBe('Mine');
     s.setPlannedList(null);
     expect(s.plannedListResponse(token)).toBeNull();
+  });
+
+  describe('publishes the prices of every shop the page shows (IDEA-7dfb29)', () => {
+    const SHOP = { id: 'shop', name: 'Shop', currency: 'EUR' };
+    const ALL = ['amazon', 'bricklink', 'arukereso', 'shop', 'bricklink-new'];
+    const token = 'f'.repeat(24);
+    /** A store with one planned set priced at every shop named in ALL. */
+    const pricedEverywhere = async () => {
+      const s = store();
+      await s.open(SUB);
+      const marketPrices = Object.fromEntries(ALL.map((id, i) => [id, { price: 10 + i, priceHuf: 4000 + 100 * i }]));
+      s.applySets(snap([set('a', { status: 'planned', priority: 'high', setNumber: '10333', marketPrices })]));
+      s.setPlannedList({ token, title: 'Planned sets', createdAt: '2026-11-05T00:00:00.000Z' });
+      return s;
+    };
+    const published = (s: LocalStore) =>
+      (s.plannedListResponse(token)?.sets[0] as { prices: { sourceId: string; sourceName: string }[] }).prices;
+
+    it('adds BrickLink to a list stored before it was permanent', async () => {
+      const s = await pricedEverywhere();
+      s.putPriceSources([SHOP]);
+      expect(published(s)).toEqual(
+        expect.arrayContaining([expect.objectContaining({ sourceId: 'bricklink', sourceName: 'BrickLink', priceHuf: 4100 })])
+      );
+    });
+
+    it('publishes the default shops when no list is stored', async () => {
+      const s = await pricedEverywhere();
+      expect(s.priceSources().list).toBeNull();
+      expect(published(s).map((p) => p.sourceId).sort()).toEqual(['amazon', 'arukereso', 'bricklink']);
+      s.putPriceSources(null);
+      expect(published(s).map((p) => p.sourceId).sort()).toEqual(['amazon', 'arukereso', 'bricklink']);
+    });
+
+    it('keeps a stored shop the defaults lack', async () => {
+      const s = await pricedEverywhere();
+      s.putPriceSources([{ id: 'amazon', name: 'Amazon EU', currency: 'EUR' }, SHOP]);
+      expect(published(s).map((p) => p.sourceId).sort()).toEqual(['amazon', 'bricklink', 'shop']);
+    });
+
+    it('names the same shops as the page for the same stored list', async () => {
+      const s = await pricedEverywhere();
+      const lists: ({ id: string; name: string; currency: string }[] | null)[] = [
+        null,
+        [],
+        [SHOP],
+        [{ id: 'bricklink-new', name: 'BrickLink new', currency: 'EUR' }, { id: 'arukereso', name: 'Arukereso', currency: 'HUF' }],
+        [{ id: 'bricklink', name: 'Old BrickLink name', currency: 'HUF' }, SHOP],
+      ];
+      for (const list of lists) {
+        s.putPriceSources(list);
+        const page = ensureBrickLinkSources<{ id: string; name: string }>(list ?? DEFAULT_PRICE_SOURCES);
+        const desktop = published(s);
+        expect(desktop.map((p) => p.sourceId).sort(), JSON.stringify(list)).toEqual(page.map((x) => x.id).sort());
+        expect(desktop.map((p) => p.sourceName).sort(), JSON.stringify(list)).toEqual(page.map((x) => x.name).sort());
+      }
+    });
   });
 
   it('uploads a copy kept on this PC only, with its history, once the project has answered', async () => {

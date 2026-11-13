@@ -45,6 +45,7 @@ import {
   type PayloadSource,
   type PlannedListResponse,
 } from '../../../lib/plannedListPayload';
+import { shownPriceSources } from '../../../lib/priceSources';
 import { readJsonFile, rotateDailyBackup, writeFileAtomic, writeFileAtomicSync } from './files';
 
 // The desktop app's copy of the signed-in account's data, one folder per
@@ -176,6 +177,8 @@ function sharedListOf(data: unknown): { token: string; title: string } | null {
   const title = typeof data.title === 'string' && data.title ? data.title : 'Planned sets';
   return { token: data.id, title };
 }
+
+const hasId = (s: unknown): s is { id: string } => isPlainObject(s) && typeof s.id === 'string';
 
 /** The price sources the list names, as far as they have the fields it reads. */
 const listSources = (list: unknown[] | null): PayloadSource[] =>
@@ -400,7 +403,9 @@ export class LocalStore extends EventEmitter {
   /**
    * GET /api/planned-sets/:token from this PC: the list published from here,
    * or the Firestore one (by its backed-up token), built from the sets as they
-   * are now. Null for any other token, so the route can try Firestore.
+   * are now, priced at the shops the page shows (BrickLink always, the
+   * defaults when no list is stored). Null for any other token, so the route
+   * can try Firestore.
    */
   plannedListResponse(token: string): PlannedListResponse | null {
     if (!this.sub) return null;
@@ -416,7 +421,7 @@ export class LocalStore extends EventEmitter {
       list.title,
       this.lastWrittenAt,
       visibleSets(this.state) as unknown as PayloadSet[],
-      listSources(this.state.priceSources)
+      listSources(shownPriceSources(this.state.priceSources?.filter(hasId) ?? null))
     );
   }
 

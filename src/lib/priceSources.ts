@@ -1,31 +1,10 @@
-import { DEFAULT_PRICE_SOURCES, PERMANENT_SOURCE_IDS, PriceSource } from '../types';
+import type { PriceSource } from '../types';
 import { parseRecipe } from '../../lib/scrapeRecipe';
 import { builtinRecipeFor } from '../../lib/builtinRecipes';
 
-// Ensures the permanent BrickLink source is always present and bricklink-new is
-// removed (migration for existing users). Idempotent.
-export const ensureBrickLinkSources = (sources: PriceSource[]): PriceSource[] => {
-  const result = sources.filter((s) => s.id !== 'bricklink-new');
-  const amazonIdx = result.findIndex((s) => s.id === 'amazon');
-  let insertAt = amazonIdx >= 0 ? amazonIdx + 1 : 0;
-  for (const id of PERMANENT_SOURCE_IDS) {
-    const existingIdx = result.findIndex((s) => s.id === id);
-    if (existingIdx === -1) {
-      const def = DEFAULT_PRICE_SOURCES.find((s) => s.id === id);
-      if (def) {
-        result.splice(insertAt, 0, def);
-        insertAt++;
-      }
-    } else {
-      // Permanent sources are locked, so keep them canonical (e.g. picks up
-      // URL-template changes) rather than leaving stale stored values.
-      const def = DEFAULT_PRICE_SOURCES.find((s) => s.id === id);
-      if (def) result[existingIdx] = { ...def };
-      insertAt = existingIdx + 1;
-    }
-  }
-  return result;
-};
+// The permanent BrickLink source and the defaults live in lib/, so the desktop's
+// Planned Sets route publishes the same shops the page shows (IDEA-7dfb29).
+export { ensureBrickLinkSources, shownPriceSources } from '../../lib/priceSources';
 
 /**
  * Keeps only the PriceSource fields, dropping anything undefined. Firestore

@@ -23,7 +23,9 @@ keeps running when its window is closed. Use the tray menu to quit.
    - where the sets are kept: **On this PC only** (the first-run default, no
      Firebase at all) or **Firebase + a copy on this PC**. Gift registries and
      the public Planned Sets link need Firebase; on this PC only the planned
-     list is served to programs on this PC at `http://localhost:47321/...`;
+     list is served to programs on this PC at `http://localhost:47321/...`,
+     with the prices of every shop the app shows (BrickLink always, the
+     default shops when no list is stored; `lib/priceSources.ts`);
    - for Firebase only: the Firebase web config (the console's
      `firebaseConfig` snippet, or the JSON of `firebase-applet-config.json`)
      and the database ID;

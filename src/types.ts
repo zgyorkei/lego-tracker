@@ -57,33 +57,9 @@ export interface PriceSource {
   scraper?: ScrapeRecipe;
 }
 
-export const DEFAULT_PRICE_SOURCES: PriceSource[] = [
-  {
-    id: 'amazon',
-    name: 'Amazon EU',
-    urlTemplate: 'https://www.amazon.de/s?k=lego+{setNumber}',
-    currency: 'EUR',
-    color: '#2563eb',
-  },
-  {
-    id: 'bricklink',
-    name: 'BrickLink',
-    urlTemplate: 'https://www.bricklink.com/v2/catalog/catalogitem.page?S={setNumber}-1',
-    currency: 'EUR',
-    color: '#D4A017',
-  },
-  {
-    id: 'arukereso',
-    name: 'Arukereso',
-    urlTemplate: 'https://www.arukereso.hu/CategorySearch.php?st={setNumber}',
-    currency: 'HUF',
-    color: '#10b981',
-  },
-];
-
-// Sources that are always present and cannot be edited/removed in the UI. The
-// backend distinguishes them by id, so their ids must stay stable.
-export const PERMANENT_SOURCE_IDS = ['bricklink'];
+// The default shops and the permanent BrickLink id (lib/priceSources.ts, shared
+// with the desktop's Planned Sets route).
+export { DEFAULT_PRICE_SOURCES, PERMANENT_SOURCE_IDS } from '../lib/priceSources';
 
 export interface MarketPrices {
   exchangeRate?: number;
