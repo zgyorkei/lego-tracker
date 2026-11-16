@@ -657,6 +657,8 @@ const SetCardComponent: React.FC<SetCardProps> = ({
                                 <button
                                   onClick={() => refreshLegoPriceOnly()}
                                   disabled={loadingLegoPrice}
+                                  aria-label="Refresh the LEGO price"
+                                  title="Refresh the LEGO price"
                                   className="text-gray-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 inline-flex"
                                 >
                                   <RefreshCw
@@ -898,6 +900,8 @@ const SetCardComponent: React.FC<SetCardProps> = ({
                                       behavior: 'smooth',
                                     });
                                   }}
+                                  aria-label="Scroll left"
+                                  title="Scroll left"
                                   className="bg-white rounded-full shadow p-1 ml-1 text-gray-500 hover:text-black hover:scale-110 transition-all pointer-events-auto"
                                 >
                                   <ChevronLeft size={14} />
@@ -914,6 +918,8 @@ const SetCardComponent: React.FC<SetCardProps> = ({
                                       behavior: 'smooth',
                                     });
                                   }}
+                                  aria-label="Scroll right"
+                                  title="Scroll right"
                                   className="bg-white rounded-full shadow p-1 mr-1 text-gray-500 hover:text-black hover:scale-110 transition-all pointer-events-auto"
                                 >
                                   <ChevronRight size={14} />
@@ -1194,7 +1200,7 @@ const SetCardComponent: React.FC<SetCardProps> = ({
                   exit={{ scale: 0.95 }}
                   className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm relative"
                 >
-                  <button
+                  <button title="Close"
                     onClick={() => setShowOrderDialog(false)}
                     aria-label="Close"
                     className="absolute top-4 right-4 text-gray-400 hover:text-gray-900"
@@ -1276,6 +1282,8 @@ const SetCardComponent: React.FC<SetCardProps> = ({
 
                     <button
                       onClick={submitOrder}
+                      aria-label="Confirm Purchase"
+                      title="Confirm Purchase"
                       disabled={isSubmittingOrder || !orderPrice || isNaN(parseFloat(orderPrice))}
                       className="w-full bg-green-500 hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-black uppercase tracking-wider py-3 rounded-lg mt-4 transition-colors flex items-center justify-center gap-2"
                     >

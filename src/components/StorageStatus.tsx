@@ -61,7 +61,7 @@ export function StorageStatus({ backup }: { backup: DesktopSyncState }) {
 
   return (
     <>
-      <button
+      <button aria-label="The copy of your collection on this PC"
         onClick={() => setOpen(true)}
         className={`px-3 py-1.5 border-2 border-black rounded font-black text-[10px] uppercase flex items-center gap-2 ${TONE[pill.tone]}`}
         title="The copy of your collection on this PC"

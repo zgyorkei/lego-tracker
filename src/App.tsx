@@ -1081,6 +1081,8 @@ export default function App() {
             )}
             <button
               onClick={() => setShowPriceSourcesSetting(true)}
+              aria-label="Price sources"
+              title="Price sources"
               className="px-3 py-1.5 bg-black text-white rounded font-black text-[10px] uppercase flex items-center gap-2 hover:bg-gray-800 transition-colors"
             >
               <ShoppingBag size={14} /> <span className="hidden sm:inline">Sources</span>
@@ -1089,6 +1091,8 @@ export default function App() {
             {isDemoMode ? (
               <button
                 onClick={() => setIsDemoMode(false)}
+                aria-label="Exit Demo"
+                title="Exit Demo"
                 className="p-2 hover:bg-black/5 rounded-full transition-colors flex items-center gap-2 font-black text-xs uppercase"
               >
                 <span className="hidden sm:inline text-red-600">Exit Demo</span>
@@ -1097,6 +1101,8 @@ export default function App() {
             ) : (
               <button
                 onClick={() => void handleSignOut()}
+                aria-label="Sign out"
+                title="Sign out"
                 className="p-2 hover:bg-black/5 rounded-full transition-colors flex items-center gap-2 font-black text-xs uppercase"
               >
                 <span className="hidden sm:inline">{user?.displayName?.split(' ')[0]}</span>
@@ -1349,7 +1355,7 @@ export default function App() {
           >
             <AlertTriangle className="shrink-0" size={24} />
             <p className="flex-1 font-bold text-sm leading-tight">{actionError}</p>
-            <button
+            <button title="Dismiss error"
               onClick={() => setActionError(null)}
               aria-label="Dismiss error"
               className="shrink-0 hover:bg-red-700 rounded p-1 transition-colors"
@@ -1443,6 +1449,8 @@ export default function App() {
                             newSources.splice(index, 1);
                             savePriceSources(newSources);
                           }}
+                          aria-label={`Remove ${source.name || 'this source'}`}
+                          title={`Remove ${source.name || 'this source'}`}
                           className="absolute top-2 right-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                           <X size={16} />
@@ -1808,7 +1816,7 @@ export default function App() {
           >
             <div className="flex justify-between items-center mb-2 border-b-2 border-gray-100 pb-2">
               <span className="font-black uppercase text-sm">Select Theme</span>
-              <button
+              <button title="Close theme selector"
                 onClick={() => setShowThemeSelector(false)}
                 aria-label="Close theme selector"
                 className="text-gray-400 hover:text-gray-900"

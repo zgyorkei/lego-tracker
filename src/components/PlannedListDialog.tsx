@@ -51,7 +51,7 @@ export function PlannedListDialog({ onClose, state }: PlannedListDialogProps) {
         exit={{ opacity: 0, scale: 0.95 }}
         className="bg-white rounded-xl shadow-2xl p-6 w-full relative"
       >
-        <button
+        <button title="Close"
           onClick={onClose}
           aria-label="Close"
           className="absolute top-4 right-4 text-gray-400 hover:text-gray-900 z-10"

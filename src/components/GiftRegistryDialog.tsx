@@ -201,7 +201,7 @@ export function GiftRegistryDialog({
             {saveError}
           </div>
         )}
-        <button
+        <button title="Close"
           onClick={onClose}
           aria-label="Close"
           className="absolute top-4 right-4 text-gray-400 hover:text-gray-900 z-10"
@@ -274,6 +274,8 @@ export function GiftRegistryDialog({
                       ) : (
                         <button
                           onClick={() => setDeletingRegistryId(reg.id)}
+                          aria-label={`Delete ${reg.title || 'this registry'}`}
+                          title={`Delete ${reg.title || 'this registry'}`}
                           className="px-3 py-2 bg-lego-red hover:brightness-110 text-white border-2 border-black rounded font-black text-xs uppercase flex items-center gap-2 transition-colors"
                         >
                           <Trash2 size={14} />
