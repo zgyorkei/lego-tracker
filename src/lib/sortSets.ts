@@ -25,13 +25,17 @@ const byPriority = (a: LegoSet, b: LegoSet): number =>
 
 /**
  * The set list's order for one of the sort menu's values. Purchased sets always
- * come last; priority sorts break ties newest first. Unknown values sort by
+ * come last and retiring planned sets (see retiringSince) first; priority sorts break ties newest first. Unknown values sort by
  * date, newest first (the default).
  */
 export function compareSets(sortBy: string): (a: LegoSet, b: LegoSet) => number {
   return (a, b) => {
     if (a.status === 'ordered' && b.status !== 'ordered') return 1;
     if (a.status !== 'ordered' && b.status === 'ordered') return -1;
+
+    // A planned set on LEGO's last-chance page comes first, whatever the sort.
+    const retiringA = !!a.retiringSince;
+    if (retiringA !== !!b.retiringSince) return retiringA ? -1 : 1;
 
     switch (sortBy) {
       case 'priority-desc':

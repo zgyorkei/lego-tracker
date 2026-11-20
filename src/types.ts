@@ -164,4 +164,10 @@ export interface LegoSet {
   prices?: Record<string, number>;
   lowestPrices?: { sourceName: string; url: string; priceText: string }[];
   legoPriceError?: boolean;
+  /**
+   * Planned sets only, derived on this device (src/lib/retiring.ts): the date the
+   * app first saw the set on LEGO.com's last-chance page, while it is still
+   * there. Never written to a backend.
+   */
+  retiringSince?: string;
 }

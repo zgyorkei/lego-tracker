@@ -22,6 +22,7 @@ import { useDesktopSync } from './hooks/useDesktopSync';
 import { StorageStatus } from './components/StorageStatus';
 import { DataStatusBanner } from './components/DataStatusBanner';
 import { usePlannedList } from './hooks/usePlannedList';
+import { useRetiringWatch } from './hooks/useRetiringWatch';
 import { firebaseSession } from './data/firebaseSession';
 import { desktopSession } from './data/desktopSession';
 import { createFirestoreBackend, probeFirestore } from './data/firestoreBackend';
@@ -401,7 +402,9 @@ export default function App() {
     writeStored('brickTrackerTheme', currentTheme);
   }, [currentTheme]);
 
-  const activeSets = isDemoMode ? mockSets : sets;
+  // Planned sets that LEGO lists as last chance carry retiringSince (and sort first).
+  const watchedSets = useRetiringWatch(sets, !isDemoMode && !loading && !setsError);
+  const activeSets = isDemoMode ? mockSets : watchedSets;
 
   useEffect(() => {
     fetch('/api/exchange-rates')

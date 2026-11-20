@@ -496,7 +496,8 @@ const SetCardComponent: React.FC<SetCardProps> = ({
       exit={{ opacity: 0, scale: 0.95 }}
       className={`bg-white rounded-lg shadow-xl overflow-hidden border-4 flex flex-col relative group ${
         set.status === 'ordered' ? 'border-green-500' : 'border-lego-yellow'
-      }`}
+      }${set.retiringSince ? ' retiring-set' : ''}`}
+      data-retiring={set.retiringSince ? '' : undefined}
     >
       {isCollapsed ? (
         <button

@@ -87,3 +87,19 @@ describe('compareSets', () => {
     expect(order(sets, 'set-desc')).toEqual(['a', 'b', 'c']);
   });
 });
+
+describe('compareSets with retiring sets', () => {
+  const plain = set('plain', { createdAt: '2026-10-01T00:00:00Z' });
+  const retiring = set('retiring', {
+    createdAt: '2025-01-01T00:00:00Z',
+    retiringSince: '2026-11-20T00:00:00Z',
+  });
+  const bought = set('bought', { status: 'ordered', retiringSince: '2026-11-20T00:00:00Z' });
+
+  it.each(['date-desc', 'date-asc', 'name-asc', 'set-desc', 'priority-desc'])(
+    'puts a retiring planned set first under %s, purchased sets still last',
+    (sortBy) => {
+      expect(order([bought, plain, retiring], sortBy)).toEqual(['retiring', 'plain', 'bought']);
+    }
+  );
+});
