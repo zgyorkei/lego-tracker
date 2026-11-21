@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "pwa-kit:refresh": "node scripts/pwa-kit-refresh.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
@@ -28,7 +29,7 @@
     "firebase": "^12.12.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
-    "pwa-kit": "file:../pwa-kit",
+    "pwa-kit": "file:vendor/pwa-kit-0.3.0.tgz",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "recharts": "^3.8.1",
