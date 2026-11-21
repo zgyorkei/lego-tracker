@@ -58,6 +58,11 @@ Brick Tracker is a comprehensive web application designed for Lego enthusiasts t
 | `npm run typecheck` | `tsc --noEmit` (strict mode) |
 | `npm run lint` | ESLint |
 | `npm test` | Vitest unit tests |
+| `npm run app` | Opens the Vercel site as a Chrome app window (Edge when Chrome is absent), through `pwa-kit/browser`. Set `BRICK_TRACKER_APP_ID` (from chrome://apps) once installed, else `BRICK_TRACKER_URL` overrides the site address |
+
+Install as a Chrome app: open the site in Chrome, menu, Cast, save and share,
+Install page as app. Sign-in (Firebase browser flow) and offline reading are
+the site's own and do not change.
 
 ## Deployment
 
