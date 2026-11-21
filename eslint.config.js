@@ -45,7 +45,7 @@ export default tseslint.config(
 
   // The web app's service worker
   {
-    files: ['public/sw.js'],
+    files: ['src/sw.ts'],
     languageOptions: {
       globals: globals.serviceworker,
     },

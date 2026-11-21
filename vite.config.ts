@@ -2,7 +2,9 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { existsSync } from 'fs';
 import path from 'path';
-import { defineConfig, loadEnv } from 'vite';
+import { pwa } from 'pwa-kit/vite';
+import { defineConfig, loadEnv, type PluginOption } from 'vite';
+import pwaConfig from './pwa.config';
 import { CLIENT_ENV_PREFIXES, ENV_NAMES, readEnv } from './lib/envSettings';
 
 /**
@@ -38,7 +40,14 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Only these prefixes reach the page: VITE_* and the client id's other name.
     envPrefix: CLIENT_ENV_PREFIXES,
-    plugins: [react(), tailwindcss()],
+    // The PWA (manifest, head tags, precaching worker) is built from pwa.config.ts;
+    // off in the desktop build, which has no use for an install prompt.
+    plugins: [
+      react(),
+      tailwindcss(),
+      // Cast: the linked kit carries its own copy of Vite's types.
+      pwa({ config: pwaConfig, worker: path.resolve(__dirname, 'src/sw.ts') }) as PluginOption,
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

@@ -49,6 +49,7 @@ import { googleClientId } from './lib/googleConfig';
 import { createDriveClient } from '../lib/drive/client';
 import { isFresh, type DriveStatus } from '../lib/drive/layout';
 import { quotaDay, shouldRunLocally } from './lib/dailyRun';
+import { readQuickAction, withoutQuickAction, type QuickAction } from './lib/quickAction';
 import { formatPrice as formatPriceUtil } from './lib/currency';
 import { ClassicSpaceLogo } from './components/ClassicSpaceLogo';
 import { SetCard } from './components/SetCard';
@@ -773,6 +774,32 @@ export default function App() {
     batchRefreshRef.current = handleBatchRefresh;
   });
 
+  // A quick action on the installed app's icon (pwa.config.ts) opens the one
+  // screen with a query (src/lib/quickAction.ts). It is read once, at the first
+  // render, and the address cleaned so a reload does not run it again; it is
+  // carried out when someone is signed in and the sets have loaded. Refreshing
+  // prices waits for the planned filter to have taken effect.
+  const quickAction = useRef<QuickAction | null | undefined>(undefined);
+  if (quickAction.current === undefined) {
+    quickAction.current = readQuickAction(window.location.search);
+    if (quickAction.current) {
+      window.history.replaceState(null, '', withoutQuickAction(window.location.href));
+    }
+  }
+  const quickRefresh = useRef(false);
+  useEffect(() => {
+    const action = quickAction.current;
+    if (!action || !uid || loading) return;
+    quickAction.current = null;
+    if (action.filter) setFilter(action.filter);
+    if (action.add) setIsAdding(true);
+    quickRefresh.current = action.refreshPrices;
+  }, [uid, loading]);
+  useEffect(() => {
+    if (!quickRefresh.current || filter !== 'planned' || loading) return;
+    quickRefresh.current = false;
+    if (filteredSets.length > 0) void batchRefreshRef.current();
+  }, [filter, loading, filteredSets.length]);
   // Daily refresh at 04:00 local time.
   //
   // Desktop app only. Automatic refreshes moved there because it scrapes with a
@@ -1355,7 +1382,8 @@ export default function App() {
           >
             <AlertTriangle className="shrink-0" size={24} />
             <p className="flex-1 font-bold text-sm leading-tight">{actionError}</p>
-            <button title="Dismiss error"
+            <button
+              title="Dismiss error"
               onClick={() => setActionError(null)}
               aria-label="Dismiss error"
               className="shrink-0 hover:bg-red-700 rounded p-1 transition-colors"
@@ -1816,7 +1844,8 @@ export default function App() {
           >
             <div className="flex justify-between items-center mb-2 border-b-2 border-gray-100 pb-2">
               <span className="font-black uppercase text-sm">Select Theme</span>
-              <button title="Close theme selector"
+              <button
+                title="Close theme selector"
                 onClick={() => setShowThemeSelector(false)}
                 aria-label="Close theme selector"
                 className="text-gray-400 hover:text-gray-900"
