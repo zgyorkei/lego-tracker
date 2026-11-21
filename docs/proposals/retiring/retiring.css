@@ -1,0 +1,54 @@
+/* Mock of Brick Tracker's current look (Tailwind classes of src/App.tsx and SetCard.tsx, default Classic theme) plus the four retiring variants. */
+:root{--yellow:#ffd500;--red:#e3000b;--blue:#006cb7;--ink:#212121}
+*{box-sizing:border-box}
+body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#f3f4f6 radial-gradient(#d1d5db 1px,transparent 1px);background-size:20px 20px;color:#111827}
+.up{text-transform:uppercase}.b{font-weight:900}
+header.top{background:var(--yellow);border-bottom:4px solid #000;padding:16px;position:sticky;top:0;z-index:50;box-shadow:0 4px 6px rgba(0,0,0,.1)}
+header.top .in{max-width:72rem;margin:0 auto;display:flex;justify-content:space-between;align-items:center;gap:12px}
+header.top h1{margin:0;font-size:24px;font-weight:900;text-transform:uppercase;letter-spacing:-.02em}
+.hbtns{display:flex;align-items:center;gap:12px}
+.hb{padding:6px 12px;background:#000;color:#fff;border-radius:4px;font-weight:900;font-size:10px;text-transform:uppercase}
+.hu{font-weight:900;font-size:12px;text-transform:uppercase}
+main{max-width:72rem;margin:0 auto;padding:32px}
+.bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:16px;margin-bottom:16px}
+.seg{display:flex;gap:8px;padding:4px;background:#fff;border:2px solid #000;border-radius:8px;box-shadow:4px 4px 0 #000}
+.seg span{padding:6px 16px;font-size:12px;font-weight:900;text-transform:uppercase;border-radius:4px;color:#6b7280}
+.seg .on-b{background:var(--blue);color:#fff}.seg .on-y{background:var(--yellow);color:#000}
+.pill{padding:8px 12px;font-size:12px;font-weight:900;text-transform:uppercase;border-radius:8px;border:2px solid #000;box-shadow:4px 4px 0 #000;background:#fff}
+.left{display:flex;gap:16px;flex-wrap:wrap;align-items:center}.right{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px}
+.stat{background:#fff;padding:16px;border-radius:8px;box-shadow:0 20px 25px -5px rgba(0,0,0,.1),0 8px 10px -6px rgba(0,0,0,.1);border:4px solid var(--yellow)}
+.stat.g{border-color:#22c55e}.stat p{margin:0}.stat .l{font-size:12px;font-weight:900;text-transform:uppercase;opacity:.5;margin-bottom:4px}.stat .v{font-size:20px;font-weight:900}
+.cols{columns:2;column-gap:24px}.cols>*{break-inside:avoid;margin-bottom:24px}
+@media(max-width:860px){.cols{columns:1}main{padding:16px}}
+
+/* the set card, as SetCard.tsx draws it */
+.card{background:#fff;border-radius:8px;box-shadow:0 20px 25px -5px rgba(0,0,0,.1),0 8px 10px -6px rgba(0,0,0,.1);overflow:hidden;border:4px solid var(--yellow);display:flex;flex-direction:column;position:relative}
+.card .row{display:flex;border-bottom:1px solid #f3f4f6}
+.card .img{width:150px;min-width:150px;height:150px;background:#fff;display:flex;align-items:center;justify-content:center;position:relative;border-right:1px solid #f3f4f6}
+.card .img svg{width:104px;height:104px}
+.prio{position:absolute;top:8px;left:8px;padding:4px 8px;border-radius:4px;font-size:10px;font-weight:900;text-transform:uppercase;color:#fff}
+.prio.high{background:#ef4444}.prio.medium{background:#fb923c}.prio.low{background:#9ca3af}
+.card .body{flex:1;padding:14px;display:flex;flex-direction:column;justify-content:space-between;min-width:0}
+.card h3{margin:0;font-size:18px;line-height:1.15;font-weight:900;text-transform:uppercase;letter-spacing:-.01em;padding-right:8px}
+.card .num{font-size:13px;font-weight:700;color:#3b82f6;margin-top:2px}
+.card .foot{margin-top:12px;padding-top:12px;border-top:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center}
+.lbl{font-size:10px;text-transform:uppercase;font-weight:900;color:#9ca3af;letter-spacing:.05em;line-height:1;margin-bottom:4px}
+.price{font-size:14px;font-weight:900;color:var(--blue)}
+.buy{background:#22c55e;color:#fff;font-size:12px;font-weight:900;text-transform:uppercase;padding:8px 16px;border-radius:999px;white-space:nowrap}
+.mk{display:flex;border-top:1px solid #f3f4f6}
+.mk>div{padding:16px 16px 14px;min-width:150px;border-right:1px solid #f3f4f6;flex:1}
+.mk .src{font-size:10px;font-weight:900;color:#3b82f6;text-transform:uppercase;letter-spacing:.05em}
+.mk .mp{font-size:14px;font-weight:900;color:#374151;margin-top:10px;display:flex;justify-content:space-between;align-items:flex-end}
+.mk .d{font-size:10px;font-weight:700}.mk .d.dn{color:#22c55e}.mk .d.up{color:#ef4444}
+.mk .great{background:#22c55e;color:#fff}.mk .great .src,.mk .great .mp{color:#fff}.mk .great .d{color:#fff}
+.hist{border-top:1px solid #f3f4f6;padding:8px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;display:flex;justify-content:space-between}
+
+/* shared retiring bits */
+.hourglass{display:inline-block;vertical-align:-2px}
+.rtag{font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+.note{max-width:72rem;margin:0 auto;padding:12px 32px 0;font-size:12px;color:#4b5563}
+.note b{color:#111}
+.proposal-tag{position:fixed;left:12px;bottom:12px;background:#000;color:#fff;font-size:11px;font-weight:900;text-transform:uppercase;padding:6px 10px;border-radius:6px;z-index:200;letter-spacing:.05em}
+.legend{background:#fff;border:2px solid #000;border-radius:8px;padding:10px 14px;font-size:12px;font-weight:700;color:#374151;margin-bottom:20px;box-shadow:4px 4px 0 #000}
+.legend b{font-weight:900;text-transform:uppercase}

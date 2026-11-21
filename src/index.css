@@ -77,6 +77,49 @@ body {
   @apply bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)];
 }
 
+/* A planned set on LEGO's last-chance page (docs/proposals/retiring, choice C):
+   a red stripe down the left edge, a gradient that fades out after the
+   picture, a corner flag and a small chip with the reason. */
+.retiring-set {
+  background: linear-gradient(90deg, #fdecec 0, #fff 55%);
+}
+.retiring-set::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  background: #dc2626;
+  z-index: 3;
+}
+.retiring-flag {
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: 3;
+  background: #dc2626;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 7px;
+  border-bottom-left-radius: 6px;
+}
+.retiring-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
 }

@@ -5,11 +5,21 @@ import {
   RETIRING_CHECK_MS,
   RETIRING_STORAGE_KEY,
   applyLastChance,
+  baseSetNumber,
   markNotified,
   sanitizeRetiringMap,
   withRetiring,
   type RetiringMap,
 } from '../lib/retiring';
+import {
+  INBOX_STORAGE_KEY,
+  addNotices,
+  markAllRead,
+  markRead,
+  noticeLabel,
+  sanitizeInbox,
+  type RetiringNotice,
+} from '../lib/retiringInbox';
 
 interface LastChanceAnswer {
   setNumbers: string[];
@@ -23,47 +33,56 @@ const isAnswer = (v: unknown): v is LastChanceAnswer =>
   typeof (v as LastChanceAnswer).readAt === 'string';
 
 /**
- * The announcement. There is no in-app notification channel, so this is the
- * browser's (the desktop app's page has the same API). Returns whether it was
- * shown: without permission the set stays un-announced and the next check
- * tries again, and the row's mark still shows it.
+ * When the page is in the background the in-app toast would go unseen, so a
+ * system notification (a Windows toast) says it too, but only if the user
+ * already allowed them: the app never asks for the permission.
  */
-async function announce(setNumbers: string[], sets: LegoSet[]): Promise<boolean> {
-  if (typeof Notification === 'undefined') return false;
+function announceInBackground(notices: RetiringNotice[]): void {
+  if (typeof Notification === 'undefined' || !document.hidden) return;
+  if (Notification.permission !== 'granted') return;
   try {
-    if (Notification.permission === 'default') await Notification.requestPermission();
-    if (Notification.permission !== 'granted') return false;
-    for (const n of setNumbers) {
-      const set = sets.find(
-        (s) => s.status === 'planned' && s.setNumber.replace(/-\d+$/, '') === n
-      );
-      const label = set?.name ? `${n} ${set.name}` : n;
+    for (const n of notices) {
       new Notification('Set retiring soon', {
-        body: `${label} is on LEGO's last-chance page.`,
-        tag: `retiring-${n}`,
+        body: `${noticeLabel(n)} is on LEGO's last-chance page.`,
+        tag: `retiring-${n.setNumber}`,
       });
     }
-    return true;
   } catch (e) {
     console.warn('Could not show the retiring notification', e);
-    return false;
   }
+}
+
+export interface RetiringWatch {
+  /** `sets` with `retiringSince` filled in on the retiring ones. */
+  sets: LegoSet[];
+  /** The bell's list, newest first. */
+  inbox: RetiringNotice[];
+  /** Notices whose toast is still up (each set's toast shows once, ever). */
+  toasts: RetiringNotice[];
+  dismissToast: (setNumber: string) => void;
+  readAll: () => void;
+  readOne: (setNumber: string) => void;
 }
 
 /**
  * Watches LEGO.com's last-chance page (through GET /api/last-chance) on start
  * and every few hours, matches it against the planned sets, keeps the mark
- * (src/lib/retiring.ts) and announces each newly retiring planned set once.
- * Returns `sets` with `retiringSince` filled in on the retiring ones.
+ * (src/lib/retiring.ts) and announces each newly retiring planned set once:
+ * a bell entry (kept until read) and a toast.
  *
  * `enabled` is off in demo mode and while the sets are loading. A failed read
  * (the server says why) keeps the marks as they were.
  */
-export function useRetiringWatch(sets: LegoSet[], enabled: boolean): LegoSet[] {
+export function useRetiringWatch(sets: LegoSet[], enabled: boolean): RetiringWatch {
   const [map, setMap] = useState<RetiringMap>(() =>
     sanitizeRetiringMap(readStoredJson<unknown>(RETIRING_STORAGE_KEY, {}))
   );
   const mapRef = useRef(map);
+  const [inbox, setInbox] = useState<RetiringNotice[]>(() =>
+    sanitizeInbox(readStoredJson<unknown>(INBOX_STORAGE_KEY, []))
+  );
+  const inboxRef = useRef(inbox);
+  const [toasts, setToasts] = useState<RetiringNotice[]>([]);
   const setsRef = useRef(sets);
   setsRef.current = sets;
 
@@ -71,6 +90,12 @@ export function useRetiringWatch(sets: LegoSet[], enabled: boolean): LegoSet[] {
     mapRef.current = next;
     setMap(next);
     writeStored(RETIRING_STORAGE_KEY, next);
+  }, []);
+
+  const commitInbox = useCallback((next: RetiringNotice[]) => {
+    inboxRef.current = next;
+    setInbox(next);
+    writeStored(INBOX_STORAGE_KEY, next);
   }, []);
 
   // The check reads the latest sets through a ref, so a change to the list
@@ -89,13 +114,24 @@ export function useRetiringWatch(sets: LegoSet[], enabled: boolean): LegoSet[] {
         answer.readAt
       );
       commit(next);
-      if (toNotify.length && (await announce(toNotify, setsRef.current))) {
-        commit(markNotified(mapRef.current, toNotify));
+      if (!toNotify.length) return;
+      const added = toNotify.map((n) => ({
+        setNumber: n,
+        name:
+          setsRef.current.find((s) => s.status === 'planned' && baseSetNumber(s.setNumber) === n)
+            ?.name ?? '',
+      }));
+      const { inbox: nextInbox, fresh } = addNotices(inboxRef.current, added, answer.readAt);
+      commitInbox(nextInbox);
+      commit(markNotified(mapRef.current, toNotify));
+      if (fresh.length) {
+        setToasts((t) => [...t, ...fresh]);
+        announceInBackground(fresh);
       }
     } catch (e) {
       console.warn('Could not check the last-chance page', e);
     }
-  }, [commit]);
+  }, [commit, commitInbox]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -104,5 +140,15 @@ export function useRetiringWatch(sets: LegoSet[], enabled: boolean): LegoSet[] {
     return () => window.clearInterval(timer);
   }, [enabled, check]);
 
-  return useMemo(() => withRetiring(sets, map), [sets, map]);
+  const watched = useMemo(() => withRetiring(sets, map), [sets, map]);
+  const dismissToast = useCallback(
+    (n: string) => setToasts((t) => t.filter((x) => x.setNumber !== n)),
+    []
+  );
+  const readAll = useCallback(() => commitInbox(markAllRead(inboxRef.current)), [commitInbox]);
+  const readOne = useCallback(
+    (n: string) => commitInbox(markRead(inboxRef.current, n)),
+    [commitInbox]
+  );
+  return { sets: watched, inbox, toasts, dismissToast, readAll, readOne };
 }

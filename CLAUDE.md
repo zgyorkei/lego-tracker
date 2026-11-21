@@ -280,11 +280,16 @@ exclusive.
   every 3 h, keeps the mark per device in localStorage `bt.retiring.v1` (not on
   the set: the sets update rule is in the Firebase store), derives
   `LegoSet.retiringSince` for planned sets on the page (never written to a
-  backend), notifies once per set through the browser `Notification` API (a
-  set stays un-announced until one was really shown), and `compareSets` puts
-  retiring planned sets first. A set that leaves the page loses the mark but
-  keeps its record, so it is not announced again. `SetCard` carries the plain
-  `retiring-set` class; the look waits for LEGO.RETIRE.DESIGN's pick.
+  backend), and `compareSets` puts retiring planned sets first. A set that
+  leaves the page loses the mark but keeps its record, so it is not announced
+  again. The look is the user's pick from `docs/proposals/retiring/` (C plus
+  D's toast): `.retiring-set` / `.retiring-flag` / `.retiring-chip` in
+  `src/index.css`, the header bell and the bottom-right toast in
+  `RetiringNotices.tsx`. Each set is announced once: `src/lib/retiringInbox.ts`
+  keeps one entry per set in localStorage `bt.retiring.inbox.v1` (the bell
+  holds it until read) and the toast shows once; a system notification joins
+  only while the page is hidden and the user already allowed them (the app
+  never asks for the permission).
 - **The desktop app (`desktop/`) is its own npm package**, so Electron and
   Playwright never reach the Vercel install. It reuses `registerApiRoutes`,
   passing `{ scraper }` to swap Gemini for Playwright in the price routes; do

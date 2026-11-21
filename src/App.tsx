@@ -23,6 +23,7 @@ import { StorageStatus } from './components/StorageStatus';
 import { DataStatusBanner } from './components/DataStatusBanner';
 import { usePlannedList } from './hooks/usePlannedList';
 import { useRetiringWatch } from './hooks/useRetiringWatch';
+import { RetiringBell, RetiringToast } from './components/RetiringNotices';
 import { firebaseSession } from './data/firebaseSession';
 import { desktopSession } from './data/desktopSession';
 import { createFirestoreBackend, probeFirestore } from './data/firestoreBackend';
@@ -403,8 +404,8 @@ export default function App() {
   }, [currentTheme]);
 
   // Planned sets that LEGO lists as last chance carry retiringSince (and sort first).
-  const watchedSets = useRetiringWatch(sets, !isDemoMode && !loading && !setsError);
-  const activeSets = isDemoMode ? mockSets : watchedSets;
+  const retiring = useRetiringWatch(sets, !isDemoMode && !loading && !setsError);
+  const activeSets = isDemoMode ? mockSets : retiring.sets;
 
   useEffect(() => {
     fetch('/api/exchange-rates')
@@ -1089,6 +1090,13 @@ export default function App() {
               <ShoppingBag size={14} /> <span className="hidden sm:inline">Sources</span>
             </button>
             <StorageStatus backup={desktopSync} />
+            {!isDemoMode && (
+              <RetiringBell
+                inbox={retiring.inbox}
+                onReadAll={retiring.readAll}
+                onReadOne={retiring.readOne}
+              />
+            )}
             {isDemoMode ? (
               <button
                 onClick={() => setIsDemoMode(false)}
@@ -1109,6 +1117,13 @@ export default function App() {
           </div>
         </div>
       </header>
+      {!isDemoMode && (
+        <RetiringToast
+          toasts={retiring.toasts}
+          onDismiss={retiring.dismissToast}
+          onOpen={retiring.readOne}
+        />
+      )}
 
       <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">
         {isDemoMode && (
