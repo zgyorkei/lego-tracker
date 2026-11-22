@@ -5,6 +5,8 @@ node_modules
 scripts
 package-lock.json
 *.md
+# Pages saved from shops for the scraper tests: kept as the shop sent them.
+lib/fixtures
 # The GitHub Pages intro and setup guide is hand-written HTML with compact
 # one-line CSS; reformatting it only adds noise to a live page.
 docs

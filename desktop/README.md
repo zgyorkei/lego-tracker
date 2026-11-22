@@ -165,6 +165,10 @@ never code. The built-in ones for Amazon.de
 and Arukereso are in `lib/builtinRecipes.ts`; a taught recipe on a source
 takes precedence over a built-in one.
 
+kocka.hu never goes through the browser: its search is a form posted with a
+token, so the app's server reads it with plain HTTP (`lib/kocka.ts`), as the
+website does, and the source cannot be taught.
+
 ## Teaching a new source
 
 In the desktop app, open Price Sources, add the shop with its search URL

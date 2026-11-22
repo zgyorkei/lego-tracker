@@ -1,0 +1,22 @@
+<!-- kocka.hu home page (https://kocka.hu/kezdolap), trimmed to its head and search form, saved 2026-11-22 for lib/kocka.test.ts: its token is replaced by a made-up one, no cookies -->
+<!DOCTYPE html>
+<html lang="hu">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="icon" href="/img/frontend/favicon.ico" type="image/x-icon">
+        <title>
+            Kocka.hu - LEGO webshop
+                            - 
+                                </title>
+        <meta name="csrf-token" content="test-token-from-meta">
+    </head>
+    <body>
+<form class="search-form mt-2 mb-4 m-lg-0" id="fast_search_form" method="post" role="search" action="https://kocka.hu/gyors-kereses">
+                    <input type="hidden" name="_token" value="test-token-from-form" autocomplete="off">                    <div class="input-group">
+                        <input type="text" name="expression" id="expression" class="form-control" placeholder="Keresés" aria-label="" aria-describedby="fast_search_button" />
+                        <button class="btn btn-search" type="submit" id="fast_search_button"><i class="bi kc-search"></i></button>
+                    </div>
+                </form>
+    </body>
+</html>

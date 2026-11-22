@@ -202,7 +202,7 @@ describe('LocalStore', () => {
 
   describe('publishes the prices of every shop the page shows (IDEA-7dfb29)', () => {
     const SHOP = { id: 'shop', name: 'Shop', currency: 'EUR' };
-    const ALL = ['amazon', 'bricklink', 'arukereso', 'shop', 'bricklink-new'];
+    const ALL = ['amazon', 'bricklink', 'arukereso', 'kocka', 'shop', 'bricklink-new'];
     const token = 'f'.repeat(24);
     /** A store with one planned set priced at every shop named in ALL. */
     const pricedEverywhere = async () => {
@@ -227,15 +227,27 @@ describe('LocalStore', () => {
     it('publishes the default shops when no list is stored', async () => {
       const s = await pricedEverywhere();
       expect(s.priceSources().list).toBeNull();
-      expect(published(s).map((p) => p.sourceId).sort()).toEqual(['amazon', 'arukereso', 'bricklink']);
+      expect(published(s).map((p) => p.sourceId).sort()).toEqual(['amazon', 'arukereso', 'bricklink', 'kocka']);
       s.putPriceSources(null);
-      expect(published(s).map((p) => p.sourceId).sort()).toEqual(['amazon', 'arukereso', 'bricklink']);
+      expect(published(s).map((p) => p.sourceId).sort()).toEqual(['amazon', 'arukereso', 'bricklink', 'kocka']);
     });
 
     it('keeps a stored shop the defaults lack', async () => {
       const s = await pricedEverywhere();
+      // A list stored before kocka.hu was a default is given it once (LT.KOCKA.SOURCE).
       s.putPriceSources([{ id: 'amazon', name: 'Amazon EU', currency: 'EUR' }, SHOP]);
-      expect(published(s).map((p) => p.sourceId).sort()).toEqual(['amazon', 'bricklink', 'shop']);
+      expect(published(s).map((p) => p.sourceId).sort()).toEqual(['amazon', 'bricklink', 'kocka', 'shop']);
+    });
+
+    it('publishes kocka.hu (tracker:kocka in BrickBudget) and leaves it out once removed', async () => {
+      const s = await pricedEverywhere();
+      expect(published(s)).toEqual(
+        expect.arrayContaining([expect.objectContaining({ sourceId: 'kocka', sourceName: 'kocka.hu', priceHuf: 4300 })])
+      );
+      // The list as the page saves it after the user removed kocka.hu: BrickLink carries the marker.
+      const bricklink = DEFAULT_PRICE_SOURCES.find((x) => x.id === 'bricklink')!;
+      s.putPriceSources([{ ...bricklink, offeredDefaults: ['kocka'] }, SHOP]);
+      expect(published(s).map((p) => p.sourceId).sort()).toEqual(['bricklink', 'shop']);
     });
 
     it('names the same shops as the page for the same stored list', async () => {

@@ -7,6 +7,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { GoogleGenAI } from '@google/genai';
 import type { PlannedListResponse } from './plannedListPayload.js';
+import type { PriceQuote } from './priceQuote.js';
+import { lookupKocka } from './kocka.js';
 import { SET_NUMBER_RE } from './setNumber.js';
 import type { RecipeTestResult, ScrapeRecipe } from './scrapeRecipe.js';
 import { MAX_TEACH_SAMPLES, teachSource } from './teachSource.js';
@@ -436,7 +438,64 @@ const isParseableJson = (text: string): boolean => {
 // guide (the v2 catalog page is JS-rendered and has no prices), not via Gemini.
 const BRICKLINK_SOURCE_IDS = ['bricklink'];
 
+// kocka.hu (lib/kocka.ts): its search is a POST form with a CSRF token, so it
+// is read by its own lookup on the server, on the web and in the desktop app
+// alike, never by Gemini or the desktop browser. Must match the id in
+// lib/priceSources.ts.
+const KOCKA_SOURCE_ID = 'kocka';
+// The shop is read one request at a time, 1.5 s apart, so a large batch takes a
+// while. A web function has 60 s (api/index.ts), so it stops starting kocka.hu
+// lookups after this long; the sets it did not reach get no kocka.hu price this
+// run. The desktop app has no such limit.
+const KOCKA_WEB_BUDGET_MS = 40_000;
+
 type Rates = Record<string, number>;
+
+/**
+ * kocka.hu quotes for the sets, one lookup per set, in forints. A set the shop
+ * does not list gets none, quietly. A failed check (the shop unreachable, a
+ * second 419, an unknown answer) is logged once and ends the run, as does the
+ * end of budgetMs when there is one. Never throws.
+ */
+const kockaQuotes = async (
+  setNumbers: readonly string[],
+  rates: Rates,
+  budgetMs: number | null
+): Promise<Record<string, PriceQuote>> => {
+  const out: Record<string, PriceQuote> = {};
+  const hufRate = rates.HUF;
+  const deadline = budgetMs === null ? Infinity : Date.now() + budgetMs;
+  for (const setNumber of new Set(setNumbers)) {
+    const left = deadline - Date.now();
+    if (left <= 0) break;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const found = await (Number.isFinite(left)
+        ? Promise.race([
+            lookupKocka(setNumber),
+            new Promise<'late'>((resolve) => {
+              timer = setTimeout(() => resolve('late'), left);
+            }),
+          ])
+        : lookupKocka(setNumber));
+      if (found === 'late') break;
+      if (!found) continue;
+      out[setNumber] = {
+        price: found.price,
+        priceHuf: found.price,
+        ...(hufRate > 0 ? { priceEur: found.price / hufRate } : {}),
+        store: 'kocka.hu',
+        url: found.url,
+      };
+    } catch (e) {
+      console.warn('kocka.hu price check failed:', e instanceof Error ? e.message : e);
+      break;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  return out;
+};
 
 const FX_BASE_URL = 'https://api.frankfurter.app';
 const FX_TIMEOUT_MS = 5000;
@@ -1629,7 +1688,13 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       const hufRate = rates.HUF;
 
       const blSources = sources.filter((s: any) => BRICKLINK_SOURCE_IDS.includes(s.id));
-      const geminiSources = sources.filter((s: any) => !BRICKLINK_SOURCE_IDS.includes(s.id));
+      const geminiSources = sources.filter(
+        (s: any) => !BRICKLINK_SOURCE_IDS.includes(s.id) && s.id !== KOCKA_SOURCE_ID
+      );
+      // kocka.hu runs beside the other sources; it never throws.
+      const kocka = sources.some((s: { id?: unknown }) => s?.id === KOCKA_SOURCE_ID)
+        ? kockaQuotes(setNumbers, rates, options.scraper ? null : KOCKA_WEB_BUDGET_MS)
+        : null;
 
       const result: any = {};
       for (const setNumber of setNumbers) result[setNumber] = { exchangeRate: hufRate };
@@ -1717,6 +1782,14 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         );
       }
 
+      // 3. kocka.hu: its own lookup, started above.
+      if (kocka) {
+        const quotes = await kocka;
+        for (const setNumber of setNumbers) {
+          if (quotes[setNumber]) result[setNumber][KOCKA_SOURCE_ID] = quotes[setNumber];
+        }
+      }
+
       res.json(result);
     } catch (error: any) {
       if (answerScraperUnavailable(res, error)) return;
@@ -1753,7 +1826,13 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
       const hufRate = rates.HUF;
 
       const blSources = sources.filter((s: any) => BRICKLINK_SOURCE_IDS.includes(s.id));
-      const geminiSources = sources.filter((s: any) => !BRICKLINK_SOURCE_IDS.includes(s.id));
+      const geminiSources = sources.filter(
+        (s: any) => !BRICKLINK_SOURCE_IDS.includes(s.id) && s.id !== KOCKA_SOURCE_ID
+      );
+      // kocka.hu runs beside the other sources; it never throws.
+      const kocka = sources.some((s: { id?: unknown }) => s?.id === KOCKA_SOURCE_ID)
+        ? kockaQuotes([setNumber], rates, options.scraper ? null : KOCKA_WEB_BUDGET_MS)
+        : null;
 
       const responseData: any = { exchangeRate: hufRate };
 
@@ -1866,6 +1945,12 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
             }
           }
         }
+      }
+
+      // 3. kocka.hu: its own lookup, started above.
+      if (kocka) {
+        const quotes = await kocka;
+        if (quotes[setNumber]) responseData[KOCKA_SOURCE_ID] = quotes[setNumber];
       }
 
       res.json(responseData);

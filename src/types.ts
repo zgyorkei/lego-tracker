@@ -55,11 +55,21 @@ export interface PriceSource {
   color: string; // hex color for charts
   /** How the desktop app reads this shop, written when the source is taught. */
   scraper?: ScrapeRecipe;
+  /**
+   * Only on the BrickLink entry: the defaults added after launch that this
+   * list was already given once (lib/priceSources.ts ensureBrickLinkSources).
+   */
+  offeredDefaults?: string[];
 }
 
-// The default shops and the permanent BrickLink id (lib/priceSources.ts, shared
-// with the desktop's Planned Sets route).
-export { DEFAULT_PRICE_SOURCES, PERMANENT_SOURCE_IDS } from '../lib/priceSources';
+// The default shops, the permanent BrickLink id and the sources the server
+// looks up by id (lib/priceSources.ts, shared with the desktop's Planned Sets
+// route).
+export {
+  BUILT_IN_LOOKUP_IDS,
+  DEFAULT_PRICE_SOURCES,
+  PERMANENT_SOURCE_IDS,
+} from '../lib/priceSources';
 
 export interface MarketPrices {
   exchangeRate?: number;
