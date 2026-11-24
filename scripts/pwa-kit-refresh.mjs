@@ -5,7 +5,8 @@ import { readFileSync, writeFileSync, readdirSync, rmSync, mkdirSync } from 'nod
 import { resolve, join } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
-const kit = resolve(root, '..', 'pwa-kit');
+// PWA_KIT_DIR packs another checkout of the kit (a branch's worktree or export) instead of the sibling folder
+const kit = process.env.PWA_KIT_DIR ? resolve(process.env.PWA_KIT_DIR) : resolve(root, '..', 'pwa-kit');
 const vendor = join(root, 'vendor');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const run = (args, cwd) => execFileSync(npm, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' });

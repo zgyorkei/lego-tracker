@@ -51,7 +51,7 @@ import { googleClientId } from './lib/googleConfig';
 import { createDriveClient } from '../lib/drive/client';
 import { isFresh, type DriveStatus } from '../lib/drive/layout';
 import { quotaDay, shouldRunLocally } from './lib/dailyRun';
-import { readQuickAction, withoutQuickAction, type QuickAction } from './lib/quickAction';
+import { readQuickAction, watchQuickActions, withoutQuickAction, type QuickAction } from './lib/quickAction';
 import { formatPrice as formatPriceUtil } from './lib/currency';
 import { ClassicSpaceLogo } from './components/ClassicSpaceLogo';
 import { SetCard } from './components/SetCard';
@@ -792,6 +792,13 @@ export default function App() {
     }
   }
   const quickRefresh = useRef(false);
+  // One window: an action chosen while the app is open (pwa-kit/launch) waits here like the first one, and runs
+  // once signed in. The tick makes the effects below look again when it arrives.
+  const [quickTick, setQuickTick] = useState(0);
+  useEffect(() => watchQuickActions((action) => {
+    quickAction.current = action;
+    setQuickTick((n) => n + 1);
+  }), []);
   useEffect(() => {
     const action = quickAction.current;
     if (!action || !uid || loading) return;
@@ -799,12 +806,12 @@ export default function App() {
     if (action.filter) setFilter(action.filter);
     if (action.add) setIsAdding(true);
     quickRefresh.current = action.refreshPrices;
-  }, [uid, loading]);
+  }, [uid, loading, quickTick]);
   useEffect(() => {
     if (!quickRefresh.current || filter !== 'planned' || loading) return;
     quickRefresh.current = false;
     if (filteredSets.length > 0) void batchRefreshRef.current();
-  }, [filter, loading, filteredSets.length]);
+  }, [filter, loading, filteredSets.length, quickTick]);
   // Daily refresh at 04:00 local time.
   //
   // Desktop app only. Automatic refreshes moved there because it scrapes with a
