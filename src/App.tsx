@@ -68,6 +68,7 @@ import { Modal } from './components/Modal';
 import {
   Status,
   Priority,
+  BUILT_IN_LOOKUP_IDS,
   DEFAULT_PRICE_SOURCES,
   PERMANENT_SOURCE_IDS,
   LegoSet,
@@ -1474,7 +1475,10 @@ export default function App() {
               <div className="overflow-y-auto space-y-4 mb-4 pr-2">
                 {priceSources.map((source, index) => {
                   const isPermanent = PERMANENT_SOURCE_IDS.includes(source.id);
-                  const lockEdit = isDemoMode || isPermanent;
+                  // kocka.hu is looked up by id on the server: its fields are
+                  // fixed and it is not taught, but it can be removed.
+                  const isBuiltInLookup = BUILT_IN_LOOKUP_IDS.includes(source.id);
+                  const lockEdit = isDemoMode || isPermanent || isBuiltInLookup;
                   return (
                     // Keyed by id, not index: deleting a source mid-list used to
                     // re-key the survivors, so React reused the wrong DOM nodes
@@ -1611,7 +1615,7 @@ export default function App() {
                             <input
                               id={`src-${source.id}-color`}
                               type="color"
-                              disabled={lockEdit}
+                              disabled={isDemoMode || isPermanent}
                               value={source.color}
                               onChange={(e) => {
                                 const color = e.target.value;
@@ -1630,7 +1634,13 @@ export default function App() {
                           </div>
                         </div>
                       </div>
-                      {isDesktopApp && !isPermanent && (
+                      {isBuiltInLookup && !isPermanent && (
+                        <p className="mt-2 text-[10px] font-bold text-gray-500">
+                          Built-in lookup: prices come from the shop&apos;s own search, so this
+                          source needs no teaching.
+                        </p>
+                      )}
+                      {isDesktopApp && !isPermanent && !isBuiltInLookup && (
                         <TeachSourcePanel
                           source={source}
                           sampleSetNumbers={teachSamples}

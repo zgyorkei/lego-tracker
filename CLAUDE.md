@@ -242,6 +242,20 @@ exclusive.
   first-render cache and the one-time migration source. Rules validate the list
   as a container, so adding a source never needs a rules change; keep the
   15-entry cap in step with `MAX_SOURCES`.
+- **A default added later reaches existing lists once.** `ADDED_DEFAULT_IDS`
+  in `lib/priceSources.ts` (kocka.hu so far) are appended by
+  `ensureBrickLinkSources`, which records them in `offeredDefaults` on the
+  BrickLink entry (the doc allows no other key), so a removed one stays
+  removed and Reset Defaults brings it back. `toStoredSource` must keep that
+  field.
+- **kocka.hu is a built-in lookup, not a URL template.** Its search is a
+  Laravel POST form with a CSRF token, so `lib/kocka.ts` reads it with plain
+  HTTP (token from the home page, cookies kept, one 419 retry, exact LEGO set
+  match, 1.5 s between requests, a 30-minute session), on the server for the
+  web and the desktop alike; `BUILT_IN_LOOKUP_IDS` keeps it away from Gemini,
+  the desktop browser and teaching. Never hard-code or store the token. On
+  the web a batch stops starting kocka.hu lookups after 40 s
+  (`KOCKA_WEB_BUDGET_MS`), within Vercel's 60 s.
 - **The desktop app is the website's scraper when it runs.** The desktop
   writes a heartbeat (`desktopStatus/{uid}`); the website hands "Update all"
   and card refreshes to it as `refreshRequests` docs, and the desktop claims

@@ -43,6 +43,15 @@ describe('toStoredSource', () => {
     const { scraper: _s, ...plain } = shop;
     expect(Object.values(toStoredSource(plain)).includes(undefined)).toBe(false);
   });
+
+  it('keeps the marker of the defaults a list was given, and only a valid one', () => {
+    expect(toStoredSource({ ...shop, offeredDefaults: ['kocka'] }).offeredDefaults).toEqual([
+      'kocka',
+    ]);
+    expect('offeredDefaults' in toStoredSource({ ...shop, offeredDefaults: [] })).toBe(false);
+    const odd = { ...shop, offeredDefaults: 'kocka' as unknown as string[] };
+    expect('offeredDefaults' in toStoredSource(odd)).toBe(false);
+  });
 });
 
 describe('scrapingStatus', () => {
@@ -56,5 +65,17 @@ describe('scrapingStatus', () => {
       })
     ).toBe('built-in');
     expect(scrapingStatus({ ...shop, scraper: undefined })).toBe('not-taught');
+  });
+
+  it('counts kocka.hu, which the server looks up by id, as built in', () => {
+    expect(
+      scrapingStatus({
+        id: 'kocka',
+        name: 'kocka.hu',
+        urlTemplate: 'https://kocka.hu/kezdolap',
+        currency: 'HUF',
+        color: '#e11d48',
+      })
+    ).toBe('built-in');
   });
 });
