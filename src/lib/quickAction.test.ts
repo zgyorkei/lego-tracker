@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { buildManifest } from 'pwa-kit/manifest';
 import type { LaunchEnv, LaunchParamsLike } from 'pwa-kit/launch';
 import pwa from '../../pwa.config';
-import { readQuickAction, watchQuickActions, withoutQuickAction, type QuickAction } from './quickAction';
+import {
+  readQuickAction,
+  watchQuickActions,
+  withoutQuickAction,
+  type QuickAction,
+} from './quickAction';
 
 describe('quick actions', () => {
   it('reads the three actions the manifest opens', () => {
@@ -44,16 +49,29 @@ function fake(href = 'https://lego.test/') {
   let timer: (() => void) | undefined;
   const env: LaunchEnv = {
     href,
-    launchQueue: { setConsumer: (c) => { consumer = c; } },
-    setTimeout: (fn) => { timer = fn; return 1; },
-    clearTimeout: () => { timer = undefined; },
+    launchQueue: {
+      setConsumer: (c) => {
+        consumer = c;
+      },
+    },
+    setTimeout: (fn) => {
+      timer = fn;
+      return 1;
+    },
+    clearTimeout: () => {
+      timer = undefined;
+    },
   };
   const got: QuickAction[] = [];
   watchQuickActions((a) => got.push(a), env);
   return {
     got,
     launch: (target: string) => consumer?.({ targetURL: `https://lego.test${target}` }),
-    tick: () => { const t = timer; timer = undefined; t?.(); },
+    tick: () => {
+      const t = timer;
+      timer = undefined;
+      t?.();
+    },
   };
 }
 
@@ -71,7 +89,7 @@ describe('a quick action arriving while the app is open', () => {
     ]);
   });
 
-  it('does not run a cold start twice: App reads the page\'s address itself', () => {
+  it("does not run a cold start twice: App reads the page's address itself", () => {
     const f = fake('https://lego.test/?add=set');
     f.launch('/?add=set'); // launchQueue's copy of the cold start
     f.tick();
