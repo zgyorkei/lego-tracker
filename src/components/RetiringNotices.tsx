@@ -21,6 +21,7 @@ export function RetiringBell({ inbox, onReadAll, onReadOne }: BellProps) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const unread = unreadCount(inbox);
+  const bellLabel = unread ? `Notifications, ${unread} unread` : 'Notifications';
 
   useEffect(() => {
     if (!open) return;
@@ -44,7 +45,8 @@ export function RetiringBell({ inbox, onReadAll, onReadOne }: BellProps) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="relative p-2 rounded-full bg-black/5 hover:bg-black/10 transition-colors flex"
-        aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}
+        aria-label={bellLabel}
+        title={bellLabel}
         aria-expanded={open}
         aria-haspopup="true"
       >
