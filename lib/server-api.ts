@@ -8,6 +8,14 @@ import { join } from 'node:path';
 import { GoogleGenAI } from '@google/genai';
 import type { PlannedListResponse } from './plannedListPayload.js';
 import { SET_NUMBER_RE } from './setNumber.js';
+import {
+  LAST_CHANCE_TTL_MS,
+  LAST_CHANCE_USER_AGENT,
+  LastChanceRefused,
+  createLastChanceCache,
+  readLastChance,
+  type LastChanceFetcher,
+} from './lastChance.js';
 import type { RecipeTestResult, ScrapeRecipe } from './scrapeRecipe.js';
 import { MAX_TEACH_SAMPLES, teachSource } from './teachSource.js';
 import { isScraperUnavailable, SCRAPER_UNAVAILABLE_STATUS } from './scraperErrors.js';
@@ -1009,6 +1017,8 @@ export interface ApiOptions {
   webSession?: boolean;
   /** Tests: the fetch the session routes reach Google's token endpoint with. */
   sessionFetch?: typeof fetch;
+  /** Tests: how GET /api/last-chance reaches lego.com (a stored copy of the page, never the live site). */
+  lastChanceFetcher?: LastChanceFetcher;
 }
 
 const noLimit = (_req: Request, _res: Response, next: NextFunction) => next();
@@ -1881,6 +1891,45 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
         error: 'Failed to fetch market prices. Make sure your GEMINI_API_KEY is valid.',
         details: error instanceof Error ? error.message : String(error),
       });
+    }
+  });
+
+  // API Route: the sets on LEGO.com's "last chance to buy" page (retiring
+  // soon). The browser cannot read lego.com across origins, so the server
+  // reads it: robots.txt first, then every page of the listing one at a time,
+  // at most one read every few hours (cached; on Vercel per instance, plus the
+  // CDN through Cache-Control). A refusal or a bot wall is reported as 502 and
+  // never worked around; the read is not retried for an hour.
+  const lastChanceFetcher: LastChanceFetcher =
+    options.lastChanceFetcher ??
+    (async (url) => {
+      const r = await axios.get<string>(url, {
+        headers: { 'User-Agent': LAST_CHANCE_USER_AGENT, Accept: 'text/html,text/plain' },
+        timeout: 20_000,
+        maxRedirects: 0,
+        responseType: 'text',
+        transformResponse: (d) => d,
+        validateStatus: () => true,
+      });
+      return { status: r.status, body: typeof r.data === 'string' ? r.data : '' };
+    });
+  const lastChance = createLastChanceCache(() => readLastChance(lastChanceFetcher));
+  app.get('/api/last-chance', async (_req, res) => {
+    try {
+      const { setNumbers, readAt } = await lastChance.get();
+      res.setHeader(
+        'Cache-Control',
+        `public, max-age=600, s-maxage=${Math.floor(LAST_CHANCE_TTL_MS / 1000)}`
+      );
+      res.json({ setNumbers, readAt });
+    } catch (error) {
+      res.setHeader('Cache-Control', 'no-store');
+      if (error instanceof LastChanceRefused) {
+        console.warn('Last-chance page not read:', error.message);
+        return res.status(502).json({ error: error.message });
+      }
+      console.error('Error reading the last-chance page:', error);
+      res.status(502).json({ error: 'Could not read the last-chance page' });
     }
   });
 

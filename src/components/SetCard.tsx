@@ -18,7 +18,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Undo2,
+  Hourglass,
 } from 'lucide-react';
+import { baseSetNumber } from '../lib/retiring';
+import { shortDate } from '../lib/retiringInbox';
 import {
   LegoSet,
   PriceHistory,
@@ -496,8 +499,11 @@ const SetCardComponent: React.FC<SetCardProps> = ({
       exit={{ opacity: 0, scale: 0.95 }}
       className={`bg-white rounded-lg shadow-xl overflow-hidden border-4 flex flex-col relative group ${
         set.status === 'ordered' ? 'border-green-500' : 'border-lego-yellow'
-      }`}
+      }${set.retiringSince ? ' retiring-set' : ''}`}
+      data-retiring={set.retiringSince ? '' : undefined}
+      data-set-number={baseSetNumber(set.setNumber)}
     >
+      {set.retiringSince && !isCollapsed && <span className="retiring-flag">Retiring</span>}
       {isCollapsed ? (
         <button
           type="button"
@@ -605,6 +611,12 @@ const SetCardComponent: React.FC<SetCardProps> = ({
                             <p className="text-sm font-bold text-gray-500 mt-0.5">
                               #{set.setNumber}
                             </p>
+                          )}
+                          {set.retiringSince && (
+                            <span className="retiring-chip">
+                              <Hourglass size={12} aria-hidden="true" />
+                              On LEGO&apos;s last-chance list since {shortDate(set.retiringSince)}
+                            </span>
                           )}
                         </div>
                         <div className="flex items-center space-x-1 whitespace-nowrap">

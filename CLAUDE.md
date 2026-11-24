@@ -273,6 +273,29 @@ exclusive.
   in `App.tsx` is gated on `isDesktopApp` (`src/lib/platform.ts`, set by the
   Electron preload). The web app refreshes only when asked, so it does not
   spend Gemini quota per open tab.
+- **Retiring sets come from LEGO.com's last-chance page.** `GET /api/last-chance`
+  (`lib/server-api.ts`, logic in `lib/lastChance.ts`) reads robots.txt, then
+  every page of `/hu-hu/categories/last-chance-to-buy` one at a time (1.5 s
+  apart, honest user agent), from the page's embedded `__NEXT_DATA__` (the
+  Apollo cache: `ProductListingPage.tiles` and `.pagination`, a tile's product
+  `productCode`). One read per 6 h at most (cache, plus `s-maxage`); a refusal
+  or bot wall is a 502 that is not retried for an hour and never worked around;
+  a failed page fails the whole read so a partial list never un-marks sets.
+  Specs read the stored copies in `lib/__fixtures__/`, never the live site.
+  The client (`useRetiringWatch`, `src/lib/retiring.ts`) checks on start and
+  every 3 h, keeps the mark per device in localStorage `bt.retiring.v1` (not on
+  the set: the sets update rule is in the Firebase store), derives
+  `LegoSet.retiringSince` for planned sets on the page (never written to a
+  backend), and `compareSets` puts retiring planned sets first. A set that
+  leaves the page loses the mark but keeps its record, so it is not announced
+  again. The look is the user's pick from `docs/proposals/retiring/` (C plus
+  D's toast): `.retiring-set` / `.retiring-flag` / `.retiring-chip` in
+  `src/index.css`, the header bell and the bottom-right toast in
+  `RetiringNotices.tsx`. Each set is announced once: `src/lib/retiringInbox.ts`
+  keeps one entry per set in localStorage `bt.retiring.inbox.v1` (the bell
+  holds it until read) and the toast shows once; a system notification joins
+  only while the page is hidden and the user already allowed them (the app
+  never asks for the permission).
 - **The desktop app (`desktop/`) is its own npm package**, so Electron and
   Playwright never reach the Vercel install. It reuses `registerApiRoutes`,
   passing `{ scraper }` to swap Gemini for Playwright in the price routes; do
