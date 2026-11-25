@@ -1,7 +1,10 @@
 import type { PriceSource } from '../types';
-import { parseRecipe } from '../../lib/scrapeRecipe';
+import { parseRecipe as parseTaughtRecipe, type ScrapeRecipe } from '../../lib/scrapeRecipe';
 import { builtinRecipeFor } from '../../lib/builtinRecipes';
 import { BUILT_IN_LOOKUP_IDS } from '../../lib/priceSources';
+
+/** The source's recipe when it is well-formed, else null (a recipe is untrusted model output). */
+const parseRecipe = (raw: PriceSource['scraper']): ScrapeRecipe | null => parseTaughtRecipe(raw);
 
 // The permanent BrickLink source and the defaults live in lib/, so the desktop's
 // Planned Sets route publishes the same shops the page shows (IDEA-7dfb29).
@@ -20,6 +23,7 @@ const offeredDefaultsOf = (s: PriceSource): string[] =>
  */
 export const toStoredSource = (s: PriceSource): PriceSource => {
   const offered = offeredDefaultsOf(s);
+  const recipe = parseRecipe(s.scraper);
   return {
     id: s.id,
     name: s.name,
@@ -27,7 +31,7 @@ export const toStoredSource = (s: PriceSource): PriceSource => {
     currency: s.currency,
     color: s.color,
     // Validated before it is stored: a recipe is untrusted model output.
-    ...(parseRecipe(s.scraper) ? { scraper: parseRecipe(s.scraper)! } : {}),
+    ...(recipe ? { scraper: recipe } : {}),
     // The marker of the defaults a list was already given (on BrickLink only):
     // dropping it would give a removed kocka.hu back on the next load.
     ...(offered.length > 0 ? { offeredDefaults: offered } : {}),

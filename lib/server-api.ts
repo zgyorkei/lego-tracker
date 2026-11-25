@@ -1699,7 +1699,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
 
       const blSources = sources.filter((s: any) => BRICKLINK_SOURCE_IDS.includes(s.id));
       const geminiSources = sources.filter(
-        (s: any) => !BRICKLINK_SOURCE_IDS.includes(s.id) && s.id !== KOCKA_SOURCE_ID
+        (s: { id: string }) => !BRICKLINK_SOURCE_IDS.includes(s.id) && s.id !== KOCKA_SOURCE_ID
       );
       // kocka.hu runs beside the other sources; it never throws.
       const kocka = sources.some((s: { id?: unknown }) => s?.id === KOCKA_SOURCE_ID)
@@ -1837,7 +1837,7 @@ Return ONLY a JSON object mapping each set number to its image URL. Example form
 
       const blSources = sources.filter((s: any) => BRICKLINK_SOURCE_IDS.includes(s.id));
       const geminiSources = sources.filter(
-        (s: any) => !BRICKLINK_SOURCE_IDS.includes(s.id) && s.id !== KOCKA_SOURCE_ID
+        (s: { id: string }) => !BRICKLINK_SOURCE_IDS.includes(s.id) && s.id !== KOCKA_SOURCE_ID
       );
       // kocka.hu runs beside the other sources; it never throws.
       const kocka = sources.some((s: { id?: unknown }) => s?.id === KOCKA_SOURCE_ID)

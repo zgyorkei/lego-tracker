@@ -110,6 +110,9 @@ interface ApolloRef {
   __ref?: string;
 }
 
+type Obj = Record<string, unknown>;
+const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null;
+
 export interface ParsedListingPage {
   setNumbers: string[];
   currentPage: number;
@@ -131,30 +134,35 @@ export function parseLastChancePage(html: string): ParsedListingPage {
         : 'The last-chance page has no embedded listing data'
     );
   }
-  let apollo: Record<string, any>;
+  let apollo: Obj;
   try {
-    apollo = JSON.parse(match[1]).props.pageProps.__APOLLO_STATE__;
-    if (!apollo || typeof apollo !== 'object') throw new Error('no apollo state');
+    const data: unknown = JSON.parse(match[1]);
+    const state = (((data as Obj).props as Obj).pageProps as Obj).__APOLLO_STATE__;
+    if (!isObj(state)) throw new Error('no apollo state');
+    apollo = state;
   } catch {
     throw new LastChanceRefused('The last-chance page data is not in the expected shape');
   }
   const listingKey = Object.keys(apollo).find((k) => k.startsWith('ProductListingPage:'));
-  const listing = listingKey ? apollo[listingKey] : null;
-  const pagination = listing?.pagination;
+  const listingEntry = listingKey ? apollo[listingKey] : null;
+  const listing = isObj(listingEntry) ? listingEntry : null;
+  const pagination = isObj(listing?.pagination) ? listing.pagination : null;
   if (
     !listing ||
     !Array.isArray(listing.tiles) ||
     typeof pagination?.currentPage !== 'number' ||
-    typeof pagination?.totalPages !== 'number'
+    typeof pagination.totalPages !== 'number'
   ) {
     throw new LastChanceRefused('The last-chance page has no product listing');
   }
   const setNumbers: string[] = [];
   for (const ref of listing.tiles as ApolloRef[]) {
-    const tile = ref?.__ref ? apollo[ref.__ref] : null;
+    const tileEntry = ref?.__ref ? apollo[ref.__ref] : null;
+    const tile = isObj(tileEntry) ? tileEntry : null;
     if (tile?.__typename !== 'ProductTile') continue; // promo, gift and discover tiles
-    const productRef: string | undefined = tile.product?.__ref;
-    const code = (productRef && apollo[productRef]?.productCode) ?? tile.id;
+    const productRef = isObj(tile.product) ? tile.product.__ref : undefined;
+    const product = typeof productRef === 'string' ? apollo[productRef] : undefined;
+    const code = (isObj(product) ? product.productCode : undefined) ?? tile.id;
     if (typeof code === 'string' && SET_NUMBER_RE.test(code) && !setNumbers.includes(code)) {
       setNumbers.push(code);
     }

@@ -79,11 +79,13 @@ const decodeEntities = (text: string): string =>
 const attribute = (tag: string, name: string): string | null =>
   new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, 'i').exec(tag)?.[1] ?? null;
 
+/** A value as text when it is a string or a number, else empty (never '[object Object]'). */
+const asText = (value: unknown): string =>
+  typeof value === 'string' ? value : typeof value === 'number' ? String(value) : '';
+
 /** A set number as kocka.hu lists it (a tracker's "75461-1" is 75461), or null when it is not one. */
 export const cleanSetNumber = (setNumber: unknown): string | null => {
-  const base = String(setNumber ?? '')
-    .trim()
-    .replace(/-\d+$/, '');
+  const base = asText(setNumber).trim().replace(/-\d+$/, '');
   return /^\d{3,7}$/.test(base) ? base : null;
 };
 
@@ -112,7 +114,7 @@ export function searchForm(token: string, setNumber: string): URLSearchParams {
 
 /** The set number in a kocka.hu LEGO product page's address (https://kocka.hu/LEGO-75461/...), or null. */
 const productSet = (url: unknown): string | null =>
-  /^https:\/\/kocka\.hu\/LEGO-([^/?#]+)\/[^/?#]+\/?$/i.exec(String(url ?? ''))?.[1] ?? null;
+  /^https:\/\/kocka\.hu\/LEGO-([^/?#]+)\/[^/?#]+\/?$/i.exec(asText(url))?.[1] ?? null;
 
 /** Whether the address is the kocka.hu product page of this LEGO set (the only pages read directly). */
 export const isProductUrl = (url: unknown, setNumber: unknown): boolean => {
@@ -320,15 +322,19 @@ export function createKocka({
       if (answer.status === 419 && attempt === 0) continue;
       if (answer.status === 419) token = null;
       if (answer.status !== 200) throw new Error(`kocka.hu search answered ${answer.status}`);
-      let results: { error_code?: unknown; productsContent?: unknown };
+      let results: unknown;
       try {
         results = JSON.parse(answer.text);
       } catch {
         throw new Error('kocka.hu search answered without results');
       }
-      if (Number(results?.error_code) !== 0)
-        throw new Error(`kocka.hu search failed (error ${String(results?.error_code)})`);
-      return String(results.productsContent ?? '');
+      const { error_code: errorCode, productsContent } = (results ?? {}) as {
+        error_code?: unknown;
+        productsContent?: unknown;
+      };
+      if (Number(errorCode) !== 0)
+        throw new Error(`kocka.hu search failed (error ${asText(errorCode)})`);
+      return asText(productsContent);
     }
   };
 
