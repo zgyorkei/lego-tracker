@@ -390,10 +390,12 @@ FIGURES = []
 
 
 def figure(key, name, blurb, torso, arms, headgear, colors, head='#f6c824', tile=('#2f6fd6', '#1c3f8f'),
-           ring='#1d2b53', original=True, mascot=False):
+           ring='#1d2b53', original=True, mascot=False, cam_el=12.0):
+    """cam_el: the camera's elevation in degrees (lower it for a helmet whose brim hides the eyes)."""
     def deco(fn):
         FIGURES.append(dict(key=key, name=name, blurb=blurb, torso=torso, arms=arms, headgear=headgear,
-                            colors=colors, head=head, tile=tile, ring=ring, prints=fn, mascot=mascot))
+                            colors=colors, head=head, tile=tile, ring=ring, prints=fn, mascot=mascot,
+                            cam_el=cam_el))
         return fn
     return deco
 
@@ -587,10 +589,12 @@ def p_knight(face, torso):
 # 8 -- Bjorn the Viking
 @figure('viking', 'Bjorn the Viking', 'Horned helmet, braided ginger beard and a fur collar',
         torso='#5d3a1e', arms='#5d3a1e', headgear=[('53450c01.dat', 'helmet'), ('60749.dat', 'beard')],
-        colors={'helmet': ('#6b7178', 'metal'), 15: '#efe6d2', 'beard': '#c8562b'}, tile=('#7fc4e8', '#2a5f8a'), ring='#3b2412')
+        colors={'helmet': ('#6b7178', 'metal'), 15: '#efe6d2', 'beard': '#c8562b'}, tile=('#7fc4e8', '#2a5f8a'), ring='#3b2412',
+        cam_el=4.0)
 def p_viking(face, torso):
-    brows(face, t=6.6, tilt=0.8, arch=0.4, w=1.15, length=3.2, color='#a8401c')
-    eyes(face)
+    # eyes a little low, so they show between the helmet's brim and the beard
+    brows(face, t=8.4, tilt=0.8, arch=0.3, w=1.0, length=3.0, color='#a8401c')
+    eyes(face, t=10.9, ry=1.25)
     grin(face, t=12.6, half=3.4, depth=2.3, lift=0.4)
     for side in (-1, 1):
         mus = Poly(np.concatenate([bez((0, 11.6), (side * 3.4, 10.6), (side * 5.0, 13.6)), bez((side * 5.0, 13.6), (side * 3.0, 12.2), (0, 12.6))[1:]]))
@@ -680,8 +684,8 @@ def p_detective(face, torso):
 
 # 12 -- Glim the Ghost
 @figure('ghost', 'Glim the Ghost', 'A friendly glow-in-the-dark ghost under a sheet hood',
-        torso='#e4f4e8', arms='#e4f4e8', headgear=[('30381.dat', 'hood')],
-        colors={'hood': ('#e4f4e8', 'glow')}, head='#eef9f0', tile=('#3b2a6b', '#120c2b'), ring='#120c2b')
+        torso='#b9ebc9', arms='#b9ebc9', headgear=[('30381.dat', 'hood')],
+        colors={'hood': ('#c4f0d2', 'glow')}, head='#d6f6e0', tile=('#3b2a6b', '#120c2b'), ring='#120c2b')
 def p_ghost(face, torso):
     for side in (-1, 1):
         face.fill(Ellipse(side * 3.6, 9.6, 1.6, 2.3), '#20203a')
@@ -690,7 +694,7 @@ def p_ghost(face, torso):
     blush(face, t=12.6, dx=6.6, color='#9fd8ff', alpha=0.6)
     # wavy sheet folds
     for k, x in enumerate((-9.0, -3.0, 3.0, 9.0)):
-        torso.fill(Stroke(bez((x, 4.0), (x + 1.8, 14.0), (x - 0.6, 30.0)), 0.55), '#bfe3c8')
+        torso.fill(Stroke(bez((x, 4.0), (x + 1.8, 14.0), (x - 0.6, 30.0)), 0.55), '#86c99c')
     torso.fill(Ellipse(0, 15, 6, 5), '#ffffff', 0.25, glow=0.3)
 
 

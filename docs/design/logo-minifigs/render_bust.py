@@ -268,7 +268,7 @@ def make_material(name, color, kind, style, prints=None):
             bsdf.inputs['Coat Weight'].default_value = 0.0
         if kind == 'glow':
             links.new(col, bsdf.inputs['Emission Color'])
-            bsdf.inputs['Emission Strength'].default_value = 0.9
+            bsdf.inputs['Emission Strength'].default_value = 0.3
         elif glow is not None:
             links.new(tex_color, bsdf.inputs['Emission Color'])
             gm = nodes.new('ShaderNodeMath')
@@ -412,6 +412,7 @@ def setup_scene(args, parts):
     scene.render.image_settings.file_format = 'PNG'
     scene.render.image_settings.color_mode = 'RGBA'
     scene.render.image_settings.color_depth = '8'
+    scene.render.image_settings.compression = 100
     scene.view_settings.view_transform = 'Standard'
     scene.view_settings.look = 'None'
     scene.view_settings.exposure = args.exposure
@@ -535,6 +536,8 @@ def render_one(fig, args):
                 line += ' mats=%s ld_lo=%s ld_hi=%s' % ([s.material.name if s.material else None for s in ob.material_slots], lo, hi)
             print(line, flush=True)
         args.diag = False
+    global CAM_EL
+    CAM_EL = math.radians(fig.get('cam_el', 12.0))      # before the materials: the toon highlight uses it
     face, torso = mf.new_face(), mf.new_torso()
     fig['prints'](face, torso)
     face_imgs = canvas_images(fig['key'] + '_face', face)
