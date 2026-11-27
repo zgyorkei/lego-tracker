@@ -522,7 +522,7 @@ def p_pirate(face, torso):
         mus = Poly(np.concatenate([bez((0, 12.6), (side * 3.0, 11.2), (side * 5.6, 13.6)), bez((side * 5.6, 13.6), (side * 3.0, 13.2), (0, 13.6))[1:]]))
         face.fill(mus, '#2a170c')
     # eye patch over the figure's right eye (viewer's left), strap across the forehead
-    face.fill(Stroke([(-11.5, 4.6), (11.5, 11.0)], 0.7), INK)
+    face.fill(Stroke([(-11.5, 12.6), (-EYE_DX, EYE_T + 0.1), (11.5, 2.2)], 0.7), INK)
     face.fill(Ellipse(-EYE_DX, EYE_T + 0.1, 2.2, 2.0), INK)
     eyes(face, dx=EYE_DX, look=0.0)
     face.fill(Ellipse(-EYE_DX, EYE_T + 0.1, 2.2, 2.0), INK)
