@@ -244,7 +244,7 @@ def card(i, fig, folder, tag):
     def swatch(theme):
         return ('<div class="sw %s"><div class="cell">%s<span>192</span></div><div class="cell">%s<span>48</span></div></div>'
                 % (theme, tile_html(fig, img_src(folder, key, 192), 's192'),
-                   tile_html(fig, img_src(folder, key, 192), 's48')))
+                   tile_html(fig, img_src(folder, key, 48), 's48')))
     return ('<section class="fig" id="fig-%s"><h3><span class="num">%02d</span>%s%s</h3>'
             '<p class="blurb">%s</p><div class="hero">%s</div>'
             '<div class="sizes">%s%s<p class="note">192 px is the desktop and Chrome app icon (shown at 96 css px, '
