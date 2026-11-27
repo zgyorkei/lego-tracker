@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Brick Tracker logo proposals, D: App icon tile</title>
+<style>
+:root{--ink:#1b1d24;--muted:#5d6472;--line:#dde1e8;--card:#fff;--bg:#f2f3f6;--accent:#e3000b;--yellow:#ffcf00}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+header{background:#1b1d24;color:#fff;padding:18px 28px 0}
+header .brand{display:flex;align-items:center;gap:12px}
+header .brick{width:34px;height:22px;background:var(--yellow);border-radius:3px;position:relative;box-shadow:inset 0 -3px 0 rgba(0,0,0,.18)}
+header .brick:before,header .brick:after{content:"";position:absolute;top:-6px;width:10px;height:6px;background:var(--yellow);border-radius:2px 2px 0 0}
+header .brick:before{left:5px}header .brick:after{right:5px}
+header h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.2px}
+header h1 small{font-weight:400;color:#aeb4c2;font-size:14px;margin-left:8px}
+nav{display:flex;gap:4px;margin-top:14px}
+nav a{color:#c9cedb;text-decoration:none;padding:9px 16px 10px;border-radius:8px 8px 0 0;font-weight:600;font-size:14px}
+nav a:hover{color:#fff;background:#2a2d37}
+nav a.on{background:var(--bg);color:var(--ink)}
+main{max-width:1320px;margin:0 auto;padding:22px 28px 40px}
+.intro{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:18px;margin-bottom:22px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.panel h2{margin:0 0 6px;font-size:17px}
+.panel p{margin:6px 0;color:var(--muted)}
+.panel.note{border-left:4px solid var(--yellow)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.fig{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.fig.picked{border-color:var(--accent);box-shadow:0 0 0 2px rgba(227,0,11,.18)}
+.fig h3{margin:0;font-size:16px;display:flex;align-items:center;gap:8px}
+.fig h3 .num{font-size:12px;color:var(--muted);font-weight:600;min-width:22px}
+.tag{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;background:var(--yellow);color:#3a2f00;border-radius:4px;padding:1px 6px}
+.fig .blurb{margin:0;color:var(--muted);font-size:13px;min-height:2.6em}
+.hero{height:272px;border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.hero.plain{background:radial-gradient(circle at 50% 38%,#ffffff 0,#e9ecf2 70%)}
+.hero.plain.dark{background:radial-gradient(circle at 50% 38%,#3a3f4c 0,#1d2026 70%)}
+.hero img{width:256px;height:256px;display:block}
+.sizes{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sw{border-radius:8px;padding:8px;display:flex;align-items:flex-end;gap:10px;justify-content:center}
+.sw.light{background:#f4f5f7;border:1px solid #e3e6eb}
+.sw.dark{background:#1d2026;border:1px solid #1d2026}
+.sw .cell{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:#7a8190}
+.sw.dark .cell{color:#8d94a3}
+.s192{width:96px;height:96px}
+.s48{width:48px;height:48px}
+.sizes .note{grid-column:1/-1;font-size:11.5px;color:var(--muted);margin:0}
+label.pick{display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer;user-select:none}
+label.pick input{width:18px;height:18px;accent-color:var(--accent)}
+.q{margin-top:26px}
+.q h2{font-size:18px;margin:0 0 4px}
+.q p.hint{margin:0 0 10px;color:var(--muted)}
+.q .picks{margin:6px 0 10px;font-weight:600}
+.q .radios{display:flex;gap:18px;flex-wrap:wrap;margin:6px 0 10px}
+.q .radios label{display:flex;gap:6px;align-items:center;cursor:pointer}
+textarea{width:100%;min-height:64px;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font:inherit;resize:vertical;background:#fff}
+textarea:focus{outline:2px solid rgba(227,0,11,.35);border-color:transparent}
+.copy{display:flex;align-items:center;gap:14px;margin-top:18px}
+button{font:inherit;font-weight:700;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:11px 22px;cursor:pointer}
+button:hover{filter:brightness(1.08)}
+#copied{color:#1d7a3a;font-weight:600}
+footer{max-width:1320px;margin:0 auto;padding:0 28px 36px;color:var(--muted);font-size:12.5px}
+footer p{margin:6px 0}
+/* C: badge */
+svg.badge{display:block}
+svg.badge text{font:800 17px system-ui,"Segoe UI",sans-serif;letter-spacing:2.2px}
+/* D: tile */
+.tile{position:relative;overflow:hidden;border-radius:22.5%;display:flex;align-items:flex-end;justify-content:center;
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.35),inset 0 -3px 0 rgba(0,0,0,.18)}
+.tile:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 30% 18%,rgba(255,255,255,.35),rgba(255,255,255,0) 55%)}
+.tile img{position:relative;width:100%;height:auto;display:block;margin-bottom:-7%}
+.tile.big{width:232px;height:232px}
+.tile.s192{width:96px;height:96px}
+.tile.s48{width:48px;height:48px}
+</style></head>
+<body data-page="d" data-title="D: App icon tile">
+<header><div class="brand"><div class="brick"></div><h1>Brick Tracker logo proposals<small>14 minifigure busts, four directions</small></h1></div>
+<nav><a href="a.html">A: Glossy studio plastic</a><a href="b.html">B: Toon with outlines</a><a href="c.html">C: Round badge</a><a href="d.html" class="on">D: App icon tile</a></nav></header>
+<main>
+<div class="intro">
+<div class="panel"><h2>Direction D: App icon tile</h2><p>The glossy figure rising from the bottom edge of a rounded square in its own colours, the shape of a desktop or Chrome app icon.</p>
+<p>Every figure is a real minifigure bust (head, shoulders and the top of the torso) built from LDraw parts in Blender 4.5,
+with the face and torso prints painted by the script. Each card shows it large, then at 192 px (desktop and Chrome app icon)
+and 48 px (favicon), on light and on dark.</p></div>
+<div class="panel note"><h2>About the figures</h2>
+<p>All 14 figures are original characters made for Brick Tracker. The franchise characters in the request
+(Darth Vader, a Sith Jar Jar, Batman and the Hidden Side cast) are not drawn: they belong to Lucasfilm, DC and the LEGO Group.</p>
+<p>The safest picks for a published app are the three Brick Tracker mascots: Bricksy the Builder, Tally the Cataloguer, Studbot.
+The minifigure shape itself is a LEGO trademark, so check that before publishing any of them.</p></div>
+</div>
+<div class="grid"><section class="fig" id="fig-builder"><h3><span class="num">01</span>Bricksy the Builder <span class="tag">mascot</span></h3><p class="blurb">Brick Tracker mascot: hard hat, hi-vis vest and a 2x4 brick badge</p><div class="hero plain"><div class="tile big" style="background:linear-gradient(160deg,#ffd500,#f39c12)"><img src="renders/A/builder.png" alt=""></div></div><div class="sizes"><div class="sw light"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#ffd500,#f39c12)"><img src="renders/A/builder-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#ffd500,#f39c12)"><img src="renders/A/builder-192.png" alt=""></div><span>48</span></div></div><div class="sw dark"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#ffd500,#f39c12)"><img src="renders/A/builder-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#ffd500,#f39c12)"><img src="renders/A/builder-192.png" alt=""></div><span>48</span></div></div><p class="note">The tile is drawn in CSS around the render; the app icon itself is made when a pick is applied.</p></div><label class="pick"><input type="checkbox" class="pickbox" value="builder" data-name="Bricksy the Builder"> Pick this one</label></section><section class="fig" id="fig-tally"><h3><span class="num">02</span>Tally the Cataloguer <span class="tag">mascot</span></h3><p class="blurb">Brick Tracker mascot: round glasses, cardigan and a ticked checklist</p><div class="hero plain"><div class="tile big" style="background:linear-gradient(160deg,#5fd3c6,#14858f)"><img src="renders/A/tally.png" alt=""></div></div><div class="sizes"><div class="sw light"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#5fd3c6,#14858f)"><img src="renders/A/tally-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#5fd3c6,#14858f)"><img src="renders/A/tally-192.png" alt=""></div><span>48</span></div></div><div class="sw dark"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#5fd3c6,#14858f)"><img src="renders/A/tally-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#5fd3c6,#14858f)"><img src="renders/A/tally-192.png" alt=""></div><span>48</span></div></div><p class="note">The tile is drawn in CSS around the render; the app icon itself is made when a pick is applied.</p></div><label class="pick"><input type="checkbox" class="pickbox" value="tally" data-name="Tally the Cataloguer"> Pick this one</label></section><section class="fig" id="fig-studbot"><h3><span class="num">03</span>Studbot <span class="tag">mascot</span></h3><p class="blurb">Brick Tracker mascot: a part-counting robot with a bar-chart chest screen</p><div class="hero plain"><div class="tile big" style="background:linear-gradient(160deg,#7ad7ff,#2267b3)"><img src="renders/A/studbot.png" alt=""></div></div><div class="sizes"><div class="sw light"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#7ad7ff,#2267b3)"><img src="renders/A/studbot-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#7ad7ff,#2267b3)"><img src="renders/A/studbot-192.png" alt=""></div><span>48</span></div></div><div class="sw dark"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#7ad7ff,#2267b3)"><img src="renders/A/studbot-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#7ad7ff,#2267b3)"><img src="renders/A/studbot-192.png" alt=""></div><span>48</span></div></div><p class="note">The tile is drawn in CSS around the render; the app icon itself is made when a pick is applied.</p></div><label class="pick"><input type="checkbox" class="pickbox" value="studbot" data-name="Studbot"> Pick this one</label></section><section class="fig" id="fig-astronaut"><h3><span class="num">04</span>Nova the Astronaut</h3><p class="blurb">Classic helmet, white suit with orange shoulder flashes and a mission patch</p><div class="hero plain"><div class="tile big" style="background:linear-gradient(160deg,#3a4f9a,#0d1640)"><img src="renders/A/astronaut.png" alt=""></div></div><div class="sizes"><div class="sw light"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#3a4f9a,#0d1640)"><img src="renders/A/astronaut-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#3a4f9a,#0d1640)"><img src="renders/A/astronaut-192.png" alt=""></div><span>48</span></div></div><div class="sw dark"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#3a4f9a,#0d1640)"><img src="renders/A/astronaut-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#3a4f9a,#0d1640)"><img src="renders/A/astronaut-192.png" alt=""></div><span>48</span></div></div><p class="note">The tile is drawn in CSS around the render; the app icon itself is made when a pick is applied.</p></div><label class="pick"><input type="checkbox" class="pickbox" value="astronaut" data-name="Nova the Astronaut"> Pick this one</label></section><section class="fig" id="fig-pirate"><h3><span class="num">05</span>Captain Saltbrick</h3><p class="blurb">Pirate captain: tricorne, eye patch, beard and a gold tooth</p><div class="hero plain"><div class="tile big" style="background:linear-gradient(160deg,#2fa5b8,#0c4d63)"><img src="renders/A/pirate.png" alt=""></div></div><div class="sizes"><div class="sw light"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#2fa5b8,#0c4d63)"><img src="renders/A/pirate-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#2fa5b8,#0c4d63)"><img src="renders/A/pirate-192.png" alt=""></div><span>48</span></div></div><div class="sw dark"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#2fa5b8,#0c4d63)"><img src="renders/A/pirate-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#2fa5b8,#0c4d63)"><img src="renders/A/pirate-192.png" alt=""></div><span>48</span></div></div><p class="note">The tile is drawn in CSS around the render; the app icon itself is made when a pick is applied.</p></div><label class="pick"><input type="checkbox" class="pickbox" value="pirate" data-name="Captain Saltbrick"> Pick this one</label></section><section class="fig" id="fig-wizard"><h3><span class="num">06</span>Mortimer the Wizard</h3><p class="blurb">Tall wizard hat, white beard and a starry robe</p><div class="hero plain"><div class="tile big" style="background:linear-gradient(160deg,#8a63d2,#2c1a5c)"><img src="renders/A/wizard.png" alt=""></div></div><div class="sizes"><div class="sw light"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#8a63d2,#2c1a5c)"><img src="renders/A/wizard-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#8a63d2,#2c1a5c)"><img src="renders/A/wizard-192.png" alt=""></div><span>48</span></div></div><div class="sw dark"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#8a63d2,#2c1a5c)"><img src="renders/A/wizard-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#8a63d2,#2c1a5c)"><img src="renders/A/wizard-192.png" alt=""></div><span>48</span></div></div><p class="note">The tile is drawn in CSS around the render; the app icon itself is made when a pick is applied.</p></div><label class="pick"><input type="checkbox" class="pickbox" value="wizard" data-name="Mortimer the Wizard"> Pick this one</label></section><section class="fig" id="fig-knight"><h3><span class="num">07</span>Sir Brickwell</h3><p class="blurb">Knight: steel helmet and a red tabard with a brick crest</p><div class="hero plain"><div class="tile big" style="background:linear-gradient(160deg,#e85a4f,#8f1f1a)"><img src="renders/A/knight.png" alt=""></div></div><div class="sizes"><div class="sw light"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#e85a4f,#8f1f1a)"><img src="renders/A/knight-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#e85a4f,#8f1f1a)"><img src="renders/A/knight-192.png" alt=""></div><span>48</span></div></div><div class="sw dark"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#e85a4f,#8f1f1a)"><img src="renders/A/knight-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#e85a4f,#8f1f1a)"><img src="renders/A/knight-192.png" alt=""></div><span>48</span></div></div><p class="note">The tile is drawn in CSS around the render; the app icon itself is made when a pick is applied.</p></div><label class="pick"><input type="checkbox" class="pickbox" value="knight" data-name="Sir Brickwell"> Pick this one</label></section><section class="fig" id="fig-viking"><h3><span class="num">08</span>Bjorn the Viking</h3><p class="blurb">Horned helmet, braided ginger beard and a fur collar</p><div class="hero plain"><div class="tile big" style="background:linear-gradient(160deg,#7fc4e8,#2a5f8a)"><img src="renders/A/viking.png" alt=""></div></div><div class="sizes"><div class="sw light"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#7fc4e8,#2a5f8a)"><img src="renders/A/viking-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#7fc4e8,#2a5f8a)"><img src="renders/A/viking-192.png" alt=""></div><span>48</span></div></div><div class="sw dark"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#7fc4e8,#2a5f8a)"><img src="renders/A/viking-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#7fc4e8,#2a5f8a)"><img src="renders/A/viking-192.png" alt=""></div><span>48</span></div></div><p class="note">The tile is drawn in CSS around the render; the app icon itself is made when a pick is applied.</p></div><label class="pick"><input type="checkbox" class="pickbox" value="viking" data-name="Bjorn the Viking"> Pick this one</label></section><section class="fig" id="fig-chef"><h3><span class="num">09</span>Chef Pierrot</h3><p class="blurb">Cook&#x27;s hat, curled moustache and a red neckerchief</p><div class="hero plain"><div class="tile big" style="background:linear-gradient(160deg,#ff7b6b,#c0262d)"><img src="renders/A/chef.png" alt=""></div></div><div class="sizes"><div class="sw light"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#ff7b6b,#c0262d)"><img src="renders/A/chef-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#ff7b6b,#c0262d)"><img src="renders/A/chef-192.png" alt=""></div><span>48</span></div></div><div class="sw dark"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#ff7b6b,#c0262d)"><img src="renders/A/chef-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#ff7b6b,#c0262d)"><img src="renders/A/chef-192.png" alt=""></div><span>48</span></div></div><p class="note">The tile is drawn in CSS around the render; the app icon itself is made when a pick is applied.</p></div><label class="pick"><input type="checkbox" class="pickbox" value="chef" data-name="Chef Pierrot"> Pick this one</label></section><section class="fig" id="fig-firefighter"><h3><span class="num">10</span>Blaze the Firefighter</h3><p class="blurb">Red fire helmet, black jacket with reflective stripes</p><div class="hero plain"><div class="tile big" style="background:linear-gradient(160deg,#ffb347,#e0461f)"><img src="renders/A/firefighter.png" alt=""></div></div><div class="sizes"><div class="sw light"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#ffb347,#e0461f)"><img src="renders/A/firefighter-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#ffb347,#e0461f)"><img src="renders/A/firefighter-192.png" alt=""></div><span>48</span></div></div><div class="sw dark"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#ffb347,#e0461f)"><img src="renders/A/firefighter-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#ffb347,#e0461f)"><img src="renders/A/firefighter-192.png" alt=""></div><span>48</span></div></div><p class="note">The tile is drawn in CSS around the render; the app icon itself is made when a pick is applied.</p></div><label class="pick"><input type="checkbox" class="pickbox" value="firefighter" data-name="Blaze the Firefighter"> Pick this one</label></section><section class="fig" id="fig-detective"><h3><span class="num">11</span>Inspector Inkwell</h3><p class="blurb">Grey fedora, monocle, trench coat and a red tie</p><div class="hero plain"><div class="tile big" style="background:linear-gradient(160deg,#9aa7b8,#3b4656)"><img src="renders/A/detective.png" alt=""></div></div><div class="sizes"><div class="sw light"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#9aa7b8,#3b4656)"><img src="renders/A/detective-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#9aa7b8,#3b4656)"><img src="renders/A/detective-192.png" alt=""></div><span>48</span></div></div><div class="sw dark"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#9aa7b8,#3b4656)"><img src="renders/A/detective-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#9aa7b8,#3b4656)"><img src="renders/A/detective-192.png" alt=""></div><span>48</span></div></div><p class="note">The tile is drawn in CSS around the render; the app icon itself is made when a pick is applied.</p></div><label class="pick"><input type="checkbox" class="pickbox" value="detective" data-name="Inspector Inkwell"> Pick this one</label></section><section class="fig" id="fig-ghost"><h3><span class="num">12</span>Glim the Ghost</h3><p class="blurb">A friendly glow-in-the-dark ghost under a sheet hood</p><div class="hero plain"><div class="tile big" style="background:linear-gradient(160deg,#3b2a6b,#120c2b)"><img src="renders/A/ghost.png" alt=""></div></div><div class="sizes"><div class="sw light"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#3b2a6b,#120c2b)"><img src="renders/A/ghost-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#3b2a6b,#120c2b)"><img src="renders/A/ghost-192.png" alt=""></div><span>48</span></div></div><div class="sw dark"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#3b2a6b,#120c2b)"><img src="renders/A/ghost-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#3b2a6b,#120c2b)"><img src="renders/A/ghost-192.png" alt=""></div><span>48</span></div></div><p class="note">The tile is drawn in CSS around the render; the app icon itself is made when a pick is applied.</p></div><label class="pick"><input type="checkbox" class="pickbox" value="ghost" data-name="Glim the Ghost"> Pick this one</label></section><section class="fig" id="fig-ninja"><h3><span class="num">13</span>Kumo the Ninja</h3><p class="blurb">Crimson wrap and mask, fierce eyes, a silver throwing star</p><div class="hero plain"><div class="tile big" style="background:linear-gradient(160deg,#f2c14e,#d0701b)"><img src="renders/A/ninja.png" alt=""></div></div><div class="sizes"><div class="sw light"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#f2c14e,#d0701b)"><img src="renders/A/ninja-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#f2c14e,#d0701b)"><img src="renders/A/ninja-192.png" alt=""></div><span>48</span></div></div><div class="sw dark"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#f2c14e,#d0701b)"><img src="renders/A/ninja-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#f2c14e,#d0701b)"><img src="renders/A/ninja-192.png" alt=""></div><span>48</span></div></div><p class="note">The tile is drawn in CSS around the render; the app icon itself is made when a pick is applied.</p></div><label class="pick"><input type="checkbox" class="pickbox" value="ninja" data-name="Kumo the Ninja"> Pick this one</label></section><section class="fig" id="fig-explorer"><h3><span class="num">14</span>Juniper the Explorer</h3><p class="blurb">Pith helmet, freckles, a safari shirt and a compass</p><div class="hero plain"><div class="tile big" style="background:linear-gradient(160deg,#9ed36a,#2f7a3a)"><img src="renders/A/explorer.png" alt=""></div></div><div class="sizes"><div class="sw light"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#9ed36a,#2f7a3a)"><img src="renders/A/explorer-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#9ed36a,#2f7a3a)"><img src="renders/A/explorer-192.png" alt=""></div><span>48</span></div></div><div class="sw dark"><div class="cell"><div class="tile s192" style="background:linear-gradient(160deg,#9ed36a,#2f7a3a)"><img src="renders/A/explorer-192.png" alt=""></div><span>192</span></div><div class="cell"><div class="tile s48" style="background:linear-gradient(160deg,#9ed36a,#2f7a3a)"><img src="renders/A/explorer-192.png" alt=""></div><span>48</span></div></div><p class="note">The tile is drawn in CSS around the render; the app icon itself is made when a pick is applied.</p></div><label class="pick"><input type="checkbox" class="pickbox" value="explorer" data-name="Juniper the Explorer"> Pick this one</label></section></div>
+
+<section class="q panel"><h2>1. Which figures do you pick?</h2>
+<p class="hint">Tick "Pick this one" on as many figures as you like.</p>
+<div class="picks" id="pick-list"></div>
+<textarea id="c-figures" placeholder="Optional comment: why these, or a figure you miss"></textarea></section>
+
+<section class="q panel"><h2>2. Is this the direction for the logo?</h2>
+<p class="hint">Direction D: App icon tile. The other three are in the tabs at the top.</p>
+<div class="radios">
+<label><input type="radio" name="direction" value="Yes, this one"> Yes, this one</label>
+<label><input type="radio" name="direction" value="Maybe"> Maybe</label>
+<label><input type="radio" name="direction" value="No"> No</label></div>
+<textarea id="c-direction" placeholder="Optional comment on the direction"></textarea></section>
+
+<section class="q panel"><h2>3. Anything to change?</h2>
+<p class="hint">Colours, faces, headgear, framing, the light, the frame or the text.</p>
+<textarea id="c-changes" placeholder="Optional comment"></textarea></section>
+
+<section class="q panel"><h2>Additional comments</h2>
+<textarea id="c-additional" placeholder="Optional"></textarea>
+<div class="copy"><button id="copy-btn" type="button">Copy answers</button><span id="copied"></span></div>
+<pre id="manual" style="display:none;white-space:pre-wrap;background:#f4f5f7;padding:10px;border-radius:8px"></pre></section>
+</main>
+<footer>
+<p>Parts: the LDraw.org Parts Library (ldraw.org), licensed CC BY 2.0 and CC BY 4.0; imported with the ImportLDraw add-on for Blender.
+Rendered headless in Blender 4.5 (Cycles). Face and torso prints drawn for Brick Tracker by docs/design/logo-minifigs/minifigs.py.</p>
+<p>LEGO and the minifigure figurine are trademarks of the LEGO Group, which does not sponsor, authorize or endorse Brick Tracker.</p>
+</footer>
+<script>
+(function(){
+  var page = document.body.getAttribute('data-page');
+  var store = 'lt-logo-minifigs-' + page;
+  function els(sel){ return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+  function save(){
+    var st = {picks: els('input.pickbox').filter(function(c){return c.checked;}).map(function(c){return c.value;}),
+              fields: {}};
+    els('textarea, input[type=radio]').forEach(function(e){
+      if (e.type === 'radio') { if (e.checked) st.fields[e.name] = e.value; }
+      else st.fields[e.id] = e.value;
+    });
+    try { localStorage.setItem(store, JSON.stringify(st)); } catch (e) {}
+  }
+  function load(){
+    var st = null;
+    try { st = JSON.parse(localStorage.getItem(store) || 'null'); } catch (e) {}
+    if (!st) return;
+    els('input.pickbox').forEach(function(c){ c.checked = st.picks.indexOf(c.value) >= 0; });
+    els('textarea').forEach(function(t){ if (st.fields[t.id] != null) t.value = st.fields[t.id]; });
+    els('input[type=radio]').forEach(function(r){ r.checked = st.fields[r.name] === r.value; });
+  }
+  function picked(){
+    return els('input.pickbox').filter(function(c){return c.checked;}).map(function(c){return c.getAttribute('data-name');});
+  }
+  function refresh(){
+    els('input.pickbox').forEach(function(c){
+      var card = document.getElementById('fig-' + c.value);
+      if (card) card.classList.toggle('picked', c.checked);
+    });
+    var p = picked();
+    document.getElementById('pick-list').textContent = p.length ? 'Picked: ' + p.join(', ') : 'Nothing picked yet: tick "Pick this one" on the figures you like.';
+  }
+  function val(id){ var e = document.getElementById(id); return e ? e.value.trim() : ''; }
+  function answers(){
+    var title = document.body.getAttribute('data-title');
+    var dir = els('input[name=direction]').filter(function(r){return r.checked;}).map(function(r){return r.value;})[0] || '(no answer)';
+    var p = picked();
+    var lines = [];
+    lines.push('Brick Tracker logo proposals, page ' + title);
+    lines.push('');
+    lines.push('1. Which figures do you pick?');
+    lines.push('   Picks: ' + (p.length ? p.join(', ') : '(none)'));
+    lines.push('   Comment: ' + (val('c-figures') || '(none)'));
+    lines.push('');
+    lines.push('2. Is this the direction for the logo?');
+    lines.push('   Answer: ' + dir);
+    lines.push('   Comment: ' + (val('c-direction') || '(none)'));
+    lines.push('');
+    lines.push('3. Anything to change?');
+    lines.push('   Comment: ' + (val('c-changes') || '(none)'));
+    lines.push('');
+    lines.push('Additional comments: ' + (val('c-additional') || '(none)'));
+    return lines.join('\n');
+  }
+  function fallbackCopy(text){
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed'; ta.style.top = '-1000px';
+    document.body.appendChild(ta); ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+    return ok;
+  }
+  function done(ok){
+    var s = document.getElementById('copied');
+    s.textContent = ok ? 'Copied: paste it into the chat.' : 'Copy failed: select the text below and copy it by hand.';
+    if (!ok) { var pre = document.getElementById('manual'); pre.textContent = answers(); pre.style.display = 'block'; }
+  }
+  document.getElementById('copy-btn').addEventListener('click', function(){
+    var text = answers();
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function(){ done(true); }, function(){ done(fallbackCopy(text)); });
+    } else {
+      done(fallbackCopy(text));
+    }
+  });
+  load();
+  refresh();
+  document.addEventListener('change', function(){ refresh(); save(); });
+  document.addEventListener('input', save);
+})();
+</script>
+</body></html>
