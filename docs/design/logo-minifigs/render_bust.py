@@ -8,6 +8,11 @@ the torso front (planar UVs) by this script.
   blender.exe -b --factory-startup --python render_bust.py -- --style A|B
       [--only key,key] [--out DIR] [--res 1024] [--samples N] [--exposure 0]
       [--addon DIR] [--library DIR] [--scratch DIR]
+      [--folder NAME] [--view q|front] [--suffix TEXT]
+
+--folder writes into <out>/<NAME> instead of <out>/<style>; --view front turns
+the camera to face the figure (a check view); --suffix is added to every file
+name (previews). LT.LOGO.SHORTLIST renders into renders/S.
 
 Style A: glossy studio plastic (Cycles, Principled BSDF, area lights, OIDN).
 Style B: toon (Cycles, emission shading by a constant ramp on N.L, Freestyle
@@ -38,6 +43,10 @@ def parse_args():
     ap.add_argument('--library', default=os.path.join(ART, 'ldraw-lib', 'ldraw'))
     ap.add_argument('--scratch', default=os.path.join(tempfile.gettempdir(), 'lt-logo-scratch'))
     ap.add_argument('--diag', action='store_true', help='print the imported objects and materials')
+    # LT.LOGO.SHORTLIST: previews and a folder of their own
+    ap.add_argument('--folder', default='', help='output subfolder (default: the style letter)')
+    ap.add_argument('--view', choices=['q', 'front'], default='q', help='q: the 3/4 view of the pages; front: a check view')
+    ap.add_argument('--suffix', default='', help='added to every output file name (previews)')
     a = ap.parse_args(argv)
     a.base_out = a.out or os.path.join(HERE, 'renders')
     a.base_samples = a.samples
@@ -48,7 +57,7 @@ def for_style(a, style):
     """The arguments for one style: its own output folder and sample count."""
     b = argparse.Namespace(**vars(a))
     b.style = style
-    b.out = os.path.join(a.base_out, style)
+    b.out = os.path.join(a.base_out, a.folder or style)
     b.samples = a.base_samples or (80 if style == 'A' else 16)
     return b
 
@@ -70,7 +79,8 @@ def write_ldr(fig, path):
     lines.append('1 %d 15.552 9 0 0.9962 0.0872 0 -0.0872 0.9962 0 0 0 1 3819.dat' % ARM_CODE)
     lines.append('1 %d -15.552 9 0 0.9962 -0.0872 0 0.0872 0.9962 0 0 0 1 3818.dat' % ARM_CODE)
     lines.append('1 %d 0 %g 0 1 0 0 0 1 0 0 0 1 %s' % (HEAD_CODE, HEAD_Y, mf.HEAD))
-    for i, (part, role) in enumerate(fig['headgear']):
+    for i, gear in enumerate(fig['headgear']):
+        part, role = gear[0], gear[1]
         code = ROLE_CODES[i]
         roles[code] = role
         y = 0.0 if part.lower() in NECK_PARTS else HEAD_Y
@@ -536,8 +546,9 @@ def render_one(fig, args):
                 line += ' mats=%s ld_lo=%s ld_hi=%s' % ([s.material.name if s.material else None for s in ob.material_slots], lo, hi)
             print(line, flush=True)
         args.diag = False
-    global CAM_EL
+    global CAM_EL, CAM_AZ
     CAM_EL = math.radians(fig.get('cam_el', 12.0))      # before the materials: the toon highlight uses it
+    CAM_AZ = math.radians(0.0 if args.view == 'front' else -30.0)
     face, torso = mf.new_face(), mf.new_torso()
     fig['prints'](face, torso)
     face_imgs = canvas_images(fig['key'] + '_face', face)
@@ -545,7 +556,7 @@ def render_one(fig, args):
     parts = assign_materials(fig, roles, ld, args.style, face_imgs, torso_imgs)
     setup_scene(args, parts)
     os.makedirs(args.out, exist_ok=True)
-    out = os.path.join(args.out, fig['key'] + '.png')
+    out = os.path.join(args.out, fig['key'] + args.suffix + '.png')
     bpy.context.scene.render.filepath = out
     t1 = time.time()
     bpy.ops.render.render(write_still=True)
