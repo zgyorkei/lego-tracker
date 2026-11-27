@@ -276,7 +276,14 @@ def make_material(name, color, kind, style, prints=None):
             bsdf.inputs['Metallic'].default_value = 0.85
             bsdf.inputs['Roughness'].default_value = 0.3
             bsdf.inputs['Coat Weight'].default_value = 0.0
-        if kind == 'glow':
+        if kind == 'matte':                      # headphone ear pads
+            bsdf.inputs['Roughness'].default_value = 0.55
+            bsdf.inputs['Coat Weight'].default_value = 0.0
+        if kind == 'neon':                       # LED rings
+            bsdf.inputs['Roughness'].default_value = 0.35
+            links.new(col, bsdf.inputs['Emission Color'])
+            bsdf.inputs['Emission Strength'].default_value = 2.5
+        elif kind == 'glow':
             links.new(col, bsdf.inputs['Emission Color'])
             bsdf.inputs['Emission Strength'].default_value = 0.3
         elif glow is not None:
@@ -334,11 +341,11 @@ def make_material(name, color, kind, style, prints=None):
     links.new(add.outputs[2], em.inputs['Color'])
     em.inputs['Strength'].default_value = 1.0
     final = em.outputs[0]
-    if kind == 'glow' or glow is not None:
+    if kind in ('glow', 'neon') or glow is not None:
         em2 = nodes.new('ShaderNodeEmission')
-        if kind == 'glow':
+        if kind in ('glow', 'neon'):
             links.new(col, em2.inputs['Color'])
-            em2.inputs['Strength'].default_value = 0.25
+            em2.inputs['Strength'].default_value = 0.25 if kind == 'glow' else 0.8
         else:
             links.new(tex_color, em2.inputs['Color'])
             gm = nodes.new('ShaderNodeMath')
@@ -400,6 +407,216 @@ def assign_materials(fig, roles, ld, style, face_imgs, torso_imgs):
                 slot.material = cache[ck]
                 fallback[label] = color
     return parts
+
+
+# ---------------------------------------------------------------------------
+# Headphones (LT.LOGO.SHORTLIST): modelled here and fitted to the head and the
+# hair, since LDraw's one headphone part (14045) clips on a bare head's stud and
+# hangs its cups at jaw height. All sizes in LDU, built in LDraw coordinates.
+
+SKIP_FIT = {mf.TORSO.lower(), '3818.dat', '3819.dat'}
+
+
+def ld_to_world(p):
+    return (p[0] * LDU, p[2] * LDU, -p[1] * LDU)
+
+
+def surface_points(ob, rng, n=30000):
+    """The vertices plus points sampled on the faces (area weighted), in LDraw coordinates."""
+    me = ob.data
+    me.calc_loop_triangles()
+    co = np.empty(len(me.vertices) * 3, np.float64)
+    me.vertices.foreach_get('co', co)
+    mw = np.array(ob.matrix_world)
+    w = co.reshape(-1, 3) @ mw[:3, :3].T + mw[:3, 3]
+    out = [w]
+    nt = len(me.loop_triangles)
+    if nt:
+        tri = np.empty(nt * 3, np.int64)
+        me.loop_triangles.foreach_get('vertices', tri)
+        tri = tri.reshape(-1, 3)
+        a, b, c = w[tri[:, 0]], w[tri[:, 1]], w[tri[:, 2]]
+        area = 0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1)
+        if area.sum() > 0:
+            idx = rng.choice(nt, size=n, p=area / area.sum())
+            u, v = rng.random(n), rng.random(n)
+            flip = u + v > 1
+            u[flip], v[flip] = 1 - u[flip], 1 - v[flip]
+            out.append(a[idx] + (b[idx] - a[idx]) * u[:, None] + (c[idx] - a[idx]) * v[:, None])
+    w = np.concatenate(out)
+    return np.stack([w[:, 0] / LDU, -w[:, 2] / LDU, w[:, 1] / LDU], axis=1)
+
+
+def add_mesh(name, verts_ld, faces, mat, parts):
+    import bmesh
+    me = bpy.data.meshes.new(name)
+    me.from_pydata([ld_to_world(v) for v in verts_ld], [], faces)
+    me.update()
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.002 * LDU)
+    bmesh.ops.dissolve_degenerate(bm, edges=bm.edges, dist=0.002 * LDU)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(me)
+    bm.free()
+    for p in me.polygons:
+        p.use_smooth = True
+    try:
+        me.set_sharp_from_angle(angle=math.radians(50))
+    except Exception:
+        pass
+    me.materials.append(mat)
+    ob = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(ob)
+    parts.setdefault('phones', []).append(ob)
+    return ob
+
+
+def lathe(profile, x0, side, ear_y, closed=False, seg=72):
+    """Revolve [(u, rho)] about the LDraw x axis through (side*x0, ear_y, 0); u runs outwards from the head."""
+    n = len(profile)
+    verts = []
+    for k in range(seg):
+        a = 2 * math.pi * k / seg
+        ca, sa = math.cos(a), math.sin(a)
+        for (u, rho) in profile:
+            verts.append((side * (x0 + u), ear_y - rho * ca, rho * sa))
+    faces = []
+    for k in range(seg):
+        k2 = (k + 1) % seg
+        for i in range(n if closed else n - 1):
+            i2 = (i + 1) % n
+            faces.append((k * n + i, k * n + i2, k2 * n + i2, k2 * n + i))
+    return verts, faces
+
+
+def rounded_section(cu, cr, hu, hr, expo=3.0, steps=28):
+    """A closed superellipse cross-section [(u, rho)] centred at (cu, cr)."""
+    pts = []
+    for i in range(steps):
+        f = 2 * math.pi * i / steps
+        c, s = math.cos(f), math.sin(f)
+        pts.append((cu + hu * math.copysign(abs(c) ** (2 / expo), c), cr + hr * math.copysign(abs(s) ** (2 / expo), s)))
+    return pts
+
+
+def build_phones(fig, parts, style):
+    spec = fig['phones']
+    rng = np.random.default_rng(7)
+    head_pts, hair_pts = [], []
+    for key, obs in parts.items():
+        if key in SKIP_FIT or key == 'phones':
+            continue
+        for ob in obs:
+            (head_pts if key == mf.HEAD.lower() else hair_pts).append(surface_points(ob, rng))
+    head = np.concatenate(head_pts)
+    hair = np.concatenate(hair_pts) if hair_pts else np.zeros((0, 3))
+    allp = np.concatenate([head, hair])
+    ear_y = HEAD_Y + mf.EAR_T
+    R, D, th, w, q = spec['R'], spec['D'], spec['th'], spec['w'], spec['q']
+    c = min(1.3, 0.3 * D)
+
+    near = (np.abs(allp[:, 1] - ear_y) < 0.8 * R) & (np.abs(allp[:, 2]) < 0.8 * R)
+    x_in = {s: float((s * allp[near, 0]).max()) + 0.12 for s in (-1, 1)}
+
+    shell_c, shell_k = spec_of(spec['color'])
+    m_shell = make_material(fig['key'] + '_phones', shell_c, shell_k, style)
+    m_pad = make_material(fig['key'] + '_pads', spec['cushion'], 'matte', style)
+    m_cap = m_led = None
+    if spec.get('cap'):
+        cc, ck = spec_of(spec['cap'])
+        m_cap = make_material(fig['key'] + '_cap', cc, ck, style)
+    if spec.get('led'):
+        m_led = make_material(fig['key'] + '_led', spec['led'], 'neon', style)
+
+    # the cups: a pad ring against the head, the shell, a cap dome or an LED ring outside
+    for s in (-1, 1):
+        x0 = x_in[s]
+        tag = 'L' if s > 0 else 'R'
+        v, f = lathe(rounded_section(c / 2, 0.69 * R, c / 2, 0.27 * R, expo=2.6), x0, s, ear_y, closed=True)
+        add_mesh('phones_pad' + tag, v, f, m_pad, parts)
+        u0, u1 = 0.7 * c, D
+        rr = min(1.0, 0.4 * (u1 - u0))
+        prof = [(u0, 0.0), (u0, 0.6 * R), (u0, R - 0.25)]
+        prof += [(u0 + 0.25 - 0.25 * math.cos(a), R - 0.25 + 0.25 * math.sin(a))
+                 for a in np.linspace(0.2, math.pi / 2, 4)]
+        prof += [(u1 - rr + rr * math.sin(a), R - rr + rr * math.cos(a)) for a in np.linspace(0, math.pi / 2, 9)]
+        prof += [(u1, 0.5 * (R - rr)), (u1, 0.0)]
+        v, f = lathe(prof, x0, s, ear_y)
+        add_mesh('phones_cup' + tag, v, f, m_shell, parts)
+        if m_cap is not None:
+            cr, ch = 0.62 * R, 0.6
+            dome = [(u1 - 0.1, 0.0), (u1 - 0.1, cr)]
+            dome += [(u1 + ch * math.sin(a), cr * math.cos(a)) for a in np.linspace(0, math.pi / 2, 10)]
+            v, f = lathe(dome, x0, s, ear_y)
+            add_mesh('phones_cap' + tag, v, f, m_cap, parts)
+        if m_led is not None:
+            v, f = lathe(rounded_section(u1 + 0.06, 0.8 * R, 0.16, 0.075 * R, expo=2.4), x0, s, ear_y, closed=True)
+            add_mesh('phones_led' + tag, v, f, m_led, parts)
+
+    # the band: in the plane through the ear axis, leaning back by tilt; its radius
+    # follows the head (never into it) and the hair (into the spikes by quantile q)
+    tilt = math.radians(spec['tilt'])
+    o = np.array([0.0, ear_y, 0.0])
+    e_x = np.array([1.0, 0.0, 0.0])
+    e_up = np.array([0.0, -math.cos(tilt), math.sin(tilt)])
+    nrm = np.cross(e_x, e_up)
+
+    def polar(P):
+        d = P - o
+        a, b = d @ e_x, d @ e_up
+        return np.degrees(np.arctan2(a, b)), np.hypot(a, b), np.abs(d @ nrm)
+
+    TH = np.arange(-90.0, 90.1, 2.0)
+    ah, rh, hh = polar(head)
+    if len(hair):
+        ahr, rhr, hhr = polar(hair)
+    slab = w / 2 + 0.4
+    raw = np.zeros(len(TH))
+    for k, t in enumerate(TH):
+        m = (np.abs(ah - t) < 3.0) & (hh < slab)
+        r = float(rh[m].max()) if m.any() else 0.0
+        if len(hair):
+            m2 = (np.abs(ahr - t) < 3.0) & (hhr < slab) & (rhr > r + 0.3)
+            if m2.sum() >= 3:
+                r = max(r, float(np.quantile(rhr[m2], q)))
+        raw[k] = r
+    pad = np.pad(raw, 2, mode='edge')
+    mx = np.array([pad[i:i + 5].max() for i in range(len(raw))])
+    pad = np.pad(mx, 3, mode='edge')
+    rad = np.array([pad[i:i + 7].mean() for i in range(len(raw))]) + th / 2 + 0.15
+    for k, t in enumerate(TH):
+        sm = min(1.0, max(0.0, (abs(t) - 62.0) / 28.0))
+        sm = sm * sm * (3 - 2 * sm)
+        target = x_in[1 if t > 0 else -1] + D / 2
+        rad[k] = rad[k] * (1 - sm) + target * sm
+    fine = np.arange(-90.0, 90.01, 1.0)
+    rf = np.interp(fine, TH, rad)
+    sec = []
+    for i in range(20):
+        f = 2 * math.pi * i / 20
+        cs, sn = math.cos(f), math.sin(f)
+        sec.append((math.copysign(abs(cs) ** 0.5, cs), math.copysign(abs(sn) ** 0.5, sn)))
+    verts, faces = [], []
+    ns = len(sec)
+    for j, (t, r) in enumerate(zip(fine, rf)):
+        tr = math.radians(t)
+        d = math.sin(tr) * e_x + math.cos(tr) * e_up
+        P = o + r * d
+        for (sx, sy) in sec:
+            verts.append(tuple(P + d * (th / 2) * sx + nrm * (w / 2) * sy))
+    nf = len(fine)
+    for j in range(nf - 1):
+        for i in range(ns):
+            i2 = (i + 1) % ns
+            faces.append((j * ns + i, j * ns + i2, (j + 1) * ns + i2, (j + 1) * ns + i))
+    faces.append(tuple(range(ns))[::-1])
+    faces.append(tuple((nf - 1) * ns + i for i in range(ns)))
+    add_mesh('phones_band', verts, faces, m_shell, parts)
+    print('PHONES %s ear_y=%.1f x_in=%.2f/%.2f band top r=%.2f (raw %.2f) head r(0)=%.2f'
+          % (fig['key'], ear_y, x_in[-1], x_in[1], rad[len(TH) // 2], raw[len(TH) // 2],
+             float(rh[(np.abs(ah) < 3) & (hh < slab)].max()) if ((np.abs(ah) < 3) & (hh < slab)).any() else -1),
+          flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -554,6 +771,8 @@ def render_one(fig, args):
     face_imgs = canvas_images(fig['key'] + '_face', face)
     torso_imgs = canvas_images(fig['key'] + '_torso', torso)
     parts = assign_materials(fig, roles, ld, args.style, face_imgs, torso_imgs)
+    if fig.get('phones'):
+        build_phones(fig, parts, args.style)
     setup_scene(args, parts)
     os.makedirs(args.out, exist_ok=True)
     out = os.path.join(args.out, fig['key'] + args.suffix + '.png')
