@@ -390,14 +390,32 @@ FIGURES = []
 
 
 def figure(key, name, blurb, torso, arms, headgear, colors, head='#f6c824', tile=('#2f6fd6', '#1c3f8f'),
-           ring='#1d2b53', original=True, mascot=False, cam_el=12.0):
-    """cam_el: the camera's elevation in degrees (lower it for a helmet whose brim hides the eyes)."""
+           ring='#1d2b53', original=True, mascot=False, cam_el=12.0, phones=None, into=None):
+    """cam_el: the camera's elevation in degrees (lower it for a helmet whose brim hides the eyes).
+    phones: headphones modelled by render_bust.py (see PHONES below), fitted to the head and hair.
+    into: the list the figure goes in (FIGURES unless given)."""
     def deco(fn):
-        FIGURES.append(dict(key=key, name=name, blurb=blurb, torso=torso, arms=arms, headgear=headgear,
-                            colors=colors, head=head, tile=tile, ring=ring, prints=fn, mascot=mascot,
-                            cam_el=cam_el))
+        (FIGURES if into is None else into).append(
+            dict(key=key, name=name, blurb=blurb, torso=torso, arms=arms, headgear=headgear,
+                 colors=colors, head=head, tile=tile, ring=ring, prints=fn, mascot=mascot,
+                 cam_el=cam_el, phones=phones))
         return fn
     return deco
+
+
+# Headphones are modelled by render_bust.py, not taken from LDraw: the library's one
+# headphone part (14045, ear muffs) clips onto a bare head's stud with its cups at jaw
+# height and cannot sit over hair. Sizes are LDU; a colour is '#hex' or ('#hex', kind).
+#   color   band and cup shells       cushion  the ear pads
+#   R, D    cup radius and depth      w, th    band width (front to back) and thickness
+#   tilt    the band's plane leans back by this many degrees (clears a bare head's stud)
+#   q       how far the band presses into the hair (quantile of the hair under it; 1.0 = on top)
+#   cap     a dome on each cup's outside, or None     led   a glowing ring on each cup, or None
+def phones(color, cushion='#23262b', R=5.0, D=3.8, w=3.4, th=1.4, tilt=8.0, q=0.75, cap=None, led=None):
+    return dict(color=color, cushion=cushion, R=R, D=D, w=w, th=th, tilt=tilt, q=q, cap=cap, led=led)
+
+
+EAR_T = 10.5        # ear centre: half way down the head's straight side (t 4 .. 17)
 
 
 # 1 -- Bricksy the Builder (Brick Tracker mascot)
@@ -458,8 +476,9 @@ def p_tally(face, torso):
 
 # 3 -- Studbot (Brick Tracker mascot)
 @figure('studbot', 'Studbot', 'Brick Tracker mascot: a part-counting robot with a bar-chart chest screen',
-        torso='#8f979d', arms='#5c6670', headgear=[('14045.dat', 'phones')],
-        colors={'phones': '#3b4148'}, head='#c6ccd2', tile=('#7ad7ff', '#2267b3'), ring='#2b3540', mascot=True)
+        torso='#8f979d', arms='#5c6670', headgear=[], colors={}, head='#c6ccd2', tile=('#7ad7ff', '#2267b3'),
+        ring='#2b3540', mascot=True,
+        phones=phones('#3b4148', cushion='#22262b', R=5.2, D=3.9, w=3.6, th=1.5, tilt=32.0, q=1.0))
 def p_studbot(face, torso):
     face.fill(RRect(0, 9.4, 15.6, 5.6, 2.4), '#1f2a33')
     for side in (-1, 1):
@@ -756,5 +775,123 @@ def p_explorer(face, torso):
     torso.fill(Poly([(3.4, 19.0), (3.9, 20.4), (3.4, 21.8), (2.9, 20.4)]), '#d3221c')
 
 
+# ---------------------------------------------------------------------------
+# LT.LOGO.SHORTLIST: Dex the Raver, the user's new figure ("a normal guy with spikey
+# messy short hair, headphone over his ears, acid smiley tshirt or something ravey")
+# in four variants. They live in EXTRA, not FIGURES, so finish.py and pages a..d stay
+# as they were; by_key() covers both lists.
+
+EXTRA = []
+
+
+def smiley(c, cx, cy, r, face='#ffd400', ink=INK, glow=0.0, ink_glow=0.0, rim=0.38):
+    """A plain smiley: a round face, two upright oval eyes and a wide smile with creases."""
+    if rim:
+        c.fill(Circle(cx, cy, r + rim), ink, glow=ink_glow)
+    c.fill(Circle(cx, cy, r), face, glow=glow)
+    for side in (-1, 1):
+        c.fill(Ellipse(cx + side * 0.33 * r, cy - 0.27 * r, 0.11 * r, 0.21 * r), ink, glow=ink_glow)
+    c.fill(Stroke(arc(cx, cy + 0.02 * r, 0.6 * r, 22, 158), 0.12 * r), ink, glow=ink_glow)
+    for side in (-1, 1):
+        a = math.radians(90 - side * 68)
+        ex, ey = cx + 0.6 * r * math.cos(a), cy + 0.02 * r + 0.6 * r * math.sin(a)
+        c.fill(Stroke([(ex - side * 0.12 * r, ey - 0.12 * r), (ex + side * 0.08 * r, ey + 0.1 * r)], 0.09 * r),
+               ink, glow=ink_glow)
+
+
+def tie_dye(c, cx, cy, palette, arms=3, twist=0.42):
+    """Fill the whole canvas with a tie-dye spiral (soft bands of the palette, pale crinkle lines)."""
+    xs = c.x0 + (np.arange(c.W) + 0.5) / c.ppu
+    ys = c.y0 + (np.arange(c.H) + 0.5) / c.ppu
+    X, Y = np.meshgrid(xs, ys)
+    dx, dy = X - cx, Y - cy
+    r = np.hypot(dx, dy)
+    th = np.arctan2(dy, dx)
+    wob = 0.035 * np.sin(th * 7 + r * 0.9) + 0.02 * np.sin(r * 2.3)
+    h = (arms * th / (2 * math.pi) + twist * r / (2 * math.pi) * 2.2 + wob) % 1.0
+    pal = np.array([hex_rgb(p) for p in palette], np.float32)
+    n = len(pal)
+    f = h * n
+    i0 = np.floor(f).astype(int) % n
+    i1 = (i0 + 1) % n
+    k = (f - np.floor(f))[..., None]
+    k = k * k * (3 - 2 * k)                    # soft but distinct bands
+    rgb = pal[i0] * (1 - k) + pal[i1] * k
+    edge = np.abs((f % 1.0) - 0.5)             # pale where the dye bled between bands
+    pale = np.clip((edge - 0.43) / 0.07, 0, 1)[..., None] * 0.45
+    rgb = rgb * (1 - pale) + pale
+    c.rgb[:] = rgb.astype(np.float32)
+    c.a[:] = 1.0
+
+
+def checker_band(c, y0, rows, size, dark=INK):
+    for j in range(rows):
+        for i in range(-12, 12):
+            if (i + j) % 2:
+                c.fill(RRect(i * size + size / 2, y0 + j * size + size / 2, size, size), dark)
+
+
+RAVER_BLURB = 'Dex the Raver: spiky messy hair, headphones over his ears, %s'
+
+
+# 15 -- Dex: Acid
+@figure('raver-acid', 'Dex: Acid', RAVER_BLURB % 'big black DJ cans and the yellow acid smiley on a black tee',
+        torso='#1e1e20', arms='#1e1e20', headgear=[('53981.dat', 'hair')], colors={'hair': '#6b3a1e'},
+        tile=('#ff5ea8', '#7a1e8f'), ring='#3a0d44', into=EXTRA,
+        phones=phones('#1c1c1e', cushion='#2f2f31', R=5.8, D=4.6, w=4.4, th=1.7, q=0.7,
+                      cap=('#b9c0c7', 'metal')))
+def p_raver_acid(face, torso):
+    brows(face, t=6.3, arch=0.75, length=2.9, color='#4a2410')
+    eyes(face)
+    grin(face, t=12.7, half=3.8, depth=2.8, lift=0.5)
+    smiley(torso, 0.0, 8.4, 5.4)
+
+
+# 16 -- Dex: Checker
+@figure('raver-checker', 'Dex: Checker', RAVER_BLURB % 'a slim silver band and a smiley on a checkerboard band',
+        torso='#f2f2ef', arms='#f2f2ef', headgear=[('2631.dat', 'hair')], colors={'hair': '#f0de8c'},
+        tile=('#4fd1ff', '#1f5fbf'), ring='#0f2f63', into=EXTRA,
+        phones=phones(('#c3c9cf', 'metal'), cushion='#2f3339', R=4.5, D=3.1, w=2.3, th=1.1, q=0.75))
+def p_raver_checker(face, torso):
+    brows(face, t=6.4, arch=0.55, length=2.7, color='#b08a3a')
+    happy_eyes(face)
+    grin(face, t=12.8, half=3.5, depth=2.5, lift=0.45)
+    checker_band(torso, 9.6, 4, 1.75)
+    smiley(torso, 0.0, 8.2, 4.7, rim=0.45)
+
+
+# 17 -- Dex: Tie-dye
+@figure('raver-tiedye', 'Dex: Tie-dye', RAVER_BLURB % 'neon-lime cans and a neon smiley on a tie-dye spiral',
+        torso='#8a4dff', arms='#8a4dff', headgear=[('36762.dat', 'hair')], colors={'hair': '#ff3fa4'},
+        tile=('#ffd23f', '#ff7a00'), ring='#7a2a00', into=EXTRA,
+        phones=phones('#9ee21a', cushion='#1f1f1f', R=5.4, D=4.2, w=3.8, th=1.5, q=0.7, cap=('#1f1f1f', 'plastic')))
+def p_raver_tiedye(face, torso):
+    brows(face, t=6.2, arch=0.6, length=2.8, tilt=-0.3, color='#b0206a')
+    eyes(face)
+    grin(face, t=12.8, half=3.6, depth=2.7, lift=0.5)
+    blush(face, t=12.4, dx=6.6, alpha=0.45)
+    tie_dye(torso, 0.0, 8.6, ['#ff3fa4', '#ff8a1f', '#ffe11f', '#5ee34a', '#29c3ff', '#8a4dff'])
+    smiley(torso, 0.0, 8.4, 5.0, face='#c8ff2e', glow=0.35)
+
+
+# 18 -- Dex: Glow
+@figure('raver-glow', 'Dex: Glow', RAVER_BLURB % 'slim white cans with LED rings and glow sticks on a dark tee',
+        torso='#1d2133', arms='#1d2133', headgear=[('40233.dat', 'hair')], colors={'hair': '#27cfe3'},
+        tile=('#24345f', '#070a17'), ring='#070a17', into=EXTRA,
+        phones=phones('#f3f4f6', cushion='#2a2d33', R=4.8, D=3.4, w=2.6, th=1.2, q=0.75, led='#38f2ff'))
+def p_raver_glow(face, torso):
+    brows(face, t=6.4, arch=0.5, length=2.7, color='#178a99')
+    happy_eyes(face)
+    grin(face, t=12.8, half=3.5, depth=2.5, lift=0.45)
+    # a glow-stick necklace around the collar
+    torso.fill(Stroke(arc(0, -3.0, 8.2, 25, 155), 0.9), '#38f2ff', glow=1.0)
+    # two glow sticks crossed on the chest, end caps darker
+    for (a, b, col, cap) in (((-7.2, 3.6), (6.6, 14.2), '#7dff3a', '#2f6b17'),
+                             ((7.2, 3.6), (-6.6, 14.2), '#ff4fd8', '#6b1a5c')):
+        torso.fill(Stroke([a, b], 1.6), col, glow=1.0)
+        torso.fill(Stroke([b, (b[0] + (a[0] - b[0]) * 0.07, b[1] + (a[1] - b[1]) * 0.07)], 1.7), cap)
+    smiley(torso, -0.2, 8.9, 2.5, face='#ffe83a', glow=0.9, rim=0.3)
+
+
 def by_key():
-    return {f['key']: f for f in FIGURES}
+    return {f['key']: f for f in FIGURES + EXTRA}
