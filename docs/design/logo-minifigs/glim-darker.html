@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Glim, one shade darker (LT.LOGO.APPLY)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><style>
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.5 system-ui, 'Segoe UI', sans-serif; background: #ece9f3; color: #1d1a2b; }
+header { padding: 28px 32px 8px; }
+h1 { margin: 0 0 4px; font-size: 24px; }
+h2 { margin: 28px 0 10px; font-size: 17px; }
+p { margin: 4px 0; max-width: 70ch; }
+.note { color: #5b5670; }
+main { padding: 0 32px 48px; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; max-width: 1040px; }
+.ground { border-radius: 14px; padding: 18px 20px 22px; }
+.ground.light { background: #f6f3ee; color: #1d1a2b; border: 1px solid #d9d3e6; }
+.ground.dark { background: #15111f; color: #ece9f3; border: 1px solid #2c2540; }
+.ground h3 { margin: 0 0 12px; font-size: 14px; letter-spacing: .02em; text-transform: uppercase; opacity: .8; }
+.row { display: flex; align-items: flex-end; gap: 22px; flex-wrap: wrap; }
+figure { margin: 0; text-align: center; font-size: 12px; opacity: .85; }
+figure figcaption { margin-top: 6px; }
+.tile { position: relative; overflow: hidden; border-radius: 22.5%;
+  background: linear-gradient(160deg, #3b2a6b, #120c2b);
+  box-shadow: inset 0 2px 0 rgba(255,255,255,.35), inset 0 -3px 0 rgba(0,0,0,.18); }
+.tile:before { content: ''; position: absolute; inset: 0;
+  background: radial-gradient(circle at 30% 18%, rgba(255,255,255,.35), transparent 55%); }
+.tile img { position: absolute; left: 0; bottom: 0; width: 100%; margin-bottom: -7%; display: block; }
+.s232 { width: 232px; height: 232px; } .s192 { width: 192px; height: 192px; } .s48 { width: 48px; height: 48px; }
+.baked img { display: block; image-rendering: auto; }
+.sw { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0 0; }
+.sw div { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #d9d3e6; border-radius: 10px; padding: 6px 10px; }
+.sw i { display: inline-block; width: 22px; height: 22px; border-radius: 6px; border: 1px solid rgba(0,0,0,.25); }
+.sw b { font-weight: 600; } .sw code { font-size: 12px; }
+</style></head><body>
+<header><h1>Glim the Ghost: the pick page's tile, and one shade darker</h1>
+<p class="note">You picked Glim the Ghost on the app icon tile (28 Nov) and asked for "a bit darker shade". Left: the
+tile as it was on toon.html. Right: the one that goes into the app. The outlines, the face and the tile are the same;
+only his body and glow colours are one step down.</p></header>
+<main>
+<h2>On a light and a dark ground</h2>
+<div class="grid">
+<section class="ground light"><h3>Current (pick page), light</h3><div class="row"><figure><div class="tile s232"><img src="renders/before/ghost.png" alt=""></div><figcaption>232 px</figcaption></figure><figure><div class="tile s192"><img src="renders/before/ghost.png" alt=""></div><figcaption>192 px</figcaption></figure><figure><div class="tile s48"><img src="renders/before/ghost.png" alt=""></div><figcaption>48 px</figcaption></figure></div></section>
+<section class="ground light"><h3>Darker, light</h3><div class="row"><figure><div class="tile s232"><img src="renders/T/ghost.png" alt=""></div><figcaption>232 px</figcaption></figure><figure><div class="tile s192"><img src="renders/T/ghost.png" alt=""></div><figcaption>192 px</figcaption></figure><figure><div class="tile s48"><img src="renders/T/ghost.png" alt=""></div><figcaption>48 px</figcaption></figure></div></section>
+<section class="ground dark"><h3>Current (pick page), dark</h3><div class="row"><figure><div class="tile s232"><img src="renders/before/ghost.png" alt=""></div><figcaption>232 px</figcaption></figure><figure><div class="tile s192"><img src="renders/before/ghost.png" alt=""></div><figcaption>192 px</figcaption></figure><figure><div class="tile s48"><img src="renders/before/ghost.png" alt=""></div><figcaption>48 px</figcaption></figure></div></section>
+<section class="ground dark"><h3>Darker, dark</h3><div class="row"><figure><div class="tile s232"><img src="renders/T/ghost.png" alt=""></div><figcaption>232 px</figcaption></figure><figure><div class="tile s192"><img src="renders/T/ghost.png" alt=""></div><figcaption>192 px</figcaption></figure><figure><div class="tile s48"><img src="renders/T/ghost.png" alt=""></div><figcaption>48 px</figcaption></figure></div></section>
+</div>
+<h2>The colours that changed</h2>
+<p class="note">Old on the left of each pair, new on the right.</p>
+<div class="sw"><div><i style="background:#c4f0d2"></i><i style="background:#9ad9b0"></i><b>hood</b><code>#c4f0d2 &rarr; #9ad9b0</code></div><div><i style="background:#d6f6e0"></i><i style="background:#b4e3c4"></i><b>head</b><code>#d6f6e0 &rarr; #b4e3c4</code></div><div><i style="background:#b9ebc9"></i><i style="background:#8fd1a8"></i><b>torso and arms</b><code>#b9ebc9 &rarr; #8fd1a8</code></div><div><i style="background:#86c99c"></i><i style="background:#5fa87a"></i><b>sheet folds</b><code>#86c99c &rarr; #5fa87a</code></div></div>
+<h2>The PNGs the apps ship (baked from the darker render)</h2>
+<p class="note">The same image in the Chrome app (public/icons) and the desktop app (desktop/icons).</p>
+<div class="ground dark" style="max-width:1040px"><div class="row"><figure class="baked"><img src="../../../public/icons/icon-512.png" width="232" height="232" alt=""><figcaption>icon-512 (Chrome app)</figcaption></figure><figure class="baked"><img src="../../../public/icons/icon-192.png" width="192" height="192" alt=""><figcaption>icon-192</figcaption></figure><figure class="baked"><img src="../../../desktop/icons/48.png" width="48" height="48" alt=""><figcaption>desktop 48</figcaption></figure><figure class="baked"><img src="../../../public/icons/favicon-32.png" width="32" height="32" alt=""><figcaption>favicon 32</figcaption></figure><figure class="baked"><img src="../../../public/icons/icon-maskable-512.png" width="128" height="128" alt=""><figcaption>maskable, shown at 128</figcaption></figure><figure class="baked"><img src="../../../public/icons/apple-touch-icon.png" width="128" height="128" alt=""><figcaption>apple touch, shown at 128</figcaption></figure></div></div>
+</main></body></html>

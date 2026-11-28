@@ -1,10 +1,10 @@
-// Bundles the Electron main and preload scripts into dist/ and generates the
-// app icon. The main bundle pulls in ../lib/server-api.ts and its dependencies
-// (express, axios, cheerio, ...) from the root node_modules, so the desktop
-// package only needs Electron, Playwright and esbuild of its own.
+// Bundles the Electron main and preload scripts into dist/ and makes the app
+// icon files there. The main bundle pulls in ../lib/server-api.ts and its
+// dependencies (express, axios, cheerio, ...) from the root node_modules, so
+// the desktop package only needs Electron, Playwright and esbuild of its own.
 import { build } from 'esbuild';
-import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { brickPng } from './icon.mjs';
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { icoFromPngs } from './icon.mjs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -54,22 +54,22 @@ await build({
 });
 copyFileSync(path.join(here, 'src/setup.html'), path.join(out, 'setup.html'));
 
-// --- Icons: the shared LEGO-yellow brick (icon.mjs). ------------------------
-writeFileSync(path.join(out, 'icon.png'), brickPng(64));
-// Windows .ico for the packaged exe: a single 256x256 PNG wrapped in an ICO
-// header, which Windows Vista and later read directly.
-const png256 = brickPng(256);
-const ico = Buffer.alloc(22);
-ico.writeUInt16LE(0, 0); // reserved
-ico.writeUInt16LE(1, 2); // type: icon
-ico.writeUInt16LE(1, 4); // one image
-ico[6] = 0; // width 256
-ico[7] = 0; // height 256
-ico.writeUInt16LE(1, 10); // colour planes
-ico.writeUInt16LE(32, 12); // bits per pixel
-ico.writeUInt32LE(png256.length, 14);
-ico.writeUInt32LE(22, 18); // image data offset
-writeFileSync(path.join(out, 'icon.ico'), Buffer.concat([ico, png256]));
+// --- Icons: Glim the Ghost on an app tile, baked into icons/<size>.png by --
+// docs/design/logo-minifigs/make_icons.py (the web app's public/icons come
+// from the same run). icon.png (window, tray) is the 64 px one; the packaged
+// exe's icon.ico holds every size, 16 to 256 px (icon.mjs).
+const iconsDir = path.join(here, 'icons');
+const iconFiles = readdirSync(iconsDir).filter((name) => /^\d+\.png$/.test(name));
+if (!iconFiles.includes('64.png') || !iconFiles.includes('256.png')) {
+  throw new Error(
+    'desktop/icons needs 64.png and 256.png: run docs/design/logo-minifigs/make_icons.py'
+  );
+}
+copyFileSync(path.join(iconsDir, '64.png'), path.join(out, 'icon.png'));
+writeFileSync(
+  path.join(out, 'icon.ico'),
+  icoFromPngs(iconFiles.map((name) => readFileSync(path.join(iconsDir, name))))
+);
 
 console.log(
   'desktop build: dist/main.cjs, dist/preload.cjs, dist/setup*, dist/icon.png, dist/icon.ico'

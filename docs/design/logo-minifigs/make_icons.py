@@ -6,7 +6,7 @@ Run with Blender's bundled Python (numpy, no Pillow), isolated, from any folder:
 Input:  renders/T/ghost.png (render_bust.py --style B --only ghost --folder T).
 Output (all PNG, committed):
   public/icons/icon-192.png, icon-512.png       the Chrome app, "any" purpose (rounded tile)
-  public/icons/icon-maskable-512.png            full bleed, the bust inside the 80% safe circle
+  public/icons/icon-maskable-512.png            full bleed, head and hood inside the 80% safe circle
   public/icons/apple-touch-icon.png             180 px, opaque, full bleed (iOS rounds it itself)
   public/icons/favicon-32.png                   the rounded tile at 32 px
   desktop/icons/<n>.png                         16, 32, 48, 64, 128, 256: the desktop app (tray,
@@ -37,6 +37,7 @@ RADIUS = 0.225          # border-radius, share of the icon's width
 BUST_DROP = 0.07        # margin-bottom -7%: the bust's box reaches this far below the tile
 BASE = 232.0            # the width the CSS pixel values (2 px, 3 px) were drawn at
 SAFE_R = 0.40           # the maskable safe zone: a circle of 80% of the icon's width
+SAFE_HEAD = 0.62        # the top share of the bust (the head and hood) that must stay inside the safe circle
 
 
 def rgb255(h):
@@ -101,12 +102,19 @@ def tile_icon(bust, size, rounded=True, safe=False):
 
     # the bust
     if safe:
+        # The head and hood (the top part of the bust) go inside the safe circle; the shoulders below
+        # may leave it, so the cut edge of the bust runs off the bottom of the icon instead of floating.
         pts = np.argwhere(bust[::4, ::4, 3] > 25)[:, ::-1] * 4.0 + 2.0          # (x, y) in render pixels
-        c, r = min_circle(pts)
+        y_top, y_bottom = pts[:, 1].min(), pts[:, 1].max()
+        head = pts[pts[:, 1] < y_top + SAFE_HEAD * (y_bottom - y_top)]
+        c, r = min_circle(head)
         k = SAFE_R * 0.97 * W / r                                                 # render pixels to work pixels
         n = int(round(bust.shape[1] * k))
         ox = int(round(W / 2 - c[0] * k))
         oy = int(round(W / 2 - c[1] * k))
+        gap = W - (oy + y_bottom * k)                                             # the bust must reach the bottom edge
+        if gap > 0:
+            oy += int(np.ceil(gap))
     else:
         n = W
         ox, oy = 0, int(round(BUST_DROP * W))
