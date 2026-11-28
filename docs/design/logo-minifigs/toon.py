@@ -5,7 +5,11 @@ Run with Blender's bundled Python (numpy, no Pillow), isolated:
 
 The user picked four figures on page C (Glim the Ghost, Darth Jar-Jar, Batman and
 Possessed Chef Enzo) and asked for them redrawn in the toon style in all four
-variants. The renders come from render_bust.py, style B, at 1024 px:
+variants. As agreed with the user on 28 Nov, the three franchise picks are not
+copied: each slot has an original figure of the same type (minifigs.py, TOON):
+Captain Clutch for Batman, Lord Grumble for Darth Jar-Jar and Chef Gusto for
+Chef Enzo. Glim is an original already. The renders come from render_bust.py,
+style B, at 1024 px:
   renders/T/<key>.png   toon with outlines        (--style B --folder T)
   renders/TP/<key>.png  toon without outlines     (--style B --lines off --folder TP)
 This script cleans them, writes <key>-192.png and <key>-48.png beside them (as
@@ -21,7 +25,7 @@ import minifigs as mf
 from pngio import read_png, write_png, resample_premultiplied
 from finish import CSS, SIZES, RENDERS, LIMIT_MB, badge_svg, tile_html, esc, folder_mb
 
-PICKS = ['ghost', 'darth-jarjar', 'batman', 'possessed-enzo']
+PICKS = ['ghost', 'clutch', 'grumble', 'haunted-chef']
 FOLDERS = ('T', 'TP')
 
 # (id, folder of the base render, title, what it is)
@@ -36,8 +40,21 @@ VARIANTS = [
      "D: the outlined toon bust rising from a rounded square in its own colours (D used the glossy render before)."),
 ]
 
-# who each pick stands in for on the page: an original, or the owner of the character
-SAFE = {'ghost': 'original'}
+# every figure on the page is an original; the stand-ins name the pick they replace and its owner
+SAFE = {k: 'original' for k in PICKS}
+STANDS_FOR = {
+    'clutch': ('Batman', 'DC',
+               'a brooding caped guardian of the night: a rounded hood, a long cape, a teal domino mask, '
+               'a crescent-moon emblem and a stern frown. Nothing is taken from Batman: no bat emblem, '
+               'no pointed cowl ears, no bat-suit colours.'),
+    'grumble': ('Darth Jar-Jar', 'Lucasfilm',
+                'a clumsy, comic dark lord: a big gold crown, a near-black robe with a high wine-red collar, '
+                'a scheming buck-toothed grin and a nervous sweat drop. No Gungan features, no Sith hood, '
+                'no lightsaber.'),
+    'haunted-chef': ('Possessed Chef Enzo', 'LEGO Hidden Side',
+                     'a chef taken over by a ghost: a ghost-blue face, glowing eyes, a wobbly grin and glowing '
+                     'wisps curling up his whites. It does not copy Enzo\'s look.'),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +199,12 @@ def src(folder, key, size=None):
 
 def tag(fig):
     if SAFE.get(fig['key']) == 'original':
-        return '<span class="tag ok" title="An original Brick Tracker character">original</span>'
+        out = '<span class="tag ok" title="An original Brick Tracker character">original</span>'
+        if fig['key'] in STANDS_FOR:
+            pick, owner, _ = STANDS_FOR[fig['key']]
+            out += (' <span class="tag fr" title="Your pick %s is a franchise character: %s owns it">in place of %s (%s)</span>'
+                    % (esc(pick), esc(owner), esc(pick), esc(owner)))
+        return out
     owner = fig.get('owner') or 'franchise'
     return '<span class="tag fr" title="A franchise character: %s owns it">%s</span>' % (esc(owner), esc(owner))
 
@@ -216,12 +238,11 @@ def cell(fig, variant):
 
 
 def stands(fig):
-    if fig['key'] == 'darth-jarjar':
-        return ('Redrawn to show more of him: the hood down on his shoulders so the whole Gungan head shows '
-                '(long ears, eye stalks, snout), a black cape over the robe, a crop down to the belt and a '
-                'modelled red lightsaber.')
+    if fig['key'] in STANDS_FOR:
+        pick, owner, what = STANDS_FOR[fig['key']]
+        return 'In the place of your %s pick (%s), an original of the same type: %s' % (pick, owner, what)
     if SAFE.get(fig['key']) == 'original':
-        return 'An original Brick Tracker character: the safe pick for a published app.'
+        return 'An original Brick Tracker character, as on the earlier pages, now in the toon style in every variant.'
     return 'As on the earlier pages, now in the toon style in every variant.'
 
 
@@ -239,7 +260,8 @@ def page_html():
     fig_radios = ''.join(
         '<label><input type="radio" name="figure" value="%s" data-label="%s"> %s <span class="sub">(%s)</span></label>'
         % (f['key'], esc(f['name']), esc(f['name']),
-           'original' if SAFE.get(f['key']) == 'original' else esc(f.get('owner') or 'franchise'))
+           ('original, in place of %s' % esc(STANDS_FOR[f['key']][0])) if f['key'] in STANDS_FOR
+           else 'original' if SAFE.get(f['key']) == 'original' else esc(f.get('owner') or 'franchise'))
         for f in figs)
     fig_radios += '<label><input type="radio" name="figure" value="none" data-label="None of these yet"> None of these yet</label>'
     var_radios = ''.join(
@@ -254,7 +276,7 @@ def page_html():
 .sw.dark .cell-s{color:#8d94a3}
 </style></head>
 <body>
-<header><div class="brand"><div class="brick"></div><h1>Brick Tracker logo<small>your four picks, redrawn in the toon style, in all four variants</small></h1></div>
+<header><div class="brand"><div class="brick"></div><h1>Brick Tracker logo<small>your four picks as original toon figures, in all four variants</small></h1></div>
 <nav><a class="on" href="toon.html">Toon redraw</a><a href="a.html">A</a><a href="b.html">B</a><a href="c.html">C</a><a href="d.html">D</a><a href="shortlist.html">Shortlist</a></nav></header>
 <main>
 <div class="intro">
@@ -263,13 +285,13 @@ def page_html():
 style for all four variants. Each row is one figure; each column is one of the four directions (A to D), now all built on
 the toon render (cel shading, Blender 4.5). Every cell shows the figure large, then at 192 px (desktop and Chrome app icon,
 shown at 96 css px) and 48 px (favicon), on light and on dark.</p>
-<p>Darth Jar-Jar shows more of himself now, as you asked: the hood is down on his shoulders so the whole Gungan head shows
-(the long ears, the eye stalks and the snout), there is a black cape over the robe, the crop goes down to the belt, and he
-holds a red lightsaber (modelled, no longer printed on his chest).</p></div>
+<p>As agreed on 28 Nov, the three franchise picks are not copied. Each slot has an original figure of the same type, with its
+own outline, colours and emblem, pushed so it reads at a glance even at 48 px: Captain Clutch (a brooding caped guardian of
+the night) for Batman, Lord Grumble (a clumsy, comic dark lord) for Darth Jar-Jar, and Chef Gusto (a chef taken over by a
+ghost) for Possessed Chef Enzo. Glim stays as he was.</p></div>
 <div class="panel note"><h2>About the figures</h2>
-<p>Glim the Ghost is an original Brick Tracker character. Darth Jar-Jar (Lucasfilm), Batman (DC) and Possessed Chef Enzo
-(LEGO Hidden Side) are franchise characters, each tagged with its owner: they carry LEGO, Lucasfilm and DC marks, so they
-are fine for your own copy of the app, not for a published one.</p>
+<p>All four figures are original Brick Tracker characters. The picks they replace are franchise characters, named on each row
+with their owners: Batman (DC), Darth Jar-Jar (Lucasfilm) and Possessed Chef Enzo (LEGO Hidden Side).</p>
 <p>An original figure such as Glim is the safe pick for a published app. The minifigure shape itself is a LEGO trademark,
 so check that before publishing any of them.</p></div>
 </div>
@@ -298,11 +320,11 @@ where they meet is your logo.</p>
 </main>
 <footer>
 <p>Parts: the LDraw.org Parts Library (ldraw.org), licensed CC BY 2.0 and CC BY 4.0; imported with the ImportLDraw add-on for Blender.
-Rendered headless in Blender 4.5 (Cycles). Face and torso prints drawn for Brick Tracker by docs/design/logo-minifigs/minifigs.py;
-the lightsaber is modelled by render_bust.py.</p>
+Rendered headless in Blender 4.5 (Cycles). Face and torso prints drawn for Brick Tracker by docs/design/logo-minifigs/minifigs.py.</p>
 <p>LEGO, the minifigure figurine and Hidden Side are trademarks of the LEGO Group; Star Wars and Jar Jar Binks of Lucasfilm Ltd.;
-Batman of DC. None of them sponsors, authorizes or endorses Brick Tracker; the franchise figures here are fan renders for a private
-logo shortlist. They carry LEGO, Lucasfilm and DC marks, so an original figure such as Glim is the safe pick for a published app.</p>
+Batman of DC. None of them sponsors, authorizes or endorses Brick Tracker. The figures on this page are original characters made
+for Brick Tracker; the franchise figures they replace (on the earlier pages) carry LEGO, Lucasfilm and DC marks, so an original
+figure such as Glim is the safe pick for a published app.</p>
 </footer>
 <script>%(js)s</script>
 </body></html>

@@ -1084,43 +1084,57 @@ def p_enzo(face, torso):
 TOON = []
 
 
-# 28 -- Captain Clutch (in the place of the Batman pick)
-@figure('clutch', 'Captain Clutch', 'An original caped hero: a navy domino mask, a teal suit, orange cape ties and a brick emblem',
-        torso='#0f8f8a', arms='#0f8f8a', headgear=[('62696.dat', 'hair')],
-        colors={'hair': '#3a2414'}, tile=('#ffb23e', '#e2551b'), ring='#0b4d4a', into=TOON)
+# 28 -- Captain Clutch (in the place of the Batman pick): a brooding caped guardian of the
+# night, of our own design: a rounded hood (no ears), a long cape, a midnight-blue suit with
+# teal trim and a crescent-moon emblem, a teal domino mask and a stern, brooding face.
+@figure('clutch', 'Captain Clutch', 'An original brooding night guardian: a rounded midnight hood and long cape, a teal domino mask and a crescent-moon emblem',
+        torso='#26386b', arms='#26386b', headgear=[('30381.dat', 'hood'), ('4524.dat', 'cape')],
+        colors={'hood': '#161d38', 'cape': '#161d38'}, tile=('#1fb5a8', '#0b1a3a'), ring='#0b1a3a', into=TOON)
 def p_clutch(face, torso):
-    navy, orange = '#1d2b53', '#f07a1f'
+    teal, night, moon = '#18b5a6', '#0f1a3a', '#eef3ff'
     mask = Poly(np.concatenate([bez((-8.4, 7.6), (-4.2, 6.2), (0, 8.2)), bez((0, 8.2), (4.2, 6.2), (8.4, 7.6))[1:],
                                 bez((8.4, 7.6), (8.2, 12.0), (4.2, 11.8))[1:], bez((4.2, 11.8), (1.4, 11.6), (0, 10.6))[1:],
                                 bez((0, 10.6), (-1.4, 11.6), (-4.2, 11.8))[1:], bez((-4.2, 11.8), (-8.2, 12.0), (-8.4, 7.6))[1:-1]]))
-    face.fill(mask, navy)
+    face.fill(mask, teal)
     for side in (-1, 1):
-        face.fill(Ellipse(side * EYE_DX, 9.5, 1.55, 1.05), WHITE)
-        face.fill(Ellipse(side * EYE_DX + 0.25, 9.6, 0.62, 0.78), INK)
-        face.fill(Stroke(bez((side * 1.6, 6.2), (side * 3.8, 5.0), (side * 6.2, 5.8)), 0.8), '#3a2414')
-    smile(face, t=13.7, half=3.0, sag=1.25, shift=0.3)
-    # the suit: an emblem disc with a 2x2 brick, orange cape ties and clasps, a belt line
-    torso.fill(Circle(0, 14.0, 6.6), INK)
-    torso.fill(Circle(0, 14.0, 6.0), orange)
-    brick_top(torso, 0, 14.0, 5.4, '#ffd23e', studs=(2, 2))
+        # narrowed eyes under heavy brows that slope down to the middle: brooding
+        face.fill(Ellipse(side * EYE_DX, 9.7, 1.6, 0.85), WHITE)
+        face.fill(Ellipse(side * EYE_DX - side * 0.2, 9.8, 0.62, 0.62), INK)
+        face.fill(Stroke([(side * 1.3, 8.0), (side * 6.4, 6.4)], 1.0), INK)
+    # a short, set frown and a line under it
+    face.fill(Stroke(bez((-2.6, 14.9), (0, 13.9), (2.6, 14.9)), 0.8), INK)
+    face.fill(Stroke([(-1.0, 16.6), (1.0, 16.6)], 0.45), INK)
+    # the suit: a crescent moon and a star in a teal ring, teal cape clasps, a belt line
+    torso.fill(Circle(0, 13.0, 6.6), INK)
+    torso.fill(Circle(0, 13.0, 6.0), teal)
+    torso.fill(Circle(0, 13.0, 5.1), night)
+    torso.fill(Diff(Circle(-0.7, 13.0, 3.9), Circle(1.2, 12.0, 3.4)), moon)
+    torso.fill(Circle(2.4, 15.2, 0.65), moon)
     for side in (-1, 1):
-        torso.fill(Stroke([(side * 10.5, -1.0), (side * 6.6, 4.6)], 2.0), orange)
+        torso.fill(Stroke([(side * 10.5, 1.0), (side * 6.6, 4.6)], 1.2), teal)
         torso.fill(Circle(side * 6.4, 4.8, 1.5), INK)
-        torso.fill(Circle(side * 6.4, 4.8, 1.05), '#ffd23e')
-    torso.fill(RRect(0, 27.0, 40.0, 2.4, 0.3), navy)
-    torso.fill(RRect(0, 27.0, 3.4, 2.0, 0.3), '#ffd23e')
+        torso.fill(Circle(side * 6.4, 4.8, 1.05), teal)
+    torso.fill(RRect(0, 27.0, 40.0, 2.4, 0.3), night)
+    torso.fill(RRect(0, 27.0, 3.4, 2.0, 0.3), teal)
 
 
-# 29 -- Lord Grumble (in the place of the Darth Jar-Jar pick)
-@figure('grumble', 'Lord Grumble', 'An original clumsy dark lord: a crooked gold crown, a high purple collar and a buck-toothed scheming grin',
-        torso='#3b1f5c', arms='#3b1f5c', headgear=[('18165.dat', 'crown'), ('20551c01.dat', 'cape')],
-        colors={'crown': ('#e8b23a', 'metal'), 'cape': '#5a2d8c'}, tile=('#f05a5a', '#6e0f2a'), ring='#3a0716',
+# 29 -- Lord Grumble (in the place of the Darth Jar-Jar pick): a clumsy, comic dark lord of our own
+# design: a near-black robe, a high wine-red collar, a big gold crown, a scheming grin and a nervous sweat drop.
+@figure('grumble', 'Lord Grumble', 'An original clumsy dark lord: a crooked gold crown, a near-black robe with a high wine-red collar, a buck-toothed scheming grin and a nervous sweat drop',
+        torso='#24142f', arms='#24142f', headgear=[('18165.dat', 'crown'), ('20551c01.dat', 'cape')],
+        colors={'crown': ('#e8b23a', 'metal'), 'cape': '#6a1630'}, tile=('#f05a5a', '#6e0f2a'), ring='#3a0716',
         into=TOON)
 def p_grumble(face, torso):
     gold, brown = '#e8b23a', '#3c2414'
     # one brow down in a scowl, the other up: scheming
     brows(face, t=6.9, tilt=1.6, arch=0.2, w=0.95, only=-1)
     brows(face, t=5.9, tilt=-0.4, arch=0.9, w=0.95, only=1)
+    # a nervous sweat drop at his temple: the comic, clumsy side
+    drop = np.concatenate([bez((-7.9, 3.6), (-6.4, 5.8), (-6.5, 7.6), (-7.9, 7.8)),
+                           bez((-7.9, 7.8), (-9.3, 7.6), (-9.4, 5.8), (-7.9, 3.6))[1:]])
+    face.fill(Poly(drop[:-1]), '#8fd8ff')
+    face.fill(Stroke(drop, 0.32), INK)
+    face.fill(Circle(-8.3, 6.6, 0.4), WHITE)
     eyes(face, t=9.7, rx=1.0, ry=1.3, look=0.35)
     # a gold monocle on his left eye, its chain down the cheek
     face.fill(Diff(Circle(EYE_DX, 9.7, 2.25), Circle(EYE_DX, 9.7, 1.75)), gold)
@@ -1171,9 +1185,10 @@ def p_haunted_chef(face, torso):
     torso.fill(Poly([(-6.0, -1), (6.0, -1), (3.0, 4.5), (0.0, 6.0), (-3.0, 4.5)]), plum)
     torso.fill(Poly([(-1.6, 4.4), (1.6, 4.4), (2.6, 9.6), (0, 8.6), (-2.6, 9.6)]), '#552f82')
     buttons(torso, [-3.4, 3.4], [13.0, 18.0, 23.0], r=0.75, color='#2f2f2f', ring=None)
-    for (x, s) in ((-9.5, 1), (8.0, -1), (-1.0, 1)):
-        torso.fill(Stroke(bez((x, 31.0), (x + s * 3.0, 25.0), (x - s * 1.5, 20.0), (x + s * 1.8, 15.5)), 0.9), cyan, 0.85, glow=0.6)
-        torso.fill(Circle(x + s * 1.8, 15.2, 0.8), cyan, 0.85, glow=0.6)
+    # two glowing ghost wisps curl up his chest on either side, inside the bust's crop
+    for (x, s) in ((-9.6, 1), (9.6, -1)):
+        torso.fill(Stroke(bez((x, 16.5), (x + s * 3.0, 12.0), (x - s * 1.5, 8.5), (x + s * 1.6, 4.6)), 1.0), cyan, 0.9, glow=0.7)
+        torso.fill(Circle(x + s * 1.6, 4.3, 0.9), cyan, 0.9, glow=0.7)
 
 
 def by_key():
