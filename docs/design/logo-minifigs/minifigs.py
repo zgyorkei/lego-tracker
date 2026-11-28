@@ -2,8 +2,11 @@
 
 Pure Python + numpy (no bpy), imported by render_bust.py and finish.py.
 
-Every figure here is an original character made for Brick Tracker; none is a
-franchise character. The parts are standard LDraw minifigure parts (LDraw.org
+FIGURES (the 14 of LT.LOGO.MINIFIGS) and EXTRA (Dex the Raver) are original
+characters made for Brick Tracker. FRANCHISE (LT.LOGO.MINIFIGS.FIX1) holds the
+characters the user named in his request: Darth Vader, Darth Jar-Jar, Batman and
+three Hidden Side figures; they carry Lucasfilm, DC and LEGO Group marks and are
+for his own choosing. The parts are standard LDraw minifigure parts (LDraw.org
 Parts Library, CC BY 2.0 / CC BY 4.0); the face and torso prints are drawn
 below as signed-distance shapes and painted onto the parts as textures.
 
@@ -390,15 +393,17 @@ FIGURES = []
 
 
 def figure(key, name, blurb, torso, arms, headgear, colors, head='#f6c824', tile=('#2f6fd6', '#1c3f8f'),
-           ring='#1d2b53', original=True, mascot=False, cam_el=12.0, phones=None, into=None):
+           ring='#1d2b53', original=True, mascot=False, cam_el=12.0, phones=None, into=None,
+           head_part=None):
     """cam_el: the camera's elevation in degrees (lower it for a helmet whose brim hides the eyes).
     phones: headphones modelled by render_bust.py (see PHONES below), fitted to the head and hair.
-    into: the list the figure goes in (FIGURES unless given)."""
+    into: the list the figure goes in (FIGURES unless given).
+    head_part: an LDraw part in place of the plain head (a character head such as the Gungan one); it gets no face print."""
     def deco(fn):
         (FIGURES if into is None else into).append(
             dict(key=key, name=name, blurb=blurb, torso=torso, arms=arms, headgear=headgear,
                  colors=colors, head=head, tile=tile, ring=ring, prints=fn, mascot=mascot,
-                 cam_el=cam_el, phones=phones))
+                 cam_el=cam_el, phones=phones, original=original, head_part=head_part))
         return fn
     return deco
 
@@ -893,5 +898,175 @@ def p_raver_glow(face, torso):
     smiley(torso, -0.2, 8.9, 2.5, face='#ffe83a', glow=0.9, rim=0.3)
 
 
+# ---------------------------------------------------------------------------
+# Franchise figures (LT.LOGO.MINIFIGS.FIX1): the characters the user named in his
+# request, drawn at his word for his own app. They carry the marks of their owners
+# (Lucasfilm, DC, the LEGO Group), so the pages show them apart from the originals,
+# and the three mascots stay the safe picks for a published app.
+
+FRANCHISE = []
+
+
+def bat_emblem(cx, cy, w):
+    """The bat emblem, w wide: wings with a scalloped lower edge, two ears, a pointed tail."""
+    half = [(0.08, -0.17), (0.14, -0.33), (0.25, -0.12), (0.55, -0.30), (1.0, -0.14),
+            (0.86, 0.10), (0.70, 0.03), (0.55, 0.22), (0.38, 0.11), (0.19, 0.29), (0.0, 0.46)]
+    right = [(cx + x * w / 2, cy + y * w / 2) for x, y in half]
+    left = [(cx - x * w / 2, cy + y * w / 2) for x, y in reversed(half[:-1])]
+    return Poly(right + left)
+
+
+# 19 -- Darth Vader (Lucasfilm)
+@figure('vader', 'Darth Vader', 'Star Wars: the black helmet over the mask, the chest panel with its lit buttons',
+        torso='#1b1a1a', arms='#1b1a1a', headgear=[('30368.dat', 'helmet')], colors={'helmet': '#1b1a1a'},
+        head='#1b1a1a', tile=('#e3242b', '#5a0b0b'), ring='#2a0505', original=False, into=FRANCHISE)
+def p_vader(face, torso):
+    grey, steel = '#8d949b', '#4a4f55'
+    # the mask: two dark eye lenses in grey rims, cheek lines, the triangular mouth grille
+    for side in (-1, 1):
+        face.fill(Poly([(side * 1.0, 7.8), (side * 6.8, 7.1), (side * 6.4, 11.4), (side * 1.4, 10.8)]), grey)
+        face.fill(Poly([(side * 1.5, 8.3), (side * 6.2, 7.7), (side * 5.9, 10.8), (side * 1.8, 10.3)]), '#0b0c0d')
+        face.fill(Ellipse(side * 4.4, 8.6, 1.0, 0.4, rot=-side * 8), '#7d8890', 0.8)
+        face.fill(Stroke([(side * 6.4, 11.4), (side * 7.8, 18.0)], 0.6), grey)
+        face.fill(Stroke([(side * 1.4, 10.8), (side * 3.7, 17.0)], 0.5), grey)
+    face.fill(Poly([(0, 11.0), (3.8, 17.6), (-3.8, 17.6)]), grey)
+    face.fill(Poly([(0, 12.4), (2.8, 17.0), (-2.8, 17.0)]), '#111214')
+    for x in (-1.4, -0.7, 0.0, 0.7, 1.4):
+        face.fill(Stroke([(x, 13.8 + abs(x) * 0.7), (x, 16.6)], 0.22), grey)
+    face.fill(Stroke([(-5.4, 19.0), (5.4, 19.0)], 0.5), grey)
+    # shoulder armour, the chest box with its buttons, the belt boxes
+    torso.fill(Stroke(arc(0, -4.0, 9.0, 20, 160), 1.1), grey)
+    for side in (-1, 1):
+        torso.fill(Stroke(bez((side * 4.0, 2.2), (side * 9.0, 4.6), (side * 14.0, 3.2)), 0.6), steel)
+    torso.fill(RRect(0, 11.5, 10.4, 7.4, 0.8), '#b9c0c7')
+    torso.fill(RRect(0, 11.5, 9.2, 6.2, 0.5), '#26292d')
+    for (x, y, c) in ((-2.9, 9.7, '#e3242b'), (-1.0, 9.7, '#2fbf4a'), (1.0, 9.7, '#2a7de1'), (2.9, 9.7, '#e3242b'),
+                      (-2.9, 11.9, '#d8dde3'), (-1.0, 11.9, '#e3242b'), (1.0, 11.9, '#d8dde3'), (2.9, 11.9, '#2fbf4a')):
+        torso.fill(RRect(x, y, 1.4, 1.2, 0.2), c, glow=0.5)
+    for x in (-3.0, -1.5, 0.0, 1.5, 3.0):
+        torso.fill(RRect(x, 13.9, 0.8, 0.9, 0.15), grey)
+    torso.fill(RRect(0, 27.0, 44, 3.4), '#26292d')
+    for x in (-6.5, -2.2, 2.2, 6.5):
+        torso.fill(RRect(x, 27.0, 3.0, 2.4, 0.3), '#b9c0c7')
+
+
+# 20 -- Darth Jar-Jar (Lucasfilm; the fan theory of Jar Jar Binks as a Sith lord)
+@figure('darth-jarjar', 'Darth Jar-Jar', 'Star Wars fan theory: Jar Jar Binks as a Sith lord, black hooded robe and a red lightsaber',
+        torso='#1b1a1a', arms='#1b1a1a', headgear=[('30381.dat', 'hood')], colors={'hood': '#1b1a1a'},
+        head='#d08a4b', head_part='30371.dat', tile=('#b3121b', '#1a0406'), ring='#1a0406',
+        original=False, into=FRANCHISE)
+def p_darth_jarjar(face, torso):
+    # the robe's crossed collar and folds, a belt
+    torso.fill(Poly([(-6.5, -1), (-2.6, -1), (0.0, 8.5), (2.6, -1), (6.5, -1), (0.0, 13.5)]), '#2e2e33')
+    for x in (-8.0, -3.5, 3.5, 8.0):
+        torso.fill(Stroke(bez((x * 0.8, 15.0), (x * 1.05, 22.0), (x * 1.15, 32.0)), 0.5), '#38383f')
+    torso.fill(RRect(0, 23.0, 44, 2.6), '#3a2a20')
+    torso.fill(RRect(0, 23.0, 2.6, 2.2, 0.3), '#9aa1a8')
+    # a red lightsaber held across the chest: a silver hilt, a glowing blade with a pale core
+    torso.fill(Stroke([(-6.0, 25.1), (9.5, 2.5)], 3.0), '#ff2a2a', 0.4, glow=1.0)
+    torso.fill(Stroke([(-6.0, 25.1), (9.5, 2.5)], 1.5), '#ff3b30', glow=1.0)
+    torso.fill(Stroke([(-6.0, 25.1), (9.5, 2.5)], 0.6), '#ffd9d3', glow=1.0)
+    torso.fill(Stroke([(-9.8, 30.6), (-6.0, 25.1)], 1.7), '#b9c0c7')
+    torso.fill(Stroke([(-8.4, 28.6), (-7.9, 27.9)], 1.9), INK)
+
+
+# 21 -- Batman (DC)
+@figure('batman', 'Batman', 'DC: the black cowl with its ears, white eyes, and the bat emblem in a yellow oval',
+        torso='#5b6066', arms='#5b6066', headgear=[('10113.dat', 'cowl')], colors={'cowl': '#1b1a1a'},
+        head='#f6d7b3', tile=('#3b4a7a', '#0d1226'), ring='#0d1226', original=False, into=FRANCHISE)
+def p_batman(face, torso):
+    # the mask's lower edge on the head print, white eyes, a firm mouth and a chin line
+    face.fill(Poly([(-21, 0), (21, 0), (21, 11.8), (6.8, 12.2), (2.0, 11.0), (0, 11.6), (-2.0, 11.0),
+                    (-6.8, 12.2), (-21, 11.8)]), '#1b1a1a')
+    for side in (-1, 1):
+        face.fill(Poly([(side * 1.8, 9.6), (side * 6.0, 8.1), (side * 5.4, 10.5), (side * 2.2, 10.5)]), WHITE)
+    face.fill(Stroke(bez((-3.0, 14.6), (0, 13.8), (3.0, 14.6)), 0.8), INK)
+    face.fill(Stroke(bez((-1.4, 16.8), (0, 17.1), (1.4, 16.8)), 0.45), '#b88a5c')
+    # the emblem in its yellow oval, chest lines, the yellow utility belt
+    torso.fill(Ellipse(0, 9.6, 9.0, 5.3), INK)
+    torso.fill(Ellipse(0, 9.6, 8.4, 4.7), '#f7d117')
+    torso.fill(bat_emblem(0, 9.6, 14.8), INK)
+    for side in (-1, 1):
+        torso.fill(Stroke(bez((side * 2.0, 16.5), (side * 6.0, 18.5), (side * 10.0, 16.0)), 0.45), '#3d4146')
+    torso.fill(Stroke([(0, 15.6), (0, 24.5)], 0.45), '#3d4146')
+    torso.fill(RRect(0, 28.0, 44, 3.6), '#f7d117')
+    torso.fill(RRect(0, 28.0, 3.6, 3.0, 0.4), '#c9a40c')
+    for x in (-7.0, -4.2, 4.2, 7.0):
+        torso.fill(RRect(x, 28.0, 2.0, 2.6, 0.3), '#d9b414')
+
+
+HS_TILE = ('#2fd3a8', '#0c3b46')        # Hidden Side: teal to a dark night blue
+
+
+# 22 -- Jack Davids (Hidden Side, the LEGO Group)
+@figure('jack-davids', 'Jack Davids', 'Hidden Side: messy brown hair under a red backwards cap, a white hoodie with red stripes',
+        torso='#f2f2f2', arms='#f2f2f2', headgear=[('65730p02.dat', 'hair'), ('15428.dat', 'hood')],
+        colors={'hair': '#4a2c1a', 'hood': '#f2f2f2'}, tile=HS_TILE, ring='#0c3b46', original=False, into=FRANCHISE)
+def p_jack(face, torso):
+    brows(face, t=6.6, arch=0.5, length=2.8, color='#4a2c1a')
+    eyes(face)
+    grin(face, t=12.9, half=3.4, depth=2.3, lift=0.5, shift=0.4)
+    # the hoodie: laces, two red stripes, a kangaroo pocket
+    for side in (-1, 1):
+        torso.fill(Stroke(bez((side * 1.6, 1.5), (side * 2.2, 6.0), (side * 1.8, 10.5)), 0.4), '#c9cdd1')
+        torso.fill(Circle(side * 1.8, 10.8, 0.55), '#c9cdd1')
+    for y in (13.2, 15.2):
+        torso.fill(RRect(0, y, 44, 1.1), '#d3221c')
+    pocket = [(-8.5, 32), (-6.5, 21.0), (6.5, 21.0), (8.5, 32)]
+    torso.fill(Poly(pocket), '#e3e5e8')
+    torso.fill(Stroke(pocket, 0.4), '#b5babf')
+
+
+# 23 -- Parker L. Jackson (Hidden Side, the LEGO Group)
+@figure('parker-jackson', 'Parker L. Jackson', 'Hidden Side: lavender hair in two braids, a black top, a coral bag strap and a P necklace',
+        torso='#1b1a1a', arms='#1b1a1a', headgear=[('35714.dat', 'hair')], colors={'hair': '#a38bc7'},
+        tile=('#ffd23f', '#e0457b'), ring='#5a1838', original=False, into=FRANCHISE)
+def p_parker(face, torso):
+    brows(face, t=6.6, arch=0.6, length=2.6, w=0.7, color='#6b4a8a')
+    eyes(face)
+    lashes(face)
+    grin(face, t=12.9, half=3.2, depth=2.2, lift=0.45, tongue=False)
+    # the coral bag on a strap across the chest, a silver necklace with a P pendant
+    torso.fill(Stroke([(-9.0, -0.5), (7.0, 24.0)], 1.5), '#ff7f6e')
+    torso.fill(RRect(4.0, 19.5, 9.0, 4.2, 1.9, rot=56), '#ff7f6e')
+    torso.fill(Stroke(bez((1.2, 16.4), (3.6, 19.6), (6.4, 22.8)), 0.35), '#c4574a')
+    torso.fill(Stroke(arc(0, -1.5, 6.8, 30, 150), 0.35), '#c9cdd1')
+    torso.fill(Circle(0, 5.9, 1.3), '#c9cdd1')
+    torso.fill(Stroke([(-0.4, 6.8), (-0.4, 5.0)], 0.35), INK)
+    torso.fill(Stroke(arc(-0.2, 5.55, 0.55, -90, 90), 0.32), INK)
+
+
+# 24 -- Possessed Chef Enzo (Hidden Side, the LEGO Group)
+@figure('possessed-enzo', 'Possessed Chef Enzo', 'Hidden Side: a chef taken over by a ghost, neon-green head, glowing eyes and slime',
+        torso='#f2f2f2', arms='#f2f2f2', headgear=[('98381.dat', 'hat')], colors={'hat': '#f2f2f2'},
+        head='#6fe84a', tile=('#5b2fa8', '#0b0618'), ring='#0b0618', original=False, into=FRANCHISE)
+def p_enzo(face, torso):
+    dg, lime = '#1f5a1c', '#c8ff2e'
+    face.fill(Ellipse(0, 12.0, 10.0, 9.5), '#d8ff7a', 0.5, glow=0.35)
+    for side in (-1, 1):
+        face.fill(Ellipse(side * EYE_DX, EYE_T, 2.3, 1.9), lime, glow=1.0)
+        face.fill(Ellipse(side * EYE_DX, EYE_T, 1.2, 1.3), '#0d2b0b')
+        face.fill(Circle(side * EYE_DX, EYE_T, 0.5), '#eaffd0', glow=1.0)
+        face.fill(Stroke(bez((side * 1.2, 7.4), (side * 3.6, 5.6), (side * 6.4, 6.6)), 1.3), dg)
+        face.fill(Poly([(side * 7.4, 7.0), (side * 9.4, 7.5), (side * 9.8, 16.5), (side * 7.4, 15.0)]), dg)
+    # moustache, an open frown with a tongue, slime dripping
+    for side in (-1, 1):
+        face.fill(Stroke(bez((side * 5.2, 13.4), (side * 2.0, 11.4), (0, 12.2)), 1.2), dg)
+    face.fill(Ellipse(0, 15.4, 2.6, 1.7), '#0f3a0d')
+    face.fill(Ellipse(0, 16.4, 1.6, 0.8), '#e65a7a')
+    face.fill(Stroke([(1.6, 16.6), (1.9, 19.5)], 0.7), '#9bff3c', glow=0.8)
+    face.fill(Circle(1.9, 19.7, 0.65), '#9bff3c', glow=0.8)
+    # a white chef's jacket under a sand-green apron with glowing green slime, a pen and a pad
+    apron = Poly([(-7.0, 9.0), (7.0, 9.0), (8.5, 32), (-8.5, 32)])
+    torso.fill(apron, '#a0bcac')
+    for side in (-1, 1):
+        torso.fill(Stroke([(side * 6.6, 9.4), (side * 4.0, -1.0)], 0.8), '#a0bcac')
+    for (x, y, r) in ((-3.5, 15.0, 1.4), (2.8, 20.5, 1.8), (-1.0, 26.5, 1.2), (5.2, 27.5, 0.9)):
+        torso.fill(Circle(x, y, r), '#3f9a2a', 0.9, glow=0.4)
+    torso.fill(RRect(-4.6, 12.0, 3.6, 2.6, 0.3), '#7f9c8c')
+    torso.fill(RRect(-5.4, 10.8, 0.6, 3.0, 0.2), '#2a7de1')
+    torso.fill(RRect(-3.9, 11.0, 1.8, 2.4, 0.2), WHITE)
+
+
 def by_key():
-    return {f['key']: f for f in FIGURES + EXTRA}
+    return {f['key']: f for f in FIGURES + EXTRA + FRANCHISE}

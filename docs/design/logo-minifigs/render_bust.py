@@ -68,7 +68,7 @@ def for_style(a, style):
 LDU = 0.0004                 # ImportLDraw's globalScaleFactor (metres per LDU)
 TORSO_CODE, ARM_CODE, HEAD_CODE = 92, 100, 110
 ROLE_CODES = [112, 115, 118, 120, 125, 85]
-NECK_PARTS = {'6132.dat', '60749.dat'}      # beards sit on the torso's neck, not on the head
+NECK_PARTS = {'6132.dat', '60749.dat', '15428.dat'}   # beards and a folded-down hood sit on the torso's neck
 HEAD_Y = -24.0
 
 
@@ -78,7 +78,7 @@ def write_ldr(fig, path):
     lines.append('1 %d 0 0 0 1 0 0 0 1 0 0 0 1 %s' % (TORSO_CODE, mf.TORSO))
     lines.append('1 %d 15.552 9 0 0.9962 0.0872 0 -0.0872 0.9962 0 0 0 1 3819.dat' % ARM_CODE)
     lines.append('1 %d -15.552 9 0 0.9962 -0.0872 0 0.0872 0.9962 0 0 0 1 3818.dat' % ARM_CODE)
-    lines.append('1 %d 0 %g 0 1 0 0 0 1 0 0 0 1 %s' % (HEAD_CODE, HEAD_Y, mf.HEAD))
+    lines.append('1 %d 0 %g 0 1 0 0 0 1 0 0 0 1 %s' % (HEAD_CODE, HEAD_Y, fig.get('head_part') or mf.HEAD))
     for i, gear in enumerate(fig['headgear']):
         part, role = gear[0], gear[1]
         code = ROLE_CODES[i]
