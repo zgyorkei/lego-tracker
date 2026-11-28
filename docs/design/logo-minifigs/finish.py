@@ -427,4 +427,5 @@ def main():
     print('folder %.1f MB%s' % (mb, ' (OVER %.0f MB)' % LIMIT_MB if mb > LIMIT_MB else ''))
 
 
-main()
+if __name__ == '__main__':      # toon.py imports the page helpers
+    main()

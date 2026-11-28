@@ -9,11 +9,13 @@ the torso front (planar UVs) by this script.
   blender.exe -b --factory-startup --python render_bust.py -- --style A|B
       [--only key,key] [--out DIR] [--res 1024] [--samples N] [--exposure 0]
       [--addon DIR] [--library DIR] [--scratch DIR]
-      [--folder NAME] [--view q|front] [--suffix TEXT]
+      [--folder NAME] [--view q|front] [--suffix TEXT] [--lines on|off]
 
 --folder writes into <out>/<NAME> instead of <out>/<style>; --view front turns
 the camera to face the figure (a check view); --suffix is added to every file
-name (previews). LT.LOGO.SHORTLIST renders into renders/S.
+name (previews); --lines off leaves out style B's outlines (LT.LOGO.TOON's plain
+toon bust). LT.LOGO.SHORTLIST renders into renders/S, LT.LOGO.TOON into renders/T
+(outlined) and renders/TP (plain).
 
 Style A: glossy studio plastic (Cycles, Principled BSDF, area lights, OIDN).
 Style B: toon (Cycles, emission shading by a constant ramp on N.L, Freestyle
@@ -48,6 +50,8 @@ def parse_args():
     ap.add_argument('--folder', default='', help='output subfolder (default: the style letter)')
     ap.add_argument('--view', choices=['q', 'front'], default='q', help='q: the 3/4 view of the pages; front: a check view')
     ap.add_argument('--suffix', default='', help='added to every output file name (previews)')
+    # LT.LOGO.TOON: style B without the Freestyle ink lines (the plain toon bust)
+    ap.add_argument('--lines', choices=['on', 'off'], default='on', help='style B: draw the outlines (default on)')
     a = ap.parse_args(argv)
     a.base_out = a.out or os.path.join(HERE, 'renders')
     a.base_samples = a.samples
@@ -714,7 +718,7 @@ def setup_scene(args, parts):
         area('key', key_dir, 0.75, 0.16)
         area('fill', fill_dir, 0.28, 0.22, (0.92, 0.95, 1.0))
         area('rim', rim_dir, 0.6, 0.12, (1.0, 0.97, 0.92))
-    else:
+    elif args.lines == 'on':
         scene.render.use_freestyle = True
         scene.render.line_thickness_mode = 'ABSOLUTE'
         vl = scene.view_layers[0]

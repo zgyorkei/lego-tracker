@@ -1076,5 +1076,105 @@ def p_enzo(face, torso):
     torso.fill(RRect(-3.9, 11.0, 1.8, 2.4, 0.2), WHITE)
 
 
+# ---------------------------------------------------------------------------
+# LT.LOGO.TOON: original figures for the toon page, one in the place of each
+# franchise pick (Batman, Darth Jar-Jar, Possessed Chef Enzo). They are new
+# characters made for Brick Tracker, not redraws of the franchise ones.
+
+TOON = []
+
+
+# 28 -- Captain Clutch (in the place of the Batman pick)
+@figure('clutch', 'Captain Clutch', 'An original caped hero: a navy domino mask, a teal suit, orange cape ties and a brick emblem',
+        torso='#0f8f8a', arms='#0f8f8a', headgear=[('62696.dat', 'hair')],
+        colors={'hair': '#3a2414'}, tile=('#ffb23e', '#e2551b'), ring='#0b4d4a', into=TOON)
+def p_clutch(face, torso):
+    navy, orange = '#1d2b53', '#f07a1f'
+    mask = Poly(np.concatenate([bez((-8.4, 7.6), (-4.2, 6.2), (0, 8.2)), bez((0, 8.2), (4.2, 6.2), (8.4, 7.6))[1:],
+                                bez((8.4, 7.6), (8.2, 12.0), (4.2, 11.8))[1:], bez((4.2, 11.8), (1.4, 11.6), (0, 10.6))[1:],
+                                bez((0, 10.6), (-1.4, 11.6), (-4.2, 11.8))[1:], bez((-4.2, 11.8), (-8.2, 12.0), (-8.4, 7.6))[1:-1]]))
+    face.fill(mask, navy)
+    for side in (-1, 1):
+        face.fill(Ellipse(side * EYE_DX, 9.5, 1.55, 1.05), WHITE)
+        face.fill(Ellipse(side * EYE_DX + 0.25, 9.6, 0.62, 0.78), INK)
+        face.fill(Stroke(bez((side * 1.6, 6.2), (side * 3.8, 5.0), (side * 6.2, 5.8)), 0.8), '#3a2414')
+    smile(face, t=13.7, half=3.0, sag=1.25, shift=0.3)
+    # the suit: an emblem disc with a 2x2 brick, orange cape ties and clasps, a belt line
+    torso.fill(Circle(0, 14.0, 6.6), INK)
+    torso.fill(Circle(0, 14.0, 6.0), orange)
+    brick_top(torso, 0, 14.0, 5.4, '#ffd23e', studs=(2, 2))
+    for side in (-1, 1):
+        torso.fill(Stroke([(side * 10.5, -1.0), (side * 6.6, 4.6)], 2.0), orange)
+        torso.fill(Circle(side * 6.4, 4.8, 1.5), INK)
+        torso.fill(Circle(side * 6.4, 4.8, 1.05), '#ffd23e')
+    torso.fill(RRect(0, 27.0, 40.0, 2.4, 0.3), navy)
+    torso.fill(RRect(0, 27.0, 3.4, 2.0, 0.3), '#ffd23e')
+
+
+# 29 -- Lord Grumble (in the place of the Darth Jar-Jar pick)
+@figure('grumble', 'Lord Grumble', 'An original clumsy dark lord: a crooked gold crown, a high purple collar and a buck-toothed scheming grin',
+        torso='#3b1f5c', arms='#3b1f5c', headgear=[('18165.dat', 'crown'), ('20551c01.dat', 'cape')],
+        colors={'crown': ('#e8b23a', 'metal'), 'cape': '#5a2d8c'}, tile=('#f05a5a', '#6e0f2a'), ring='#3a0716',
+        into=TOON)
+def p_grumble(face, torso):
+    gold, brown = '#e8b23a', '#3c2414'
+    # one brow down in a scowl, the other up: scheming
+    brows(face, t=6.9, tilt=1.6, arch=0.2, w=0.95, only=-1)
+    brows(face, t=5.9, tilt=-0.4, arch=0.9, w=0.95, only=1)
+    eyes(face, t=9.7, rx=1.0, ry=1.3, look=0.35)
+    # a gold monocle on his left eye, its chain down the cheek
+    face.fill(Diff(Circle(EYE_DX, 9.7, 2.25), Circle(EYE_DX, 9.7, 1.75)), gold)
+    face.fill(Stroke(bez((EYE_DX + 2.0, 10.6), (7.4, 14.0), (6.8, 18.5)), 0.32), gold)
+    # a curled moustache over a lopsided grin with two buck teeth
+    for side in (-1, 1):
+        face.fill(Stroke(bez((0, 12.4), (side * 3.0, 11.6), (side * 4.6, 12.8), (side * 5.6, 11.2)), 0.9), brown)
+        face.fill(Circle(side * 5.5, 11.0, 0.55), brown)
+    upper = bez((-3.6, 14.0), (0.2, 13.4), (3.4, 13.4))
+    lower = bez((3.4, 13.4), (0.6, 17.4), (-3.6, 14.0))
+    mouth = Poly(np.concatenate([upper, lower[1:-1]]))
+    face.fill(mouth, '#3a1414')
+    for x in (-0.75, 0.75):
+        face.fill(RRect(x, 14.55, 1.35, 1.7, 0.3), WHITE)
+    face.fill(Stroke(np.concatenate([upper, lower[1:]]), 0.42), INK)
+    # the robe: gold trim, a chain across the chest and a cracked brick pendant
+    for side in (-1, 1):
+        torso.fill(Stroke([(side * 4.4, -1), (side * 1.2, 32)], 1.4), gold)
+    torso.fill(Stroke(bez((-10.0, 3.0), (-4.0, 11.0), (0, 11.6)), 0.7), gold)
+    torso.fill(Stroke(bez((10.0, 3.0), (4.0, 11.0), (0, 11.6)), 0.7), gold)
+    brick_top(torso, 0, 15.6, 4.6, gold, studs=(2, 2))
+    torso.fill(Stroke([(-0.6, 12.0), (0.5, 14.2), (-0.7, 16.0), (0.6, 18.0), (0.0, 19.2)], 0.45), INK)
+
+
+# 30 -- Chef Gusto, haunted (in the place of the Possessed Chef Enzo pick)
+@figure('haunted-chef', 'Chef Gusto, haunted', 'An original possessed chef: glowing ghost-blue eyes, a wobbly grin and ghostly wisps on his whites',
+        torso='#f3f3f1', arms='#f3f3f1', headgear=[('3898.dat', 'hat')],
+        colors={'hat': '#fbfbfa'}, head='#c9d6e8', tile=('#38c6d9', '#13254d'), ring='#0d1834', into=TOON)
+def p_haunted_chef(face, torso):
+    cyan, socket, plum = '#5ff2ff', '#283050', '#6b3fa0'
+    for side in (-1, 1):
+        face.fill(Ellipse(side * EYE_DX, EYE_T, 2.2, 2.0), socket)
+        face.fill(Ellipse(side * EYE_DX, EYE_T + 0.1, 1.35, 1.45), cyan, glow=1.0)
+        face.fill(Circle(side * EYE_DX, EYE_T + 0.1, 0.5), '#eaffff', glow=1.0)
+    brows(face, t=6.3, tilt=1.4, arch=0.3, w=0.9, color='#2a2238')
+    # a thin curled moustache, then a wide wobbly grin with a row of teeth
+    for side in (-1, 1):
+        face.fill(Stroke(bez((0, 12.6), (side * 2.4, 11.8), (side * 4.2, 12.6), (side * 4.6, 11.4)), 0.6), '#2a2238')
+    upper = np.concatenate([bez((-5.0, 14.0), (-2.5, 13.2), (0, 14.0)), bez((0, 14.0), (2.5, 13.2), (5.0, 14.0))[1:]])
+    lower = bez((5.0, 14.0), (2.5, 17.6), (-2.5, 17.6), (-5.0, 14.0))
+    mouth = Poly(np.concatenate([upper, lower[1:-1]]))
+    face.fill(mouth, '#1c1430')
+    band = Poly(np.concatenate([upper, (upper + [0, 1.0])[::-1]]))
+    face.fill(Inter(mouth, band), WHITE)
+    face.fill(Inter(mouth, Ellipse(0, 17.0, 2.4, 1.0)), cyan, 0.85, glow=0.8)
+    face.fill(Stroke(np.concatenate([upper, lower[1:]]), 0.42), INK)
+    # the jacket: a plum neckerchief, double buttons and glowing ghost wisps curling up
+    torso.fill(Poly([(-6.0, -1), (6.0, -1), (3.0, 4.5), (0.0, 6.0), (-3.0, 4.5)]), plum)
+    torso.fill(Poly([(-1.6, 4.4), (1.6, 4.4), (2.6, 9.6), (0, 8.6), (-2.6, 9.6)]), '#552f82')
+    buttons(torso, [-3.4, 3.4], [13.0, 18.0, 23.0], r=0.75, color='#2f2f2f', ring=None)
+    for (x, s) in ((-9.5, 1), (8.0, -1), (-1.0, 1)):
+        torso.fill(Stroke(bez((x, 31.0), (x + s * 3.0, 25.0), (x - s * 1.5, 20.0), (x + s * 1.8, 15.5)), 0.9), cyan, 0.85, glow=0.6)
+        torso.fill(Circle(x + s * 1.8, 15.2, 0.8), cyan, 0.85, glow=0.6)
+
+
 def by_key():
-    return {f['key']: f for f in FIGURES + EXTRA + FRANCHISE}
+    return {f['key']: f for f in FIGURES + EXTRA + FRANCHISE + TOON}
