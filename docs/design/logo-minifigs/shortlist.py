@@ -9,6 +9,10 @@ in renders/S (render_bust.py --style A --folder S); the other four picks are the
 renders of LT.LOGO.MINIFIGS in renders/A. This script recompresses the renders/S PNGs
 (transparent pixels cleared), writes their <key>-192.png and <key>-48.png copies and
 writes shortlist.html next to it. d.html and finish.py are left as they are.
+
+LT.LOGO.MINIFIGS.FIX1 adds the franchise figures the user asked for (minifigs.FRANCHISE:
+Darth Vader, Darth Jar-Jar, Batman and three Hidden Side figures) in their own section,
+from the style A renders in renders/A that finish.py finishes.
 """
 import os
 import sys
@@ -26,6 +30,9 @@ LIMIT_MB = 25.0
 # (key, render folder): the five picks first, then the four raver variants
 PICKS = [('studbot', 'S'), ('astronaut', 'A'), ('wizard', 'A'), ('viking', 'A'), ('ghost', 'A')]
 RAVERS = [('raver-acid', 'S'), ('raver-checker', 'S'), ('raver-tiedye', 'S'), ('raver-glow', 'S')]
+# the franchise figures (LT.LOGO.MINIFIGS.FIX1), style A renders finished by finish.py
+FRANCHISE = [(f['key'], 'A') for f in mf.FRANCHISE]
+SHORT = {'jack-davids': 'Jack', 'parker-jackson': 'Parker', 'possessed-enzo': 'Enzo'}
 
 
 def finish_images():
@@ -101,6 +108,7 @@ p.group{margin:0 0 12px;color:var(--muted)}
 .tag{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;background:var(--yellow);color:#3a2f00;border-radius:4px;padding:1px 6px}
 .tag.new{background:#ff5ea8;color:#fff}
 .tag.fixed{background:#2b8a3e;color:#fff}
+.tag.fr{background:#2b2f3a;color:#fff}
 .fig .blurb{margin:0;color:var(--muted);font-size:13px;min-height:2.6em}
 .hero{height:272px;border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden;
   background:radial-gradient(circle at 50% 38%,#ffffff 0,#e9ecf2 70%)}
@@ -225,6 +233,8 @@ def tile_html(fig, src, cls, alt=''):
 
 
 def short_name(fig):
+    if not fig.get('original', True):
+        return SHORT.get(fig['key'], fig['name'])
     return fig['name'].replace(' the ', ' ').split(' ')[0] if not fig['key'].startswith('raver') else fig['name']
 
 
@@ -268,26 +278,33 @@ def page_html():
         cards_p.append(card(i, fig, folder, tag))
     for i, (fig, folder) in enumerate(ravers):
         cards_r.append(card(len(picks) + i, fig, folder, ' <span class="tag new">new</span>'))
+    franchise = [(byk[k], f) for k, f in FRANCHISE]
+    cards_f = [card(len(picks) + len(ravers) + i, fig, folder, ' <span class="tag fr">%s</span>' % esc(fig.get('owner') or 'franchise'))
+               for i, (fig, folder) in enumerate(franchise)]
     allf = picks + ravers
     return """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Brick Tracker logo shortlist</title>
 <style>%(css)s</style></head>
 <body>
-<header><div class="brand"><div class="brick"></div><h1>Brick Tracker logo shortlist<small>direction D, the app tile: your five picks and Dex the Raver</small></h1></div>
-<nav><a href="shortlist.html" class="on">Shortlist</a><a href="d.html">D: App icon tile (all 14)</a></nav></header>
+<header><div class="brand"><div class="brick"></div><h1>Brick Tracker logo shortlist<small>direction D, the app tile: your five picks, Dex the Raver and the franchise figures</small></h1></div>
+<nav><a href="shortlist.html" class="on">Shortlist</a><a href="d.html">D: App icon tile (all %(total)d)</a></nav></header>
 <main>
 <div class="intro">
 <div class="panel"><h2>The shortlist</h2>
 <p>Your five picks from page D (Studbot, Nova the Astronaut, Mortimer the Wizard, Bjorn the Viking, Glim the Ghost)
 and the new figure you asked for, Dex the Raver, in four variants. All in direction D: the glossy figure rising
 from a rounded tile in its own colours, the shape of a desktop or Chrome app icon.</p>
+<p>Below them, the franchise figures you asked for: Darth Vader, Darth Jar-Jar, Batman, and from Hidden Side
+Jack Davids, Parker L. Jackson and a ghost-possessed Chef Enzo, in the same tile.</p>
 <p>Pick the one that becomes the app logo. The icon files are made from your pick in the next step.</p></div>
 <div class="panel note"><h2>What changed</h2>
 <p><b>Studbot:</b> the headphones are rebuilt. The band now runs over the top of the head, just behind the stud,
 and the two cups sit centred on the sides of the head at ear height, flush against it.</p>
 <p><b>Dex the Raver</b> is new: a normal guy with spiky messy short hair and headphones over his ears, in four takes on
-the hair colour, the headphones and the rave print. He is an original character; the prints carry no band or brand logo.</p></div>
+the hair colour, the headphones and the rave print. He is an original character; the prints carry no band or brand logo.</p>
+<p><b>The franchise figures</b> carry LEGO, Lucasfilm and DC marks (each card names the owner): fine for your own copy
+of the app, not for a published one. For a published app the safe picks are the Brick Tracker mascots, Studbot among them.</p></div>
 </div>
 
 <h2 class="group">Side by side</h2>
@@ -304,6 +321,14 @@ the hair colour, the headphones and the rave print. He is an original character;
 on black. Checker: bleached blond, a slim silver band, a smiley on a checkerboard band. Tie-dye: hot pink hair, neon lime cans,
 a neon smiley on a tie-dye spiral. Glow: cyan hair, slim white cans with LED rings, glow sticks on a dark tee.</p>
 <div class="grid">%(cards_r)s</div>
+
+<h2 class="group">New: the franchise figures you asked for</h2>
+<p class="group">Built from LDraw's own character parts where it has them (Vader's helmet, the Gungan head and a hood,
+Batman's cowl, Jack's hair with his backwards cap, Parker's braids, a chef's hat), with the masks, emblems and faces painted
+by the script. Their characters belong to Lucasfilm, DC and the LEGO Group.</p>
+%(strip_fl)s
+%(strip_fd)s
+<div class="grid">%(cards_f)s</div>
 
 <section class="q panel"><h2>1. Which one is the app logo?</h2>
 <p class="hint">Choose "This is the app logo" on one figure.</p>
@@ -323,12 +348,14 @@ a neon smiley on a tie-dye spiral. Glow: cyan hair, slim white cans with LED rin
 <p>Parts: the LDraw.org Parts Library (ldraw.org), licensed CC BY 2.0 and CC BY 4.0; imported with the ImportLDraw add-on for Blender.
 The headphones are modelled by docs/design/logo-minifigs/render_bust.py and fitted to each head and hair.
 Rendered headless in Blender 4.5 (Cycles). Face and torso prints drawn for Brick Tracker by docs/design/logo-minifigs/minifigs.py.</p>
-<p>LEGO and the minifigure figurine are trademarks of the LEGO Group, which does not sponsor, authorize or endorse Brick Tracker.</p>
+<p>LEGO, the minifigure figurine and Hidden Side are trademarks of the LEGO Group; Star Wars, Darth Vader and Jar Jar Binks of Lucasfilm Ltd.;
+Batman of DC. None of them sponsors, authorizes or endorses Brick Tracker; the franchise figures here are fan renders for a private logo shortlist.</p>
 </footer>
 <script>%(js)s</script>
 </body></html>
 """ % dict(css=CSS, js=JS, strip_l=strip(allf, 'light'), strip_d=strip(allf, 'dark'),
-           cards_p=''.join(cards_p), cards_r=''.join(cards_r))
+           total=len(mf.FIGURES) + len(mf.FRANCHISE), cards_p=''.join(cards_p), cards_r=''.join(cards_r), cards_f=''.join(cards_f),
+           strip_fl=strip(franchise, 'light'), strip_fd=strip(franchise, 'dark'))
 
 
 def main():
@@ -337,7 +364,7 @@ def main():
     with open(path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(page_html())
     print('page', path)
-    for key, folder in PICKS + RAVERS:
+    for key, folder in PICKS + RAVERS + FRANCHISE:
         for size in (None,) + SIZES:
             p = os.path.join(HERE, img_src(folder, key, size).replace('/', os.sep))
             if not os.path.exists(p):

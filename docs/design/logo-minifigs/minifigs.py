@@ -394,16 +394,18 @@ FIGURES = []
 
 def figure(key, name, blurb, torso, arms, headgear, colors, head='#f6c824', tile=('#2f6fd6', '#1c3f8f'),
            ring='#1d2b53', original=True, mascot=False, cam_el=12.0, phones=None, into=None,
-           head_part=None):
+           head_part=None, owner=None):
     """cam_el: the camera's elevation in degrees (lower it for a helmet whose brim hides the eyes).
     phones: headphones modelled by render_bust.py (see PHONES below), fitted to the head and hair.
     into: the list the figure goes in (FIGURES unless given).
-    head_part: an LDraw part in place of the plain head (a character head such as the Gungan one); it gets no face print."""
+    head_part: an LDraw part in place of the plain head (a character head such as the Gungan one); it gets no face print.
+    owner: for a franchise figure, who owns the character (shown as a tag on the pages)."""
     def deco(fn):
         (FIGURES if into is None else into).append(
             dict(key=key, name=name, blurb=blurb, torso=torso, arms=arms, headgear=headgear,
                  colors=colors, head=head, tile=tile, ring=ring, prints=fn, mascot=mascot,
-                 cam_el=cam_el, phones=phones, original=original, head_part=head_part))
+                 cam_el=cam_el, phones=phones, original=original, head_part=head_part,
+                 owner=owner))
         return fn
     return deco
 
@@ -919,7 +921,8 @@ def bat_emblem(cx, cy, w):
 # 19 -- Darth Vader (Lucasfilm)
 @figure('vader', 'Darth Vader', 'Star Wars: the black helmet over the mask, the chest panel with its lit buttons',
         torso='#1b1a1a', arms='#1b1a1a', headgear=[('30368.dat', 'helmet')], colors={'helmet': '#1b1a1a'},
-        head='#1b1a1a', tile=('#e3242b', '#5a0b0b'), ring='#2a0505', original=False, into=FRANCHISE)
+        head='#1b1a1a', tile=('#e3242b', '#5a0b0b'), ring='#2a0505', original=False, into=FRANCHISE,
+        owner='Lucasfilm')
 def p_vader(face, torso):
     grey, steel = '#8d949b', '#4a4f55'
     # the mask: two dark eye lenses in grey rims, cheek lines, the triangular mouth grille
@@ -954,7 +957,7 @@ def p_vader(face, torso):
 @figure('darth-jarjar', 'Darth Jar-Jar', 'Star Wars fan theory: Jar Jar Binks as a Sith lord, black hooded robe and a red lightsaber',
         torso='#1b1a1a', arms='#1b1a1a', headgear=[('30381.dat', 'hood')], colors={'hood': '#1b1a1a'},
         head='#d08a4b', head_part='30371.dat', tile=('#b3121b', '#1a0406'), ring='#1a0406',
-        original=False, into=FRANCHISE)
+        original=False, into=FRANCHISE, owner='Lucasfilm')
 def p_darth_jarjar(face, torso):
     # the robe's crossed collar and folds, a belt
     torso.fill(Poly([(-6.5, -1), (-2.6, -1), (0.0, 8.5), (2.6, -1), (6.5, -1), (0.0, 13.5)]), '#2e2e33')
@@ -962,18 +965,21 @@ def p_darth_jarjar(face, torso):
         torso.fill(Stroke(bez((x * 0.8, 15.0), (x * 1.05, 22.0), (x * 1.15, 32.0)), 0.5), '#38383f')
     torso.fill(RRect(0, 23.0, 44, 2.6), '#3a2a20')
     torso.fill(RRect(0, 23.0, 2.6, 2.2, 0.3), '#9aa1a8')
-    # a red lightsaber held across the chest: a silver hilt, a glowing blade with a pale core
-    torso.fill(Stroke([(-6.0, 25.1), (9.5, 2.5)], 3.0), '#ff2a2a', 0.4, glow=1.0)
-    torso.fill(Stroke([(-6.0, 25.1), (9.5, 2.5)], 1.5), '#ff3b30', glow=1.0)
-    torso.fill(Stroke([(-6.0, 25.1), (9.5, 2.5)], 0.6), '#ffd9d3', glow=1.0)
-    torso.fill(Stroke([(-9.8, 30.6), (-6.0, 25.1)], 1.7), '#b9c0c7')
-    torso.fill(Stroke([(-8.4, 28.6), (-7.9, 27.9)], 1.9), INK)
+    # a red lightsaber held across the chest, low and shallow so it shows between the hood
+    # and the bust's cut line (torso y 9 .. 16): a silver hilt, a glowing blade with a pale core
+    blade = [(-11.5, 18.2), (13.5, 8.6)]
+    torso.fill(Stroke(blade, 3.4), '#ff2a2a', 0.45, glow=1.0)
+    torso.fill(Stroke(blade, 1.7), '#ff3b30', glow=1.0)
+    torso.fill(Stroke(blade, 0.7), '#ffd9d3', glow=1.0)
+    torso.fill(Stroke([(-17.0, 20.3), (-11.5, 18.2)], 1.9), '#b9c0c7')
+    torso.fill(Stroke([(-14.6, 19.4), (-13.9, 19.1)], 2.1), INK)
 
 
 # 21 -- Batman (DC)
 @figure('batman', 'Batman', 'DC: the black cowl with its ears, white eyes, and the bat emblem in a yellow oval',
         torso='#5b6066', arms='#5b6066', headgear=[('10113.dat', 'cowl')], colors={'cowl': '#1b1a1a'},
-        head='#f6d7b3', tile=('#3b4a7a', '#0d1226'), ring='#0d1226', original=False, into=FRANCHISE)
+        head='#f6d7b3', tile=('#3b4a7a', '#0d1226'), ring='#0d1226', original=False, into=FRANCHISE,
+        owner='DC')
 def p_batman(face, torso):
     # the mask's lower edge on the head print, white eyes, a firm mouth and a chin line
     face.fill(Poly([(-21, 0), (21, 0), (21, 11.8), (6.8, 12.2), (2.0, 11.0), (0, 11.6), (-2.0, 11.0),
@@ -1001,7 +1007,8 @@ HS_TILE = ('#2fd3a8', '#0c3b46')        # Hidden Side: teal to a dark night blue
 # 22 -- Jack Davids (Hidden Side, the LEGO Group)
 @figure('jack-davids', 'Jack Davids', 'Hidden Side: messy brown hair under a red backwards cap, a white hoodie with red stripes',
         torso='#f2f2f2', arms='#f2f2f2', headgear=[('65730p02.dat', 'hair'), ('15428.dat', 'hood')],
-        colors={'hair': '#4a2c1a', 'hood': '#f2f2f2'}, tile=HS_TILE, ring='#0c3b46', original=False, into=FRANCHISE)
+        colors={'hair': '#4a2c1a', 'hood': '#f2f2f2'}, tile=HS_TILE, ring='#0c3b46', original=False, into=FRANCHISE,
+        owner='LEGO Hidden Side')
 def p_jack(face, torso):
     brows(face, t=6.6, arch=0.5, length=2.8, color='#4a2c1a')
     eyes(face)
@@ -1020,7 +1027,8 @@ def p_jack(face, torso):
 # 23 -- Parker L. Jackson (Hidden Side, the LEGO Group)
 @figure('parker-jackson', 'Parker L. Jackson', 'Hidden Side: lavender hair in two braids, a black top, a coral bag strap and a P necklace',
         torso='#1b1a1a', arms='#1b1a1a', headgear=[('35714.dat', 'hair')], colors={'hair': '#a38bc7'},
-        tile=('#ffd23f', '#e0457b'), ring='#5a1838', original=False, into=FRANCHISE)
+        tile=('#ffd23f', '#e0457b'), ring='#5a1838', original=False, into=FRANCHISE,
+        owner='LEGO Hidden Side')
 def p_parker(face, torso):
     brows(face, t=6.6, arch=0.6, length=2.6, w=0.7, color='#6b4a8a')
     eyes(face)
@@ -1039,10 +1047,10 @@ def p_parker(face, torso):
 # 24 -- Possessed Chef Enzo (Hidden Side, the LEGO Group)
 @figure('possessed-enzo', 'Possessed Chef Enzo', 'Hidden Side: a chef taken over by a ghost, neon-green head, glowing eyes and slime',
         torso='#f2f2f2', arms='#f2f2f2', headgear=[('98381.dat', 'hat')], colors={'hat': '#f2f2f2'},
-        head='#6fe84a', tile=('#5b2fa8', '#0b0618'), ring='#0b0618', original=False, into=FRANCHISE)
+        head='#6fe84a', tile=('#5b2fa8', '#0b0618'), ring='#0b0618', original=False, into=FRANCHISE,
+        owner='LEGO Hidden Side')
 def p_enzo(face, torso):
     dg, lime = '#1f5a1c', '#c8ff2e'
-    face.fill(Ellipse(0, 12.0, 10.0, 9.5), '#d8ff7a', 0.5, glow=0.35)
     for side in (-1, 1):
         face.fill(Ellipse(side * EYE_DX, EYE_T, 2.3, 1.9), lime, glow=1.0)
         face.fill(Ellipse(side * EYE_DX, EYE_T, 1.2, 1.3), '#0d2b0b')

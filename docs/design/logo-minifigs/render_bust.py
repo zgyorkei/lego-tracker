@@ -1,6 +1,7 @@
 """Render Brick Tracker minifigure busts (LT.LOGO.MINIFIGS) in Blender 4.5, headless.
 
-Every figure is an original character (see minifigs.py). The parts come from
+The figures are in minifigs.py: originals made for Brick Tracker, and the franchise
+figures the user asked for (LT.LOGO.MINIFIGS.FIX1). The parts come from
 the LDraw parts library through the ImportLDraw add-on; the face and torso
 prints are drawn by minifigs.py and mapped onto the head (cylindrical UVs) and
 the torso front (planar UVs) by this script.
@@ -68,7 +69,8 @@ def for_style(a, style):
 LDU = 0.0004                 # ImportLDraw's globalScaleFactor (metres per LDU)
 TORSO_CODE, ARM_CODE, HEAD_CODE = 92, 100, 110
 ROLE_CODES = [112, 115, 118, 120, 125, 85]
-NECK_PARTS = {'6132.dat', '60749.dat', '15428.dat'}   # beards and a folded-down hood sit on the torso's neck
+NECK_PARTS = {'6132.dat', '60749.dat', '15428.dat', '20551c01.dat'}   # beards, a folded-down hood and a cape sit on the torso's neck
+NECK_HEADS = {'30371.dat'}   # character heads whose origin is the neck socket (the Gungan head), not the head's top
 HEAD_Y = -24.0
 
 
@@ -78,7 +80,8 @@ def write_ldr(fig, path):
     lines.append('1 %d 0 0 0 1 0 0 0 1 0 0 0 1 %s' % (TORSO_CODE, mf.TORSO))
     lines.append('1 %d 15.552 9 0 0.9962 0.0872 0 -0.0872 0.9962 0 0 0 1 3819.dat' % ARM_CODE)
     lines.append('1 %d -15.552 9 0 0.9962 -0.0872 0 0.0872 0.9962 0 0 0 1 3818.dat' % ARM_CODE)
-    lines.append('1 %d 0 %g 0 1 0 0 0 1 0 0 0 1 %s' % (HEAD_CODE, HEAD_Y, fig.get('head_part') or mf.HEAD))
+    head = fig.get('head_part') or mf.HEAD
+    lines.append('1 %d 0 %g 0 1 0 0 0 1 0 0 0 1 %s' % (HEAD_CODE, 0.0 if head.lower() in NECK_HEADS else HEAD_Y, head))
     for i, gear in enumerate(fig['headgear']):
         part, role = gear[0], gear[1]
         code = ROLE_CODES[i]

@@ -32,10 +32,13 @@ LIMIT_MB = 25.0
 # ---------------------------------------------------------------------------
 # Images
 
-def finish_images():
+def finish_images(only=None):
+    """Clean the renders and write the 192 and 48 px copies; only: a set of keys, or None for all."""
     missing = []
     for style in ('A', 'B'):
-        for fig in mf.FIGURES:
+        for fig in mf.FIGURES + mf.FRANCHISE:
+            if only and fig['key'] not in only:
+                continue
             src = os.path.join(RENDERS, style, fig['key'] + '.png')
             if not os.path.exists(src):
                 missing.append('%s/%s' % (style, fig['key']))
@@ -112,6 +115,9 @@ main{max-width:1320px;margin:0 auto;padding:22px 28px 40px}
 .fig h3{margin:0;font-size:16px;display:flex;align-items:center;gap:8px}
 .fig h3 .num{font-size:12px;color:var(--muted);font-weight:600;min-width:22px}
 .tag{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;background:var(--yellow);color:#3a2f00;border-radius:4px;padding:1px 6px}
+.tag.fr{background:#2b2f3a;color:#fff}
+.grid h2.sect{grid-column:1/-1;margin:18px 0 0;font-size:18px;border-top:2px solid var(--line);padding-top:16px}
+.grid h2.sect small{display:block;font-size:13px;font-weight:400;color:var(--muted);margin-top:4px}
 .fig .blurb{margin:0;color:var(--muted);font-size:13px;min-height:2.6em}
 .hero{height:272px;border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden}
 .hero.plain{background:radial-gradient(circle at 50% 38%,#ffffff 0,#e9ecf2 70%)}
@@ -320,6 +326,8 @@ def figure_card(page, i, fig):
         return ('<div class="sw %s"><div class="cell">%s<span>192</span></div><div class="cell">%s<span>48</span></div></div>'
                 % (theme, small(192), small(48)))
     tag = ' <span class="tag">mascot</span>' if fig.get('mascot') else ''
+    if not fig.get('original', True):
+        tag = ' <span class="tag fr" title="A franchise character: %s owns it">%s</span>' % (esc(fig.get('owner') or 'franchise'), esc(fig.get('owner') or 'franchise'))
     return ('<section class="fig" id="fig-%s"><h3><span class="num">%02d</span>%s%s</h3>'
             '<p class="blurb">%s</p>%s<div class="sizes">%s%s<p class="note">%s</p></div>'
             '<label class="pick"><input type="checkbox" class="pickbox" value="%s" data-name="%s"> Pick this one</label>'
@@ -332,6 +340,12 @@ def page_html(page, letter, title, desc):
     nav = ''.join('<a href="%s.html"%s>%s: %s</a>' % (p, ' class="on"' if p == page else '', l, t)
                   for p, l, t, _d in PAGES)
     cards = ''.join(figure_card(page, i, f) for i, f in enumerate(mf.FIGURES))
+    if mf.FRANCHISE:
+        cards += ('<h2 class="sect">Franchise figures, drawn at your request for your own app'
+                  '<small>Their characters belong to Lucasfilm, DC and the LEGO Group: a fan render for the shortlist, not for a published app.</small></h2>')
+        cards += ''.join(figure_card(page, len(mf.FIGURES) + i, f) for i, f in enumerate(mf.FRANCHISE))
+    names = [f['name'] for f in mf.FRANCHISE]
+    franchise = ', '.join(names[:-1]) + ' and ' + names[-1] if len(names) > 1 else ''.join(names)
     mascots = ', '.join(f['name'] for f in mf.FIGURES if f.get('mascot'))
     full_title = '%s: %s' % (letter, title)
     return """<!doctype html>
@@ -339,7 +353,7 @@ def page_html(page, letter, title, desc):
 <title>Brick Tracker logo proposals, %(full)s</title>
 <style>%(css)s</style></head>
 <body data-page="%(page)s" data-title="%(fulle)s">
-<header><div class="brand"><div class="brick"></div><h1>Brick Tracker logo proposals<small>%(n)d minifigure busts, four directions</small></h1></div>
+<header><div class="brand"><div class="brick"></div><h1>Brick Tracker logo proposals<small>%(total)d minifigure busts (%(n)d originals, %(nf)d franchise figures), four directions</small></h1></div>
 <nav>%(nav)s</nav></header>
 <main>
 <div class="intro">
@@ -348,8 +362,10 @@ def page_html(page, letter, title, desc):
 with the face and torso prints painted by the script. Each card shows it large, then at 192 px (desktop and Chrome app icon)
 and 48 px (favicon), on light and on dark.</p></div>
 <div class="panel note"><h2>About the figures</h2>
-<p>All %(n)d figures are original characters made for Brick Tracker. The franchise characters in the request
-(Darth Vader, a Sith Jar Jar, Batman and the Hidden Side cast) are not drawn: they belong to Lucasfilm, DC and the LEGO Group.</p>
+<p>The first %(n)d figures are original characters made for Brick Tracker. The last %(nf)d are the franchise characters
+you asked for (%(franchise)s), each tagged with its owner below: they carry LEGO, Lucasfilm and DC marks
+(Star Wars and its characters are Lucasfilm's, Batman is DC's, Hidden Side and its cast are the LEGO Group's).
+They are fine for your own copy of the app, not for a published one.</p>
 <p>The safest picks for a published app are the three Brick Tracker mascots: %(mascots)s.
 The minifigure shape itself is a LEGO trademark, so check that before publishing any of them.</p></div>
 </div>
@@ -380,11 +396,13 @@ The minifigure shape itself is a LEGO trademark, so check that before publishing
 <footer>
 <p>Parts: the LDraw.org Parts Library (ldraw.org), licensed CC BY 2.0 and CC BY 4.0; imported with the ImportLDraw add-on for Blender.
 Rendered headless in Blender 4.5 (Cycles). Face and torso prints drawn for Brick Tracker by docs/design/logo-minifigs/minifigs.py.</p>
-<p>LEGO and the minifigure figurine are trademarks of the LEGO Group, which does not sponsor, authorize or endorse Brick Tracker.</p>
+<p>LEGO, the minifigure figurine and Hidden Side are trademarks of the LEGO Group; Star Wars, Darth Vader and Jar Jar Binks of Lucasfilm Ltd.;
+Batman of DC. None of them sponsors, authorizes or endorses Brick Tracker; the franchise figures here are fan renders for a private logo shortlist.</p>
 </footer>
 <script>%(js)s</script>
 </body></html>
 """ % dict(full=esc(full_title), fulle=esc(full_title), css=CSS, page=page, n=len(mf.FIGURES), nav=nav,
+           total=len(mf.FIGURES) + len(mf.FRANCHISE), nf=len(mf.FRANCHISE), franchise=esc(franchise),
            desc=esc(desc), mascots=esc(mascots), cards=cards, js=JS)
 
 
@@ -399,7 +417,8 @@ def write_pages():
 
 
 def main():
-    missing = [] if '--pages-only' in sys.argv else finish_images()
+    only = set(sys.argv[sys.argv.index('--only') + 1].split(',')) if '--only' in sys.argv else None
+    missing = [] if '--pages-only' in sys.argv else finish_images(only)
     for p in write_pages():
         print('page', p)
     if missing:
