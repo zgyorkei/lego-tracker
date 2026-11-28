@@ -394,18 +394,20 @@ FIGURES = []
 
 def figure(key, name, blurb, torso, arms, headgear, colors, head='#f6c824', tile=('#2f6fd6', '#1c3f8f'),
            ring='#1d2b53', original=True, mascot=False, cam_el=12.0, phones=None, into=None,
-           head_part=None, owner=None):
+           head_part=None, owner=None, cut_y=16.0, saber=None):
     """cam_el: the camera's elevation in degrees (lower it for a helmet whose brim hides the eyes).
     phones: headphones modelled by render_bust.py (see PHONES below), fitted to the head and hair.
     into: the list the figure goes in (FIGURES unless given).
     head_part: an LDraw part in place of the plain head (a character head such as the Gungan one); it gets no face print.
-    owner: for a franchise figure, who owns the character (shown as a tag on the pages)."""
+    owner: for a franchise figure, who owns the character (shown as a tag on the pages).
+    cut_y: the LDraw y on the torso where the bust is cut (16: the usual bust; lower it for a wider crop).
+    saber: a lightsaber modelled by render_bust.py: dict(hilt=(x, y, z), tip=(x, y, z), color, core, r), LDraw points."""
     def deco(fn):
         (FIGURES if into is None else into).append(
             dict(key=key, name=name, blurb=blurb, torso=torso, arms=arms, headgear=headgear,
                  colors=colors, head=head, tile=tile, ring=ring, prints=fn, mascot=mascot,
                  cam_el=cam_el, phones=phones, original=original, head_part=head_part,
-                 owner=owner))
+                 owner=owner, cut_y=cut_y, saber=saber))
         return fn
     return deco
 
@@ -954,10 +956,15 @@ def p_vader(face, torso):
 
 
 # 20 -- Darth Jar-Jar (Lucasfilm; the fan theory of Jar Jar Binks as a Sith lord)
+# LT.LOGO.TOON (the user: "should show more so it is clear who he is"): the hood is down on
+# his shoulders (15428) so the Gungan head shows whole, ears, eye stalks and snout, with a
+# black cape for the robe, a crop down to the belt (cut_y) and a modelled red lightsaber.
 @figure('darth-jarjar', 'Darth Jar-Jar', 'Star Wars fan theory: Jar Jar Binks as a Sith lord, black hooded robe and a red lightsaber',
-        torso='#1b1a1a', arms='#1b1a1a', headgear=[('30381.dat', 'hood')], colors={'hood': '#1b1a1a'},
+        torso='#1b1a1a', arms='#1b1a1a', headgear=[('15428.dat', 'hood'), ('4524.dat', 'cape')],
+        colors={'hood': '#1b1a1a', 'cape': '#1b1a1a'},
         head='#d08a4b', head_part='30371.dat', tile=('#b3121b', '#1a0406'), ring='#1a0406',
-        original=False, into=FRANCHISE, owner='Lucasfilm')
+        original=False, into=FRANCHISE, owner='Lucasfilm', cut_y=30.0,
+        saber=dict(hilt=(-16.0, 30.0, -16.0), tip=(34.0, -30.0, -16.0), color='#ff1f1f', core='#ffe8e4', r=1.9))
 def p_darth_jarjar(face, torso):
     # the robe's crossed collar and folds, a belt
     torso.fill(Poly([(-6.5, -1), (-2.6, -1), (0.0, 8.5), (2.6, -1), (6.5, -1), (0.0, 13.5)]), '#2e2e33')
@@ -965,14 +972,7 @@ def p_darth_jarjar(face, torso):
         torso.fill(Stroke(bez((x * 0.8, 15.0), (x * 1.05, 22.0), (x * 1.15, 32.0)), 0.5), '#38383f')
     torso.fill(RRect(0, 23.0, 44, 2.6), '#3a2a20')
     torso.fill(RRect(0, 23.0, 2.6, 2.2, 0.3), '#9aa1a8')
-    # a red lightsaber held across the chest, low and shallow so it shows between the hood
-    # and the bust's cut line (torso y 9 .. 16): a silver hilt, a glowing blade with a pale core
-    blade = [(-11.5, 18.2), (13.5, 8.6)]
-    torso.fill(Stroke(blade, 3.4), '#ff2a2a', 0.45, glow=1.0)
-    torso.fill(Stroke(blade, 1.7), '#ff3b30', glow=1.0)
-    torso.fill(Stroke(blade, 0.7), '#ffd9d3', glow=1.0)
-    torso.fill(Stroke([(-17.0, 20.3), (-11.5, 18.2)], 1.9), '#b9c0c7')
-    torso.fill(Stroke([(-14.6, 19.4), (-13.9, 19.1)], 2.1), INK)
+    # the red lightsaber is modelled by render_bust.py (saber=), no longer printed here
 
 
 # 21 -- Batman (DC)

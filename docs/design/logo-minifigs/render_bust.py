@@ -73,7 +73,7 @@ def for_style(a, style):
 LDU = 0.0004                 # ImportLDraw's globalScaleFactor (metres per LDU)
 TORSO_CODE, ARM_CODE, HEAD_CODE = 92, 100, 110
 ROLE_CODES = [112, 115, 118, 120, 125, 85]
-NECK_PARTS = {'6132.dat', '60749.dat', '15428.dat', '20551c01.dat'}   # beards, a folded-down hood and a cape sit on the torso's neck
+NECK_PARTS = {'6132.dat', '60749.dat', '15428.dat', '20551c01.dat', '4524.dat'}   # beards, a folded-down hood and a cape sit on the torso's neck
 NECK_HEADS = {'30371.dat'}   # character heads whose origin is the neck socket (the Gungan head), not the head's top
 HEAD_Y = -24.0
 
@@ -454,7 +454,7 @@ def surface_points(ob, rng, n=30000):
     return np.stack([w[:, 0] / LDU, -w[:, 2] / LDU, w[:, 1] / LDU], axis=1)
 
 
-def add_mesh(name, verts_ld, faces, mat, parts):
+def add_mesh(name, verts_ld, faces, mat, parts, group='phones'):
     import bmesh
     me = bpy.data.meshes.new(name)
     me.from_pydata([ld_to_world(v) for v in verts_ld], [], faces)
@@ -475,7 +475,7 @@ def add_mesh(name, verts_ld, faces, mat, parts):
     me.materials.append(mat)
     ob = bpy.data.objects.new(name, me)
     bpy.context.scene.collection.objects.link(ob)
-    parts.setdefault('phones', []).append(ob)
+    parts.setdefault(group, []).append(ob)
     return ob
 
 
@@ -629,7 +629,77 @@ def build_phones(fig, parts, style):
 # ---------------------------------------------------------------------------
 # Scene: camera, lights, render settings
 
-def setup_scene(args, parts):
+# ---------------------------------------------------------------------------
+# Lightsaber (LT.LOGO.TOON): modelled here, a metal hilt with a dark grip and a
+# blade that glows from a pale core to its colour at the rim, in LDraw coordinates.
+
+def revolve(profile, a, u, seg=40):
+    """Revolve [(t, rho)] about the axis from LDraw point a along the unit vector u."""
+    a, u = np.asarray(a, float), np.asarray(u, float)
+    ref = np.array([0.0, 0.0, 1.0]) if abs(u[2]) < 0.9 else np.array([1.0, 0.0, 0.0])
+    e1 = np.cross(u, ref)
+    e1 /= np.linalg.norm(e1)
+    e2 = np.cross(u, e1)
+    n = len(profile)
+    verts = []
+    for k in range(seg):
+        f = 2 * math.pi * k / seg
+        r = math.cos(f) * e1 + math.sin(f) * e2
+        for (t, rho) in profile:
+            verts.append(tuple(a + u * t + r * rho))
+    faces = []
+    for k in range(seg):
+        k2 = (k + 1) % seg
+        for i in range(n - 1):
+            faces.append((k * n + i, k * n + i + 1, k2 * n + i + 1, k2 * n + i))
+    return verts, faces
+
+
+def blade_material(name, color, core):
+    """Pure emission, the same in both styles: the pale core where the blade faces the camera, its colour at the rim."""
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    nodes.clear()
+    out = nodes.new('ShaderNodeOutputMaterial')
+    lw = nodes.new('ShaderNodeLayerWeight')
+    lw.inputs['Blend'].default_value = 0.5
+    ramp = nodes.new('ShaderNodeValToRGB')
+    els = ramp.color_ramp.elements
+    els[0].position, els[0].color = 0.0, lin(core)
+    els[1].position, els[1].color = 0.3, lin(color)
+    links.new(lw.outputs['Facing'], ramp.inputs[0])
+    em = nodes.new('ShaderNodeEmission')
+    links.new(ramp.outputs['Color'], em.inputs['Color'])
+    em.inputs['Strength'].default_value = 1.0
+    links.new(em.outputs[0], out.inputs['Surface'])
+    return mat
+
+
+def build_saber(fig, parts, style):
+    """fig['saber']: hilt (the pommel end) and tip, LDraw points; color and core of the blade; r the blade radius."""
+    s = fig['saber']
+    a, b = np.array(s['hilt'], float), np.array(s['tip'], float)
+    length = float(np.linalg.norm(b - a))
+    u = (b - a) / length
+    r = s.get('r', 1.3)
+    hl = s.get('hilt_len', 9.0)
+    hr = r * 1.35
+    hilt = [(0, 0), (0, hr * 1.1), (1.0, hr * 1.1), (1.2, hr), (hl - 1.4, hr), (hl - 1.2, hr * 1.25), (hl, hr * 1.25), (hl, 0)]
+    grip = [(2.2, 0), (2.2, hr * 1.06), (hl - 3.0, hr * 1.06), (hl - 3.0, 0)]
+    blade = [(hl - 0.2, 0), (hl - 0.2, r)]
+    for g in range(15, 91, 15):              # a rounded tip
+        blade.append((length - r + r * math.sin(math.radians(g)), r * math.cos(math.radians(g))))
+    key = fig['key']
+    v, f = revolve(hilt, a, u)
+    add_mesh(key + '_saber_hilt', v, f, make_material(key + '_saber_hilt', s.get('metal', '#b9c0c7'), 'metal', style), parts, 'saber')
+    v, f = revolve(grip, a, u)
+    add_mesh(key + '_saber_grip', v, f, make_material(key + '_saber_grip', '#2b2b2e', 'plastic', style), parts, 'saber')
+    v, f = revolve(blade, a, u)
+    add_mesh(key + '_saber_blade', v, f, blade_material(key + '_saber_blade', s['color'], s.get('core', '#ffe8e4')), parts, 'saber')
+
+
+def setup_scene(args, parts, cut_y=16.0):
     scene = bpy.context.scene
     scene.render.engine = 'CYCLES'
     scene.cycles.device = 'CPU'
@@ -665,7 +735,7 @@ def setup_scene(args, parts):
     up_w = Vector((0, 0, 1))
     right = fwd.cross(up_w).normalized()
     up = right.cross(fwd).normalized()
-    cut_w = Vector((0, -10 * LDU, -16 * LDU))        # front of the torso at LDraw y=16
+    cut_w = Vector((0, -10 * LDU, -cut_y * LDU))     # front of the torso at LDraw y=cut_y (16: the usual bust)
     pts = []
     for obs in parts.values():
         for ob in obs:
@@ -780,7 +850,9 @@ def render_one(fig, args):
     parts = assign_materials(fig, roles, ld, args.style, face_imgs, torso_imgs)
     if fig.get('phones'):
         build_phones(fig, parts, args.style)
-    setup_scene(args, parts)
+    if fig.get('saber'):
+        build_saber(fig, parts, args.style)
+    setup_scene(args, parts, fig.get('cut_y', 16.0))
     os.makedirs(args.out, exist_ok=True)
     out = os.path.join(args.out, fig['key'] + args.suffix + '.png')
     bpy.context.scene.render.filepath = out
